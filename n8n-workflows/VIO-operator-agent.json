@@ -1,0 +1,269 @@
+{
+  "id": "VIOwf4agent0001",
+  "name": "VIO-operator-agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-operator-agent-test",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "vio-wf4-trigger",
+      "name": "Test Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ],
+      "webhookId": "vio-wf4-agent-test"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Added 2026-08-16. This endpoint was previously OPEN — anyone could POST to it and burn\n// OpenAI tokens on the hardcoded test lead. It is only a fallback now that VIO-operator-agent-v2\n// carries the real agent, but an open endpoint on a shared box is not worth keeping for that.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {};\nconst headers = item.headers || {};\nconst got = q.t || q.token || headers['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };"
+      },
+      "id": "vio-wf4-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -350,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "first_name",
+              "value": "Kiara",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "title",
+              "value": "Capture Manager",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "company",
+              "value": "Modernized Mobile LLC",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "vio-wf4-testlead",
+      "name": "Test Lead (edit me)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// validate_config — mirrors reach-engine/engine.py's validate_config() exactly.\n// The config is the contract: nothing downstream runs against a config that fails this.\n// Config embedded here matches config-oryoniq.json — keep both in sync if the campaign changes.\nconst cfg = {\n  product: 'OryonIQ',\n  one_liner: 'AI market intelligence for GovCon — surfaces federal pursuits before the RFP.',\n  icp: {\n    person_titles: ['Capture Manager', 'VP of Business Development', 'Director of Business Development', 'Proposal Manager'],\n    person_locations: ['United States'],\n    q_keywords: 'government contracting',\n  },\n  signal: 'The Pentagon suspended CMMC Phase II on July 13, 2026, and DoD committed $32B to AI, cloud, and cyber in H1 FY2026 — federal set-asides are opening fast.',\n  offer: \"OryonIQ flags the pursuits that fit your NAICS and SDB status before the RFP drops, so you're bidding while everyone else is still searching.\",\n  cta: 'https://www.oryoniq.com/contact',\n  sender: 'Ellen\\nOryonIQ, VisioneerIT',\n  personalization_prompt: 'Write ONE specific opening line (max 2 sentences) for a cold email to {first_name}, {title} at {company} — a US government contractor. Tie the current signal to their capture/BD reality. Do NOT invent specific facts about {company}; keep it about their role and the signal.',\n};\n\nconst REQUIRED_STR = ['product', 'one_liner', 'signal', 'offer', 'cta', 'sender', 'personalization_prompt'];\nconst errors = [];\nfor (const key of REQUIRED_STR) {\n  const v = cfg[key];\n  if (typeof v !== 'string' || !v.trim()) errors.push(`'${key}' must be a non-empty string`);\n  else if (v.includes('<') && v.includes('>')) errors.push(`'${key}' still has a template placeholder`);\n}\nif (!cfg.icp || typeof cfg.icp !== 'object') errors.push(\"'icp' must be an object\");\nelse {\n  if (!Array.isArray(cfg.icp.person_titles) || !cfg.icp.person_titles.length) errors.push(\"'icp.person_titles' must be a non-empty list\");\n  if (!Array.isArray(cfg.icp.person_locations) || !cfg.icp.person_locations.length) errors.push(\"'icp.person_locations' must be a non-empty list\");\n}\nfor (const token of ['{first_name}', '{company}']) {\n  if (!cfg.personalization_prompt.includes(token)) errors.push(`'personalization_prompt' must contain ${token}`);\n}\n\nconst lead = $input.first().json;\nreturn [{ json: { valid: errors.length === 0, errors, config_summary: `${cfg.product}: ${cfg.one_liner}`, signal: cfg.signal, offer: cfg.offer, cta: cfg.cta, sender: cfg.sender, first_name: lead.first_name, title: lead.title, company: lead.company } }];"
+      },
+      "id": "vio-wf4-validate",
+      "name": "validate_config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wf4-if-cond",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-wf4-if",
+      "name": "Config valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": "gpt-4.1-mini",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "=You write sharp B2B GovCon cold-email opening lines. One or two sentences, no fluff, no em-dashes, no 'leverage/unlock/streamline'. Never invent specific facts about the company. Ground it in the SIGNAL below.\n\nSIGNAL: {{ $json.signal }}"
+            },
+            {
+              "role": "user",
+              "content": "={{ 'Write ONE specific opening line (max 2 sentences) for a cold email to ' + $json.first_name + ', ' + $json.title + ' at ' + $json.company + ' — a US government contractor. Tie the signal to their capture/BD reality. Do NOT invent specific facts about the company.' }}"
+            }
+          ]
+        },
+        "simplifyOutput": false,
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "vio-wf4-personalize",
+      "name": "personalize",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        420,
+        -80
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "7t8KDC4EZpbIkOxP",
+          "name": "Openai Marketing"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Assembles the final email exactly like reach-engine/engine.py's assemble_email(), then\n// reports what ran — this is the deterministic precursor to the full autonomous agent\n// (see VIOwf4agent0001's history: the true @n8n/n8n-nodes-langchain.agent node hit an\n// unresolved 'model.includes is not a function' error connecting to the Chat Model sub-node;\n// this sequence proves the two underlying tools work correctly while that gets debugged\n// separately, ideally with UI access for clearer error context).\nconst cfg = $('validate_config').first().json;\nconst opener = $input.first().json.choices[0].message.content.trim().replace(/^\"|\"$/g, '');\nconst email = `Hi ${cfg.first_name},\\n\\n${opener}\\n\\n${cfg.offer}\\n\\nWant the three it's surfacing for a firm like yours? ${cfg.cta}\\n\\n${cfg.sender}`;\nreturn [{ json: { ran: ['validate_config', 'personalize'], config_valid: true, lead: `${cfg.first_name} · ${cfg.title} · ${cfg.company}`, opener, email } }];"
+      },
+      "id": "vio-wf4-assemble",
+      "name": "Assemble + Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const cfg = $input.first().json;\nreturn [{ json: { ran: ['validate_config'], config_valid: false, errors: cfg.errors, note: 'Config failed validation — nothing downstream ran, per the config-as-contract rule.' } }];"
+      },
+      "id": "vio-wf4-invalid",
+      "name": "Invalid Config (logged)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Lead (edit me)": {
+      "main": [
+        [
+          {
+            "node": "validate_config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "validate_config": {
+      "main": [
+        [
+          {
+            "node": "Config valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config valid?": {
+      "main": [
+        [
+          {
+            "node": "personalize",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid Config (logged)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "personalize": {
+      "main": [
+        [
+          {
+            "node": "Assemble + Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Test Lead (edit me)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

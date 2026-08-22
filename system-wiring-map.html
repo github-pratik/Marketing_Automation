@@ -1,0 +1,288 @@
+<title>Outbound Wiring Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --paper:#F4F6F7; --card:#FFFFFF; --ink:#15181B; --ink-2:#4A535B; --ink-3:#78838C;
+  --rule:#D8DDE1; --rule-soft:#E7EBEE;
+  --accent:#1F4E6B; --accent-soft:#E3EDF3;
+  --live:#35664A; --live-soft:#E2EDE6;
+  --gap:#A63A18; --gap-soft:#F7E7E1;
+  --shadow:0 1px 2px rgba(21,24,27,.05),0 6px 18px -10px rgba(21,24,27,.18);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#111417; --card:#171B1F; --ink:#E7EAEC; --ink-2:#A7B1B9; --ink-3:#7A858D;
+  --rule:#2A3137; --rule-soft:#222930;
+  --accent:#7FB0CD; --accent-soft:#1B2C38;
+  --live:#84B694; --live-soft:#1B2A21;
+  --gap:#E08862; --gap-soft:#33201A;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px -10px rgba(0,0,0,.6);
+}}
+:root[data-theme="dark"]{
+  --paper:#111417; --card:#171B1F; --ink:#E7EAEC; --ink-2:#A7B1B9; --ink-3:#7A858D;
+  --rule:#2A3137; --rule-soft:#222930;
+  --accent:#7FB0CD; --accent-soft:#1B2C38;
+  --live:#84B694; --live-soft:#1B2A21;
+  --gap:#E08862; --gap-soft:#33201A;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px -10px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,sans-serif;font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:54rem;margin:0 auto;padding:3.5rem 1.5rem 6rem;display:flex;flex-direction:column;gap:3rem}
+.mast{display:flex;flex-direction:column;gap:.85rem;border-bottom:2px solid var(--ink);padding-bottom:1.4rem}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:.7rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{font-family:Newsreader,Georgia,serif;font-weight:500;font-size:clamp(2.1rem,5.5vw,3rem);line-height:1.08;letter-spacing:-.015em;margin:0;text-wrap:balance}
+.standfirst{font-size:1.05rem;color:var(--ink-2);margin:0;max-width:40rem}
+section{display:flex;flex-direction:column;gap:1.2rem}
+h2{font-family:Newsreader,Georgia,serif;font-weight:500;font-size:1.7rem;line-height:1.2;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h3{font-size:.78rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0}
+p{margin:0;max-width:42rem}
+a{color:var(--accent);text-underline-offset:2px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+code{font-family:"IBM Plex Mono",monospace;font-size:.85em;background:var(--rule-soft);padding:.1em .35em;border-radius:2px}
+hr.div{border:0;border-top:1px solid var(--rule);margin:0}
+
+figure{margin:0;background:var(--card);border:1px solid var(--rule);border-radius:4px;
+  box-shadow:var(--shadow);padding:1.4rem 1.2rem 1rem;display:flex;flex-direction:column;gap:.9rem;overflow-x:auto}
+figure svg{display:block;width:100%;min-width:34rem;max-width:100%;height:auto;color:var(--ink)}
+figcaption{font-size:.86rem;color:var(--ink-3);border-top:1px solid var(--rule-soft);padding-top:.7rem;max-width:44rem}
+
+.verdict{background:var(--gap-soft);border-left:3px solid var(--gap);padding:.95rem 1.15rem;border-radius:0 3px 3px 0;font-size:.96rem;color:var(--ink-2)}
+.verdict b{color:var(--ink)}
+.verdict.ok{background:var(--live-soft);border-left-color:var(--live)}
+
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+.tscroll{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--card)}
+th{text-align:left;font-size:.68rem;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:600;padding:.7rem .85rem;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:.7rem .85rem;border-bottom:1px solid var(--rule-soft);vertical-align:top;color:var(--ink-2)}
+tr:last-child td{border-bottom:0}
+td.n{font-family:"IBM Plex Mono",monospace;font-size:.8rem;color:var(--ink);white-space:nowrap}
+.pill{font-family:"IBM Plex Mono",monospace;font-size:.64rem;letter-spacing:.06em;text-transform:uppercase;
+  padding:.16rem .42rem;border-radius:2px;white-space:nowrap;font-weight:500}
+.pill.live{background:var(--live-soft);color:var(--live)}
+.pill.none{background:var(--gap-soft);color:var(--gap)}
+
+ol,ul{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:.6rem;font-size:.96rem;color:var(--ink-2);max-width:42rem}
+li::marker{color:var(--ink-3)}
+li b{color:var(--ink)}
+footer{border-top:1px solid var(--rule);padding-top:1.2rem;font-size:.84rem;color:var(--ink-3)}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">System reference · 20 Aug 2026</div>
+  <h1>Outbound Wiring Map</h1>
+  <p class="standfirst">Where the Sendr link is lost on its way into the email, which workflow talks to which, and what each one actually writes to the Sheet.</p>
+</header>
+
+<section>
+  <h2>The Sendr link never reaches the sent email</h2>
+  <p>The engine already supports it — <code>assemble_email()</code> takes a <code>page_url</code> and swaps the generic CTA for the lead's own Sendr page. That's why Pratik's seed draft carries a real <code>sendrpage.com</code> link. But the thing that actually sends is Instantly, and the URL never gets that far.</p>
+
+  <figure>
+    <svg viewBox="0 0 860 250" role="img" aria-label="The Sendr page URL survives into the local email draft but is dropped by the Instantly lead payload, so the sent email falls back to a static contact link.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar-live" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#35664A"/>
+        </marker>
+        <marker id="ar-gap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#A63A18"/>
+        </marker>
+      </defs>
+
+      <rect x="14" y="98" width="150" height="54" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="89" y="120" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">lead record</text>
+      <text x="89" y="138" text-anchor="middle" font-size="10.5" font-family="monospace" fill="currentColor" opacity=".65">sendr_page_url ✓</text>
+
+      <path d="M 164 118 C 195 118 195 62 226 62" fill="none" stroke="#35664A" stroke-width="1.6" marker-end="url(#ar-live)"/>
+      <path d="M 164 132 C 195 132 195 188 226 188" fill="none" stroke="#A63A18" stroke-width="1.6" marker-end="url(#ar-gap)"/>
+
+      <rect x="230" y="36" width="190" height="52" rx="3" fill="none" stroke="#35664A" stroke-width="1.3"/>
+      <text x="325" y="57" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#35664A">assemble_email()</text>
+      <text x="325" y="74" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".7">accepts page_url</text>
+
+      <rect x="230" y="162" width="190" height="52" rx="3" fill="none" stroke="#A63A18" stroke-width="1.3"/>
+      <text x="325" y="183" text-anchor="middle" font-size="11.5" font-family="monospace" fill="#A63A18">build_lead_payload()</text>
+      <text x="325" y="200" text-anchor="middle" font-size="10.5" fill="currentColor" opacity=".7">6 fields, no page_url</text>
+
+      <path d="M 420 62 L 588 62" fill="none" stroke="#35664A" stroke-width="1.6" marker-end="url(#ar-live)"/>
+      <text x="504" y="52" text-anchor="middle" font-size="10" fill="currentColor" opacity=".7">writes</text>
+
+      <path d="M 420 188 L 588 188" fill="none" stroke="#A63A18" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar-gap)"/>
+      <text x="504" y="178" text-anchor="middle" font-size="10" fill="#A63A18">link dropped here</text>
+      <line x1="496" y1="180" x2="512" y2="196" stroke="#A63A18" stroke-width="1.6"/>
+      <line x1="512" y1="180" x2="496" y2="196" stroke="#A63A18" stroke-width="1.6"/>
+
+      <rect x="592" y="36" width="254" height="52" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="719" y="56" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">email_draft — local only</text>
+      <text x="719" y="73" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#35664A">…/u3avr09j21</text>
+
+      <rect x="592" y="162" width="254" height="52" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="719" y="182" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">what Instantly sends</text>
+      <text x="719" y="199" text-anchor="middle" font-size="10.5" font-family="monospace" fill="#A63A18">oryoniq.com/contact</text>
+
+      <text x="14" y="240" font-size="10.5" fill="currentColor" opacity=".6">Green = link present · Red = link lost</text>
+    </svg>
+    <figcaption>Two tracks leave the same lead record. The local <code>email_draft</code> keeps the personalized Sendr URL; the Instantly payload carries only six fields and the campaign template hardcodes a static contact link, so the sent email never shows the page.</figcaption>
+  </figure>
+
+  <p class="verdict"><b>What the prospect receives today is the static CTA.</b> The personalized page gets generated and stored, and then nothing links to it from the email.</p>
+
+  <h3>Three changes to close it</h3>
+  <ol>
+    <li><b>Generate the page before enrolling.</b> Run <code>push_to_sendr_page.py</code> on verified leads first, so <code>sendr_page_url</code> exists on the record before it reaches Instantly. Only on leads that passed verification — pages cost Sendr quota.</li>
+    <li><b>Carry the URL into Instantly as a per-lead custom variable</b>, alongside <code>personalization</code>. I'd confirm the exact payload key against the live API before writing it — the leads endpoint has already surprised us twice.</li>
+    <li><b>Point the campaign template's CTA at that variable</b> instead of the hardcoded link, <em>with a fallback.</em> A lead missing a page would otherwise render "…for Acme Corp:" followed by nothing — a broken sentence in the most important line of the email. Simplest safe rule: enroll only leads that already have a page URL.</li>
+  </ol>
+</section>
+
+<hr class="div">
+
+<section>
+  <h2>How the pieces actually connect</h2>
+  <p>The important thing to know before reading the map: <b>no n8n workflow calls another n8n workflow.</b> There are six independent workflows, each with its own trigger, plus a Python engine that runs from the command line. What connects them today is a person, or the engine — not n8n.</p>
+
+  <figure>
+    <svg viewBox="0 0 880 560" role="img" aria-label="Six workflows and the Python engine sit beside a four-tab Google Sheet; only VIO-intake-verify-curate reads and writes it, every other connection is missing.">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#35664A"/>
+        </marker>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#A63A18"/>
+        </marker>
+      </defs>
+
+      <text x="14" y="24" font-size="10.5" font-family="monospace" letter-spacing="1.4" fill="currentColor" opacity=".6">TRIGGER</text>
+      <text x="150" y="24" font-size="10.5" font-family="monospace" letter-spacing="1.4" fill="currentColor" opacity=".6">RUNS</text>
+      <text x="612" y="24" font-size="10.5" font-family="monospace" letter-spacing="1.4" fill="currentColor" opacity=".6">GOOGLE SHEET</text>
+
+      <rect x="600" y="34" width="266" height="500" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".45"/>
+
+      <rect x="618" y="52" width="230" height="58" rx="3" fill="none" stroke="#35664A" stroke-width="1.4"/>
+      <text x="733" y="76" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">Leads</text>
+      <text x="733" y="94" text-anchor="middle" font-size="10" fill="currentColor" opacity=".6">one row per lead, updated in place</text>
+
+      <rect x="618" y="176" width="230" height="58" rx="3" fill="none" stroke="#35664A" stroke-width="1.4"/>
+      <text x="733" y="200" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">Suppression</text>
+      <text x="733" y="218" text-anchor="middle" font-size="10" fill="currentColor" opacity=".6">append-only · never delete</text>
+
+      <rect x="618" y="300" width="230" height="58" rx="3" fill="none" stroke="#35664A" stroke-width="1.4"/>
+      <text x="733" y="324" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">Events</text>
+      <text x="733" y="342" text-anchor="middle" font-size="10" fill="currentColor" opacity=".6">one row per billable action</text>
+
+      <rect x="618" y="424" width="230" height="58" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+      <text x="733" y="448" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor" opacity=".75">Costs</text>
+      <text x="733" y="466" text-anchor="middle" font-size="10" fill="#A63A18">nothing writes this yet</text>
+
+      <g font-size="10" fill="currentColor" opacity=".62" font-family="monospace">
+        <text x="14" y="72">CLI</text>
+        <text x="14" y="150">manual click</text>
+        <text x="14" y="228">webhook</text>
+        <text x="14" y="306">Sendr hook</text>
+        <text x="14" y="384">Instantly hook</text>
+        <text x="14" y="462">webhook</text>
+      </g>
+
+      <rect x="146" y="46" width="300" height="50" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="160" y="68" font-size="12.5" font-weight="600" fill="currentColor">reach-engine (Python, local)</text>
+      <text x="160" y="85" font-size="10" fill="currentColor" opacity=".65">Apollo → Reoon → OpenAI → Instantly / Sendr</text>
+
+      <rect x="146" y="124" width="300" height="50" rx="3" fill="none" stroke="#35664A" stroke-width="1.6"/>
+      <text x="160" y="146" font-size="12.5" font-weight="600" font-family="monospace" fill="currentColor">VIO-intake-verify-curate</text>
+      <text x="160" y="163" font-size="10" fill="#35664A">dedupe + suppression gate → Reoon</text>
+
+      <rect x="146" y="202" width="300" height="50" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="160" y="224" font-size="12.5" font-weight="600" font-family="monospace" fill="currentColor">VIO-sendr-generate-page</text>
+      <text x="160" y="241" font-size="10" fill="currentColor" opacity=".65">lead + product → page URL</text>
+
+      <rect x="146" y="280" width="300" height="50" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="160" y="302" font-size="12.5" font-weight="600" font-family="monospace" fill="currentColor">VIO-sendr-events</text>
+      <text x="160" y="319" font-size="10" fill="currentColor" opacity=".65">page views / booked → Slack</text>
+
+      <rect x="146" y="358" width="300" height="50" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="160" y="380" font-size="12.5" font-weight="600" font-family="monospace" fill="currentColor">VIO-inbound-reply-to-call</text>
+      <text x="160" y="397" font-size="10" fill="currentColor" opacity=".65">reply → sentiment → Slack approve</text>
+
+      <rect x="146" y="436" width="300" height="50" rx="3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="160" y="458" font-size="12.5" font-weight="600" font-family="monospace" fill="currentColor">VIO-operator-agent-v2</text>
+      <text x="160" y="475" font-size="10" fill="currentColor" opacity=".65">1 tool wired: validate_config</text>
+
+      <path d="M 446 138 C 530 138 540 81 616 81" fill="none" stroke="#35664A" stroke-width="1.7" marker-end="url(#a2)"/>
+      <text x="530" y="104" font-size="9.5" fill="#35664A" font-family="monospace">read + append</text>
+      <path d="M 446 152 C 530 152 540 205 616 205" fill="none" stroke="#35664A" stroke-width="1.7" marker-end="url(#a2)"/>
+      <text x="536" y="168" font-size="9.5" fill="#35664A" font-family="monospace">read: gate</text>
+      <path d="M 446 166 C 520 166 540 329 616 329" fill="none" stroke="#35664A" stroke-width="1.7" marker-end="url(#a2)"/>
+      <text x="486" y="268" font-size="9.5" fill="#35664A" font-family="monospace">append</text>
+
+      <path d="M 446 71 C 520 71 545 81 616 81" fill="none" stroke="#A63A18" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a3)"/>
+      <text x="524" y="62" font-size="9.5" fill="#A63A18" font-family="monospace">opener, email_draft</text>
+
+      <path d="M 446 227 C 530 227 545 95 616 95" fill="none" stroke="#A63A18" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a3)"/>
+      <text x="470" y="200" font-size="9.5" fill="#A63A18" font-family="monospace">sendr_page_url</text>
+
+      <path d="M 446 305 C 540 305 556 100 616 100" fill="none" stroke="#A63A18" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a3)"/>
+      <text x="452" y="292" font-size="9.5" fill="#A63A18" font-family="monospace">channel_state, meeting_booked</text>
+
+      <path d="M 446 383 C 556 383 566 105 616 105" fill="none" stroke="#A63A18" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a3)"/>
+      <path d="M 446 397 C 520 397 545 219 616 219" fill="none" stroke="#A63A18" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a3)"/>
+      <text x="452" y="418" font-size="9.5" fill="#A63A18" font-family="monospace">reply_sentiment · opt-out row</text>
+
+      <path d="M 446 461 C 540 461 570 470 616 462" fill="none" stroke="#A63A18" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a3)"/>
+      <text x="452" y="500" font-size="9.5" fill="#A63A18" font-family="monospace">reads nothing — no Sheet tool</text>
+
+      <text x="14" y="536" font-size="10.5" fill="currentColor" opacity=".62">Solid green = wired and live · Dashed red = the connection the design calls for, not built</text>
+    </svg>
+    <figcaption>One workflow of six touches the Sheet. Every other arrow on this map is a field the schema expects someone to write and nobody currently does — which is why a lead's row goes quiet after verification.</figcaption>
+  </figure>
+
+  <p class="verdict"><b>The Sheet is designed as the data bus, but only the first stop is plugged into it.</b> A lead gets sourced, deduped, suppression-checked, verified and written. Then a page is generated, an email sent, a reply received — and the row never learns about any of it.</p>
+</section>
+
+<hr class="div">
+
+<section>
+  <h2>Workflow by workflow</h2>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>Workflow</th><th>Fires on</th><th>Does</th><th>Sheet</th></tr></thead>
+      <tbody>
+        <tr><td class="n">reach-engine</td><td>CLI, by hand</td><td>Apollo search → reveal → Reoon → OpenAI opener → assemble → push to Instantly / Sendr</td><td><span class="pill none">none</span></td></tr>
+        <tr><td class="n">VIO-intake-verify-curate</td><td>manual click</td><td>dedupe + suppression gate, then Reoon verify. Gates run before spend, so a duplicate costs nothing</td><td><span class="pill live">4 nodes</span></td></tr>
+        <tr><td class="n">VIO-sendr-generate-page</td><td>webhook</td><td>lead + product → personalized Sendr page URL. Fails closed on unknown product</td><td><span class="pill none">none</span></td></tr>
+        <tr><td class="n">VIO-sendr-events</td><td>Sendr webhook</td><td>page view / booked / failed → heat classification → Slack</td><td><span class="pill none">none</span></td></tr>
+        <tr><td class="n">VIO-inbound-reply-to-call</td><td>Instantly webhook</td><td>reply → OpenAI sentiment → dedup gate → Slack approve / decline</td><td><span class="pill none">none</span></td></tr>
+        <tr><td class="n">VIO-operator-agent-v2</td><td>webhook</td><td>LangChain agent. One tool wired so far: <code>validate_config</code></td><td><span class="pill none">none</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The operator agent is the piece meant to tie these together — it can call other workflows as tools, and that's how <code>generate-page</code> and the intake flow would end up on one thread instead of six. Only one tool is attached today, so it can validate a config and little else.</p>
+</section>
+
+<hr class="div">
+
+<section>
+  <h2>Order I'd build it in</h2>
+  <ol>
+    <li><b>Sendr URL into the email.</b> Highest value per hour — the personalized page is already being built and nothing points at it.</li>
+    <li><b>Reply workflow writes to <code>Suppression</code>.</b> This is the compliance one. An opt-out that only reaches Slack is an opt-out that will be contacted again on LinkedIn.</li>
+    <li><b>Page + event workflows write back to <code>Leads</code>.</b> Turns the Sheet into a dashboard you can actually read a lead's state from.</li>
+    <li><b>Costs metering.</b> Nothing writes it, so the pilot has no cost-per-meeting number.</li>
+    <li><b>Attach real tools to the operator agent</b> — the point at which six islands become one pipeline.</li>
+  </ol>
+  <p class="verdict ok"><b>One trap for whoever does the Sheet work:</b> the live column order does not match the schema doc — <code>lead_id</code> is column P, not A. The Sheets node matches on header text, so read the header row and match by name. Never address these tabs by A1 letters.</p>
+</section>
+
+<footer>
+  Verified 20 Aug 2026 against the workflow JSON in <code>n8n-workflows/</code>, <code>reach-engine/engine.py</code>, <code>push_to_instantly.py</code> and <code>SHEET_SCHEMA.md</code>. Node and connection lists read from the files, not from the docs — <code>CLAUDE.md</code> is stale on Sheet wiring and says no workflow writes.
+</footer>
+
+</div>

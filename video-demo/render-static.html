@@ -1,0 +1,273 @@
+<style>
+  :root{
+    --bg:#0a1120; --panel:#111d31; --panel2:#16243b; --ink:#eef2fb; --dim:#93a2bd; --line:#26374f;
+    --gold:#edb54e; --azure:#6aa5d8; --good:#57b78d; --bad:#d17b6c;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);overflow:hidden}
+  .stage{position:relative;width:100vw;height:100vh;overflow:hidden;
+    background:radial-gradient(50% 45% at 28% 16%, rgba(237,181,78,.09), transparent 60%),
+               radial-gradient(45% 40% at 88% 92%, rgba(106,165,216,.07), transparent 60%), var(--bg)}
+  .bar{position:absolute;top:0;left:0;height:3px;width:0;background:linear-gradient(90deg,var(--gold),#f5cd7a);z-index:60;box-shadow:0 0 14px rgba(237,181,78,.6)}
+  .hud{position:absolute;top:20px;left:34px;right:34px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);z-index:55}
+  .hud b{color:var(--gold);font-weight:600}
+  #cnt{color:var(--gold)}
+
+  /* scenes */
+  .frame{position:absolute;left:0;right:0;top:70px;bottom:120px;display:flex;flex-direction:column;justify-content:center;
+    padding:0 clamp(26px,6vw,110px);opacity:0;visibility:hidden;transition:opacity .4s ease}
+  .frame.active{opacity:1;visibility:visible}
+  .eyebrow{font-family:var(--mono);font-size:clamp(11px,1.3vw,14px);letter-spacing:.22em;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
+  h2{font-family:var(--serif);font-weight:600;font-size:clamp(28px,4.6vw,58px);line-height:1.04;letter-spacing:-.01em;max-width:22ch}
+  .cap{font-size:clamp(14px,1.7vw,20px);color:var(--dim);max-width:52ch;margin-top:14px;line-height:1.45}
+  .cap b{color:var(--ink);font-weight:600}
+
+  .up{opacity:0;transform:translateY(24px)}
+  .frame.active .up{animation:up .5s cubic-bezier(.2,.75,.2,1) forwards}
+  @keyframes up{to{opacity:1;transform:none}}
+  .pop{opacity:0;transform:scale(.9)}
+  .frame.active .pop{animation:pop .45s cubic-bezier(.2,.9,.3,1.2) forwards}
+  @keyframes pop{to{opacity:1;transform:none}}
+  .d1{animation-delay:.06s!important}.d2{animation-delay:.24s!important}.d3{animation-delay:.44s!important}
+  .d4{animation-delay:.66s!important}.d5{animation-delay:.9s!important}.d6{animation-delay:1.15s!important}.d7{animation-delay:1.4s!important}
+
+  .row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:22px}
+  .actor{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:14px;padding:11px 16px;background:var(--panel)}
+  .actor .ic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:14px}
+  .actor .nm{font-family:var(--mono);font-size:clamp(12px,1.4vw,15px)}
+  .human .ic{background:rgba(106,165,216,.18);color:var(--azure)}
+  .agent{border-color:var(--gold);box-shadow:0 0 0 1px rgba(237,181,78,.25),0 0 26px rgba(237,181,78,.12)}
+  .agent .ic{background:rgba(237,181,78,.18);color:var(--gold)}
+  .agent .nm{color:var(--gold)}
+
+  /* animated connector */
+  .conn{position:relative;width:54px;height:2px;background:var(--line);overflow:visible}
+  .conn::after{content:"";position:absolute;top:-2px;left:0;width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold)}
+  .frame.active .conn::after{animation:flow 1s linear infinite}
+  @keyframes flow{from{left:-2px;opacity:0}15%{opacity:1}85%{opacity:1}to{left:52px;opacity:0}}
+  .arrow{color:var(--gold);font-size:20px}
+
+  .bubble{max-width:56ch;border:1px solid var(--line);border-radius:14px;padding:13px 17px;font-size:clamp(14px,1.7vw,19px);line-height:1.42;background:var(--panel)}
+  .bubble.me{border-left:3px solid var(--azure)}
+  .bubble.ag{border-left:3px solid var(--gold)}
+  .bubble .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);display:block;margin-bottom:5px}
+  .stackb{display:flex;flex-direction:column;gap:12px;margin-top:20px}
+
+  .tools{display:flex;flex-wrap:wrap;gap:11px;margin-top:20px}
+  .tool{font-family:var(--mono);font-size:clamp(12px,1.4vw,15px);border:1px solid var(--line);border-radius:12px;padding:10px 15px;background:var(--panel);color:var(--dim)}
+  .tool .t{font-size:.72em;letter-spacing:.1em;text-transform:uppercase;display:block;color:var(--dim);margin-bottom:2px}
+  .tool b{color:var(--ink)}
+  .tool.hot{border-color:var(--gold);color:var(--ink);box-shadow:0 0 0 1px rgba(237,181,78,.3),0 0 22px rgba(237,181,78,.13)}
+  .tool.hot b{color:var(--gold)}
+  .tool.done{border-color:var(--good)} .tool.done .t::after{content:" ✓";color:var(--good)}
+  .big-num{font-variant-numeric:tabular-nums}
+
+  .gate{border:1px solid var(--gold);border-radius:14px;padding:15px 19px;margin-top:18px;background:rgba(237,181,78,.06);max-width:60ch}
+  .approve{display:inline-flex;align-items:center;gap:8px;margin-top:11px;font-family:var(--mono);font-size:15px;color:var(--good)}
+  .approve .box{width:20px;height:20px;border:2px solid var(--good);border-radius:6px;display:grid;place-items:center}
+
+  .branch{display:flex;flex-direction:column;gap:10px;margin-top:18px;max-width:62ch}
+  .lane{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:12px;padding:11px 15px;background:var(--panel)}
+  .lane.pos{border-left-color:var(--good)} .lane.neg{border-left-color:var(--bad)} .lane.neu{border-left-color:var(--azure)}
+  .lane .k{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;min-width:120px}
+  .lane.pos .k{color:var(--good)} .lane.neg .k{color:var(--bad)} .lane.neu .k{color:var(--azure)}
+  .lane .v{font-size:clamp(13px,1.6vw,17px)}
+
+  /* persistent system rail */
+  .rail{position:absolute;left:0;right:0;bottom:0;height:96px;display:flex;align-items:center;gap:10px;
+    padding:0 34px;border-top:1px solid var(--line);background:linear-gradient(180deg,transparent,rgba(0,0,0,.25));z-index:55;overflow-x:auto}
+  .rail .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-right:4px;white-space:nowrap}
+  .rc{font-family:var(--mono);font-size:12px;color:var(--dim);border:1px solid var(--line);border-radius:9px;padding:8px 12px;white-space:nowrap;transition:.25s;background:var(--panel)}
+  .rc .r{font-size:.7em;letter-spacing:.08em;text-transform:uppercase;display:block;color:#5d6b85;margin-bottom:1px}
+  .rc.on{border-color:var(--gold);color:var(--ink);box-shadow:0 0 20px rgba(237,181,78,.16);transform:translateY(-2px)}
+  .rc.on .r{color:var(--gold)}
+  .rc.hum.on{border-color:var(--azure);box-shadow:0 0 20px rgba(106,165,216,.16)} .rc.hum.on .r{color:var(--azure)}
+  .rsep{width:1px;height:34px;background:var(--line);margin:0 4px}
+
+  /* start / replay overlay */
+  .cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:rgba(10,17,32,.9);z-index:80}
+  .cover.hide{display:none}
+  .cover .k{font-family:var(--mono);font-size:13px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}
+  .cover h1{font-family:var(--serif);font-size:clamp(40px,7vw,86px);font-weight:600}
+  .cover h1 .iq{color:var(--gold)}
+  .cover p{color:var(--dim);font-size:16px}
+  .cover button{font-family:var(--sans);font-size:18px;font-weight:600;color:var(--bg);background:var(--gold);border:0;border-radius:999px;padding:15px 34px;cursor:pointer;margin-top:6px}
+  .cover button:hover{filter:brightness(1.08)}
+
+  @media (prefers-reduced-motion:reduce){
+    .frame .up,.frame .pop{animation:none!important;opacity:1;transform:none}
+    .conn::after{animation:none!important;opacity:0}
+  }
+body.static .up,body.static .pop{opacity:1!important;transform:none!important;animation:none!important}
+</style>
+
+<div class="stage">
+  <div class="bar" id="bar"></div>
+  <div class="hud"><span><b>OryonIQ</b> · agent-run outbound</span><span id="cnt">01 / 10</span></div>
+
+  <!-- 01 -->
+  <section class="frame" data-tools="hum,agent">
+    <p class="eyebrow up d1">01 · the ask</p>
+    <h2 class="up d2">It starts with a sentence</h2>
+    <div class="row">
+      <span class="actor human pop d3"><span class="ic">◕</span><span class="nm">Marketing</span></span>
+      <span class="conn up d3"></span>
+      <span class="actor agent pop d4"><span class="ic">✦</span><span class="nm">AI Agent</span></span>
+    </div>
+    <div class="bubble me up d5" style="margin-top:18px"><span class="lbl">Marketing</span>“Run a cold campaign for OryonIQ — GovCon capture leaders, on the CMMC signal.”</div>
+    <p class="cap up d6">No forms. No filters. Plain language, straight to the agent.</p>
+  </section>
+
+  <!-- 02 -->
+  <section class="frame" data-tools="hum,agent">
+    <p class="eyebrow up d1">02 · clarify</p>
+    <h2 class="up d2">It asks before it assumes</h2>
+    <div class="stackb">
+      <div class="bubble ag up d3"><span class="lbl">AI Agent</span>“Around 25 leads? Email-first, or add LinkedIn and a call on the hot replies?”</div>
+      <div class="bubble me up d5"><span class="lbl">Marketing</span>“25. Go multi-channel.”</div>
+    </div>
+    <p class="cap up d6">The human sets the shape — the agent fills in the how.</p>
+  </section>
+
+  <!-- 03 -->
+  <section class="frame" data-tools="agent,apollo,warmly,reoon,openai">
+    <p class="eyebrow up d1">03 · plan &amp; dispatch</p>
+    <h2 class="up d2">Sub-agents fan out to the tools</h2>
+    <div class="tools">
+      <span class="tool hot pop d3"><span class="t">source</span><b>Apollo</b></span>
+      <span class="tool hot pop d4"><span class="t">intent</span><b>Warmly</b></span>
+      <span class="tool hot pop d5"><span class="t">verify</span><b>Reoon</b></span>
+      <span class="tool hot pop d6"><span class="t">research</span><b>OpenAI</b></span>
+    </div>
+    <p class="cap up d7">One sub-agent per tool, running in parallel — the agent orchestrates, doesn't wait.</p>
+  </section>
+
+  <!-- 04 -->
+  <section class="frame" data-tools="apollo,warmly,reoon,openai">
+    <p class="eyebrow up d1">04 · data returns</p>
+    <h2 class="up d2">Sourced free. Verified. Personalized.</h2>
+    <div class="tools">
+      <span class="tool done pop d2"><span class="t">Apollo</span><b class="big-num">200 → 25</b> reachable · $0</span>
+      <span class="tool done pop d3"><span class="t">Warmly</span><b class="big-num">6</b> showing intent</span>
+      <span class="tool done pop d4"><span class="t">Reoon</span><b class="big-num">25</b> verified</span>
+      <span class="tool done pop d5"><span class="t">OpenAI</span><b class="big-num">25</b> personal openers</span>
+    </div>
+    <div class="bubble ag up d6" style="margin-top:18px;border-left-color:var(--gold)"><span class="lbl">sample opener · written live</span>“Kiara, with CMMC Phase II paused and $32B moving into AI and cyber, your capture team has a narrow window on these set-asides…”</div>
+    <p class="cap up d7">Free search, pre-filtered on free flags. Only survivors ever cost a credit.</p>
+  </section>
+
+  <!-- 05 -->
+  <section class="frame" data-tools="agent,hum">
+    <p class="eyebrow up d1">05 · human in the loop</p>
+    <h2 class="up d2">It narrates every step</h2>
+    <div class="bubble ag up d3" style="margin-top:18px"><span class="lbl">AI Agent → staff channel</span>“Sourced 200 free, kept 25, verified, personalized. Revealing 25 emails will cost ~25 Apollo credits. Building the sequence…”</div>
+    <div class="row up d5">
+      <span class="tool"><span class="t">status</span><b style="color:var(--good)">on track</b></span>
+      <span class="tool"><span class="t">spend so far</span><b>$0</b></span>
+      <span class="tool"><span class="t">next</span><b>assemble sequence</b></span>
+    </div>
+    <p class="cap up d6">No black box — the team sees what it's doing and what it will cost.</p>
+  </section>
+
+  <!-- 06 -->
+  <section class="frame" data-tools="agent,instantly,sendr,thoughtly">
+    <p class="eyebrow up d1">06 · finalize the reach</p>
+    <h2 class="up d2">A tool for every channel</h2>
+    <div class="tools">
+      <span class="tool hot pop d2"><span class="t">step 1 · email</span><b>Instantly</b></span>
+      <span class="tool hot pop d3"><span class="t">step 2 · linkedin + page</span><b>Sendr</b></span>
+      <span class="tool pop d4"><span class="t">on positive · voice</span><b>Thoughtly</b></span>
+    </div>
+    <p class="cap up d6">A 3-touch sequence: a signal email, a LinkedIn note plus a personalized page, and a warm call held in reserve.</p>
+  </section>
+
+  <!-- 07 -->
+  <section class="frame" data-tools="agent,hum">
+    <p class="eyebrow up d1">07 · the human gate</p>
+    <h2 class="up d2">Nothing sends without a “yes”</h2>
+    <div class="gate up d3">
+      <div style="font-size:clamp(14px,1.8vw,20px)"><b style="color:var(--gold)">AI Agent:</b> “Ready to reveal 25 emails (~25 credits) and queue the sequence in Instantly, paused. Approve?”</div>
+      <span class="approve up d5"><span class="box">✓</span> Marketing approved</span>
+    </div>
+    <p class="cap up d6">Costly or outbound → the agent proposes, the human decides. Every time.</p>
+  </section>
+
+  <!-- 08 -->
+  <section class="frame" data-tools="agent,instantly,sendr">
+    <p class="eyebrow up d1">08 · the reach fires</p>
+    <h2 class="up d2">Approved — it sends</h2>
+    <div class="row">
+      <span class="actor agent pop d2"><span class="ic">✦</span><span class="nm">AI Agent</span></span>
+      <span class="conn up d2"></span>
+      <span class="tool hot pop d3"><span class="t">email</span><b>Instantly</b></span>
+      <span class="tool hot pop d4"><span class="t">linkedin + page</span><b>Sendr</b></span>
+    </div>
+    <div class="row up d5">
+      <span class="tool"><span class="t">sent</span><b class="big-num">25</b> emails</span>
+      <span class="tool"><span class="t">+ </span><b class="big-num">25</b> LinkedIn + pages</span>
+      <span class="tool"><span class="t">from</span><b>warmed inboxes</b></span>
+    </div>
+    <p class="cap up d6">25 personalized touches, two channels, at once.</p>
+  </section>
+
+  <!-- 09 -->
+  <section class="frame" data-tools="instantly,agent,openai">
+    <p class="eyebrow up d1">09 · a reply, tracked</p>
+    <h2 class="up d2">Every reply is caught &amp; read</h2>
+    <div class="bubble me up d2"><span class="lbl">Prospect</span>“Interesting — tell me more.”</div>
+    <div class="row up d4" style="margin-top:14px">
+      <span class="tool hot"><span class="t">webhook</span><b>Instantly</b></span><span class="conn"></span>
+      <span class="actor agent"><span class="ic">✦</span><span class="nm">Agent</span></span><span class="conn"></span>
+      <span class="tool hot"><span class="t">sentiment</span><b style="color:var(--good)">POSITIVE</b></span>
+    </div>
+    <p class="cap up d6">The reply fires a webhook; OpenAI reads the intent — automatically.</p>
+  </section>
+
+  <!-- 10 -->
+  <section class="frame" data-tools="thoughtly,hum,agent">
+    <p class="eyebrow up d1">10 · route &amp; book</p>
+    <h2 class="up d2">Positive → a warm call books it</h2>
+    <div class="branch">
+      <div class="lane pos up d2"><span class="k">positive</span><span class="v"><b>Thoughtly</b> calls → books the meeting · human notified</span></div>
+      <div class="lane neu up d3"><span class="k">neutral / away</span><span class="v">held, retried later</span></div>
+      <div class="lane neg up d4"><span class="k">negative / opt-out</span><span class="v">suppressed — never contacted again</span></div>
+    </div>
+    <p class="cap up d6"><b>One agent. Seven tools. Humans on the levers.</b></p>
+  </section>
+
+  <!-- persistent system rail -->
+  <div class="rail" id="rail">
+    <span class="lbl">the system</span>
+    <span class="rc hum" data-k="hum"><span class="r">human</span>Marketing</span>
+    <span class="rc" data-k="agent"><span class="r">brain</span>AI Agent</span>
+    <span class="rsep"></span>
+    <span class="rc" data-k="apollo"><span class="r">source</span>Apollo</span>
+    <span class="rc" data-k="warmly"><span class="r">intent</span>Warmly</span>
+    <span class="rc" data-k="reoon"><span class="r">verify</span>Reoon</span>
+    <span class="rc" data-k="openai"><span class="r">brain</span>OpenAI</span>
+    <span class="rc" data-k="instantly"><span class="r">email</span>Instantly</span>
+    <span class="rc" data-k="sendr"><span class="r">linkedin</span>Sendr</span>
+    <span class="rc" data-k="thoughtly"><span class="r">voice</span>Thoughtly</span>
+  </div>
+
+
+</div>
+
+<script>
+(function(){
+  document.body.classList.add('static');
+  var frames=Array.prototype.slice.call(document.querySelectorAll('.frame'));
+  var rail=document.getElementById('rail'), cnt=document.getElementById('cnt'), bar=document.getElementById('bar');
+  var f=parseInt(new URLSearchParams(location.search).get('f')||'0',10);
+  frames.forEach(function(fr,j){fr.classList.toggle('active',j===f);});
+  var n=f+1, tot=frames.length;
+  cnt.textContent=(n<10?'0':'')+n+' / '+(tot<10?'0':'')+tot;
+  var t=(frames[f].getAttribute('data-tools')||'').split(',').filter(Boolean);
+  Array.prototype.forEach.call(rail.querySelectorAll('.rc'),function(c){c.classList.toggle('on',t.indexOf(c.getAttribute('data-k'))>=0);});
+  bar.style.width=((n/tot)*100)+'%';
+})();
+</script>

@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      /* Archivo is not in the renderer's auto-resolved font list, so it must be declared with a
+         real file or the rendered video silently falls back to a system sans. Latin subsets only,
+         pulled from Google Fonts and committed alongside the composition. */
+      @font-face {
+        font-family: "Archivo"; font-style: normal; font-weight: 100 900;
+        font-display: block; src: url("fonts/archivo-100_900.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Mono"; font-style: normal; font-weight: 300;
+        font-display: block; src: url("fonts/ibmplexmono-300.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400;
+        font-display: block; src: url("fonts/ibmplexmono-400.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500;
+        font-display: block; src: url("fonts/ibmplexmono-500.woff2") format("woff2");
+      }
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      /* Palette lifted verbatim from visioneerit-outbound-docs.html — the brand doc already
+         published for Gavriel. Not invented here, so the video and the doc read as one system. */
+      :root {
+        --navy-deep: #090b19;
+        --surface:   #101a33;
+        --panel:     #0c1630;
+        --line:      #243257;
+        --slate:     #41557a;
+        --muted:     #93a3c4;
+        --ink:       #eef1f6;
+        --accent:    #f26e18;
+      }
+
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: var(--navy-deep);
+      }
+      /* Archivo carries the institutional-grotesque register — federal cover sheet, not startup
+         deck. IBM Plex Mono is the data voice: it comes from enterprise/government design, so the
+         solicitation metadata reads as a real system readout rather than decoration.
+         Sans + mono crosses the classification boundary; weight contrast is 900 vs 300. */
+      body { font-family: "Archivo", sans-serif; color: var(--ink); }
+      .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+
+      .scene {
+        position: absolute; inset: 0;
+        width: 100%; height: 100%;
+        background: var(--navy-deep);
+        overflow: hidden;
+      }
+      .scene-content {
+        position: relative; z-index: 3;
+        display: flex; flex-direction: column;
+        width: 100%; height: 100%;
+        padding: 110px 140px;
+        box-sizing: border-box;
+      }
+
+      /* ---------- shared background layer ---------- */
+      .glow {
+        position: absolute; border-radius: 50%;
+        background: radial-gradient(circle, rgba(242,110,24,0.34) 0%, rgba(242,110,24,0) 70%);
+        z-index: 0; pointer-events: none;
+      }
+      .grid {
+        position: absolute; inset: 0; z-index: 0; opacity: 0.5;
+        background-image:
+          linear-gradient(to right, rgba(36,50,87,0.55) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(36,50,87,0.55) 1px, transparent 1px);
+        background-size: 160px 160px;
+      }
+      /* Registration brackets — the crop marks on a printed solicitation cover sheet. Pure CSS
+         borders, deliberately NOT text: decorative ghost type gets sampled by the WCAG pass and
+         has no opt-out, so a non-text decorative keeps the density without failing the gate. */
+      .mark {
+        position: absolute; z-index: 1; pointer-events: none;
+        border-style: solid; border-color: rgba(65,85,122,0.85);
+      }
+      .rule { height: 4px; background: var(--accent); transform-origin: left center; }
+      .hair { position: absolute; background: var(--line); z-index: 1; }
+
+      /* ---------- top status strip ---------- */
+      .strip {
+        display: flex; align-items: center; gap: 22px;
+        font-size: 22px; letter-spacing: 0.16em; text-transform: uppercase;
+        color: var(--muted);
+      }
+      .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+
+      /* ---------- type scale ---------- */
+      .kicker {
+        font-size: 24px; letter-spacing: 0.22em; text-transform: uppercase;
+        color: var(--accent); font-weight: 500;
+      }
+      h1 {
+        font-size: 104px; font-weight: 900; line-height: 1.02;
+        letter-spacing: -0.035em; max-width: 1340px;
+      }
+      h2 {
+        font-size: 78px; font-weight: 900; line-height: 1.06;
+        letter-spacing: -0.03em; max-width: 720px;
+      }
+      .lede {
+        font-size: 34px; font-weight: 300; line-height: 1.42;
+        color: var(--muted); max-width: 900px;
+      }
+
+      /* ---------- signal panel (scene 2) ---------- */
+      .split { display: flex; gap: 90px; flex: 1; align-items: center; }
+      .panel {
+        width: 780px; background: var(--panel);
+        border: 2px solid var(--line); border-radius: 6px;
+        padding: 44px 46px 48px;
+      }
+      .panel-label {
+        font-size: 20px; letter-spacing: 0.24em; text-transform: uppercase;
+        color: var(--muted); margin-bottom: 30px;
+      }
+      .sig { display: flex; gap: 26px; align-items: flex-start; padding: 22px 0; }
+      .sig + .sig { border-top: 2px solid var(--line); }
+      .chip {
+        flex: 0 0 auto; font-size: 19px; letter-spacing: 0.08em;
+        color: var(--navy-deep); background: var(--accent);
+        padding: 8px 14px; border-radius: 4px; font-weight: 500;
+      }
+      .sig-text { font-size: 27px; line-height: 1.38; color: var(--ink); font-weight: 300; }
+
+      /* ---------- pursuit rows (scene 3) ---------- */
+      .chips { display: flex; gap: 16px; margin-bottom: 46px; }
+      .pchip {
+        font-size: 22px; letter-spacing: 0.1em; color: var(--muted);
+        border: 2px solid var(--line); border-radius: 999px; padding: 12px 26px;
+      }
+      .pchip.on { color: var(--accent); border-color: var(--accent); }
+      .rows { display: flex; flex-direction: column; gap: 20px; width: 1500px; }
+      .row {
+        display: flex; align-items: center; gap: 34px;
+        background: var(--surface); border-left: 6px solid var(--accent);
+        border-radius: 4px; padding: 30px 38px;
+      }
+      .row-id { font-size: 25px; color: var(--accent); letter-spacing: 0.06em; }
+      .row-title { font-size: 30px; font-weight: 300; color: var(--ink); flex: 1; }
+      .row-due { font-size: 22px; color: var(--muted); letter-spacing: 0.08em; }
+
+      /* ---------- resolve (scene 4) ---------- */
+      .wordmark {
+        font-size: 148px; font-weight: 900; letter-spacing: -0.045em; line-height: 1;
+      }
+      .wordmark span { color: var(--accent); }
+      .foot {
+        display: flex; align-items: baseline; gap: 26px;
+        font-size: 24px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="15"
+         data-width="1920" data-height="1080">
+
+      <!-- ============ SCENE 1 · the problem ============ -->
+      <div id="s1" class="clip scene" data-start="0" data-duration="4.0" data-track-index="1"
+           style="z-index: 1">
+        <div class="grid" id="s1-grid"></div>
+        <div class="glow" data-layout-allow-overflow id="s1-glow" style="width: 1100px; height: 1100px; left: -320px; bottom: -420px"></div>
+        <div class="mark" data-layout-allow-overflow id="s1-mark" style="right: -140px; top: 60px; width: 640px; height: 640px;
+             border-width: 6px 0 0 6px; border-radius: 8px 0 0 0"></div>
+        <div class="mark" data-layout-allow-overflow id="s1-mark2" style="right: 60px; top: 420px; width: 300px; height: 300px;
+             border-width: 0 6px 6px 0; border-color: rgba(242,110,24,0.55)"></div>
+        <div class="hair" id="s1-hair" style="left: 140px; right: 140px; top: 250px; height: 2px"></div>
+
+        <div class="scene-content" style="justify-content: center; gap: 46px">
+          <div class="strip mono" id="s1-strip">
+            <span class="dot"></span><span>Federal &amp; SLED mandate tracker</span>
+            <span style="color: var(--muted)">/</span><span>zero-trust &amp; CMMC</span>
+          </div>
+          <div class="rule" id="s1-rule" style="width: 240px"></div>
+          <h1 id="s1-h1">The mandate already moved. The procurement cycle did not.</h1>
+          <div class="lede mono" id="s1-sub" style="font-size: 28px; letter-spacing: 0.02em">
+            Security deadlines do not wait for a fiscal-year contracting calendar.
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 2 · the signal ============ -->
+      <div id="s2" class="clip scene" data-start="3.6" data-duration="4.2" data-track-index="2"
+           style="z-index: 2; opacity: 0">
+        <div class="grid" id="s2-grid" style="opacity: 0.35"></div>
+        <div class="glow" data-layout-allow-overflow id="s2-glow" style="width: 980px; height: 980px; right: -300px; top: -340px"></div>
+        <div class="hair" id="s2-hair" style="left: 960px; top: 150px; bottom: 150px; width: 2px"></div>
+
+        <div class="scene-content" style="justify-content: center">
+          <div class="split">
+            <div class="panel" id="s2-panel">
+              <div class="panel-label mono">Signal layer · live</div>
+              <div class="sig" id="s2-sig1">
+                <span class="chip mono">13 JUL 26</span>
+                <span class="sig-text">CMMC Phase&nbsp;II suspended — requirements still land</span>
+              </div>
+              <div class="sig" id="s2-sig2">
+                <span class="chip mono">H1 FY26</span>
+                <span class="sig-text">$32B committed to AI, cloud and cyber</span>
+              </div>
+              <div class="sig" id="s2-sig3">
+                <span class="chip mono">FY27</span>
+                <span class="sig-text">Zero-trust milestones become enforceable</span>
+              </div>
+            </div>
+            <div>
+              <div class="kicker" id="s2-kicker">The window is now</div>
+              <h2 id="s2-h2" style="margin-top: 26px">Budgets are moving. The bottleneck is delivery, not intent.</h2>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 3 · matched to you ============ -->
+      <div id="s3" class="clip scene" data-start="7.4" data-duration="4.4" data-track-index="3"
+           style="z-index: 3; opacity: 0">
+        <div class="grid" id="s3-grid" style="opacity: 0.3"></div>
+        <div class="glow" data-layout-allow-overflow id="s3-glow" style="width: 1200px; height: 1200px; left: 50%; margin-left: -600px; bottom: -560px"></div>
+        <div class="mark" data-layout-allow-overflow id="s3-mark" style="left: -120px; bottom: -80px; width: 520px; height: 520px;
+             border-width: 6px 6px 0 0; border-radius: 0 8px 0 0"></div>
+
+        <div class="scene-content" style="justify-content: center">
+          <div class="kicker" id="s3-kicker" style="margin-bottom: 22px">Delivered in weeks, not cycles</div>
+          <div class="chips" id="s3-chips">
+            <span class="pchip mono">TIC 3.0</span>
+            <span class="pchip mono">ICAM</span>
+            <span class="pchip mono on">CMMC L2</span>
+            <span class="pchip mono">FedRAMP</span>
+          </div>
+          <div class="rows">
+            <div class="row" id="s3-r1">
+              <span class="row-id mono">ZERO-TRUST</span>
+              <span class="row-title">Architecture, segmentation and policy enforcement stood up</span>
+              <span class="row-due mono">6–10 weeks</span>
+            </div>
+            <div class="row" id="s3-r2">
+              <span class="row-id mono">CMMC READY</span>
+              <span class="row-title">Gap assessment through evidence package, audit-ready</span>
+              <span class="row-due mono">8–12 weeks</span>
+            </div>
+            <div class="row" id="s3-r3">
+              <span class="row-id mono">AI-AUG SOC</span>
+              <span class="row-title">Detection engineering and triage automation, analyst-led</span>
+              <span class="row-due mono">4–8 weeks</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 4 · resolve ============ -->
+      <div id="s4" class="clip scene" data-start="11.4" data-duration="3.6" data-track-index="4"
+           style="z-index: 4; opacity: 0">
+        <div class="glow" data-layout-allow-overflow id="s4-glow" style="width: 1500px; height: 1500px; left: 50%; margin-left: -750px; top: 50%; margin-top: -750px"></div>
+        <div class="hair" id="s4-hair" style="left: 140px; right: 140px; bottom: 210px; height: 2px"></div>
+
+        <div class="scene-content" style="justify-content: center; gap: 34px">
+          <div class="wordmark" id="s4-mark">Visioneer<span>IT</span></div>
+          <div class="rule" id="s4-rule" style="width: 420px"></div>
+          <div class="lede" id="s4-line" style="font-size: 42px; color: var(--ink); font-weight: 300">
+            Compliant on a real timeline, not a fiscal-year one.
+          </div>
+          <div class="foot mono" id="s4-foot" style="margin-top: 26px">
+            <span>visioneerit.com</span>
+            <span style="color: var(--muted)">·</span>
+            <span>one engine, every product</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      /* ---------------- SCENE 1 · 0 → 4.0 ·  "late by default" ----------------
+         Rhythm: STAMP. The headline is the whole beat, so everything else defers to it. */
+      tl.fromTo("#s1-strip", { opacity: 0, x: -60 },
+        { opacity: 1, x: 0, duration: 0.55, ease: "power3.out" }, 0.2);
+      tl.fromTo("#s1-rule", { scaleX: 0 },
+        { scaleX: 1, duration: 0.7, ease: "expo.out" }, 0.42);
+      // STAMP: a short, hard-decelerating rise. letterSpacing is deliberately NOT animated —
+      // it reflows text and snaps glyph positions under the frame-seek capture engine.
+      tl.fromTo("#s1-h1", { opacity: 0, y: 54 },
+        { opacity: 1, y: 0, duration: 0.62, ease: "power4.out" }, 0.55);
+      tl.fromTo("#s1-sub", { opacity: 0, y: 26 },
+        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 0.95);
+      tl.fromTo("#s1-hair", { scaleX: 0, transformOrigin: "left center" },
+        { scaleX: 1, duration: 1.1, ease: "power2.inOut" }, 0.3);
+      // ambient — the ghost word drifts, the glow breathes. Both on tl so they scrub.
+      tl.to("#s1-mark", { x: -46, duration: 3.8, ease: "none" }, 0.2);
+      tl.to("#s1-mark2", { y: 30, duration: 3.8, ease: "none" }, 0.2);
+      tl.to("#s1-glow", { scale: 1.14, opacity: 0.75, duration: 1.9, yoyo: true, repeat: 1, ease: "sine.inOut" }, 0.2);
+
+      /* ---------------- SCENE 2 · 3.6 → 7.8 · "the signal" ----------------
+         Rhythm: CASCADE. Split frame — data left, claim right. Slower than scene 1 on purpose. */
+      tl.fromTo("#s2-hair", { scaleY: 0, transformOrigin: "top center" },
+        { scaleY: 1, duration: 0.8, ease: "power3.out" }, 3.85);
+      tl.fromTo("#s2-panel", { opacity: 0, x: -48 },
+        { opacity: 1, x: 0, duration: 0.6, ease: "power3.out" }, 3.9);
+      ["#s2-sig1", "#s2-sig2", "#s2-sig3"].forEach(function (sel, i) {
+        tl.fromTo(sel, { opacity: 0, x: -34 },
+          { opacity: 1, x: 0, duration: 0.44, ease: "power2.out" }, 4.15 + i * 0.13);
+      });
+      tl.fromTo("#s2-kicker", { opacity: 0, x: -30 },
+        { opacity: 1, x: 0, duration: 0.6, ease: "power2.out" }, 4.3);
+      tl.fromTo("#s2-h2", { opacity: 0, x: 66 },
+        { opacity: 1, x: 0, duration: 0.72, ease: "expo.out" }, 4.45);
+      tl.to("#s2-glow", { scale: 1.1, duration: 2.1, yoyo: true, repeat: 1, ease: "sine.inOut" }, 3.8);
+
+      /* ---------------- SCENE 3 · 7.4 → 11.8 · "matched to you" ----------------
+         Rhythm: POP then CASCADE. This is the peak — most elements, fastest stagger. */
+      tl.fromTo("#s3-kicker", { opacity: 0, y: -22 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" }, 7.6);
+      tl.fromTo("#s3-chips > *", { opacity: 0, scale: 0.82 },
+        { opacity: 1, scale: 1, duration: 0.38, ease: "back.out(2)", stagger: 0.075 }, 7.72);
+      ["#s3-r1", "#s3-r2", "#s3-r3"].forEach(function (sel, i) {
+        tl.fromTo(sel, { opacity: 0, y: 44 },
+          { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 8.1 + i * 0.14);
+      });
+      tl.to("#s3-mark", { y: -40, duration: 4.2, ease: "none" }, 7.5);
+      tl.to("#s3-glow", { scale: 1.16, duration: 2.1, yoyo: true, repeat: 1, ease: "sine.inOut" }, 7.5);
+
+      /* ---------------- SCENE 4 · 11.4 → 15.0 · resolve ----------------
+         Rhythm: HOLD. Stillness after motion. Slowest tweens in the piece. */
+      // The wordmark settles rather than arrives — a slow scale-down into place reads as weight
+      // without touching letterSpacing.
+      tl.fromTo("#s4-mark", { opacity: 0, scale: 1.06 },
+        { opacity: 1, scale: 1, duration: 0.95, ease: "power2.out" }, 11.6);
+      tl.fromTo("#s4-rule", { scaleX: 0 },
+        { scaleX: 1, duration: 0.8, ease: "expo.out" }, 12.0);
+      tl.fromTo("#s4-line", { opacity: 0, y: 30 },
+        { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 12.15);
+      tl.fromTo("#s4-foot", { opacity: 0 },
+        { opacity: 1, duration: 0.6, ease: "sine.out" }, 12.5);
+      tl.fromTo("#s4-hair", { scaleX: 0, transformOrigin: "right center" },
+        { scaleX: 1, duration: 1.0, ease: "power2.inOut" }, 11.8);
+      tl.to("#s4-glow", { scale: 1.08, duration: 1.4, yoyo: true, repeat: 1, ease: "sine.inOut" }, 11.5);
+      // Final scene only — the one place an exit is allowed. Fade the whole frame out.
+      tl.to("#s4 .scene-content", { opacity: 0, duration: 0.45, ease: "power2.in" }, 14.5);
+      tl.to("#s4-glow", { opacity: 0, duration: 0.45, ease: "power2.in" }, 14.5);
+
+      /* ---------------- TRANSITIONS ----------------
+         Velocity-matched push slides on the SCENE CONTAINERS, never on content elements — the
+         transition is the exit, so no element gets an exit tween (final scene excepted above).
+         Medium-energy corporate: 0.4s, power3, 12px blur. Scene 3 gets a vertical push instead of
+         horizontal, so the peak beat arrives differently from the connective ones. */
+      function pushH(outSel, inSel, at) {
+        tl.to(outSel, { xPercent: -10, opacity: 0, filter: "blur(12px)", duration: 0.4, ease: "power3.in" }, at);
+        tl.set(outSel, { opacity: 0 }, at + 0.4);
+        tl.fromTo(inSel, { xPercent: 10, opacity: 0, filter: "blur(12px)" },
+          { xPercent: 0, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, at);
+      }
+      function pushV(outSel, inSel, at) {
+        tl.to(outSel, { yPercent: -8, opacity: 0, filter: "blur(14px)", duration: 0.4, ease: "power3.in" }, at);
+        tl.set(outSel, { opacity: 0 }, at + 0.4);
+        tl.fromTo(inSel, { yPercent: 8, opacity: 0, filter: "blur(14px)" },
+          { yPercent: 0, opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power3.out" }, at);
+      }
+      pushH("#s1", "#s2", 3.6);
+      pushV("#s2", "#s3", 7.4);   // topic change — different axis on purpose
+      pushH("#s3", "#s4", 11.4);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

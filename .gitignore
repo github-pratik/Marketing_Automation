@@ -1,0 +1,126 @@
+# ==========================================================================
+# VisioneerIT Outbound Engine — .gitignore
+#
+# This repo is a LOCAL backup only. It contains live campaign copy, n8n
+# workflow definitions and real prospect data. Do not add a remote or push
+# it anywhere without the owner's explicit decision.
+# ==========================================================================
+
+# --- SECRETS (never commit) ------------------------------------------------
+# Per CLAUDE.md, secrets live in exactly two places: the n8n credential store
+# and .secrets.env files on disk. Subfolders keep their own copies.
+.secrets.env
+*.secrets.env
+**/.secrets.env
+.env
+.env.*
+!.env.example
+
+# Anything whose name contains "secret", belt-and-braces. This is what keeps
+#   git ls-files | grep -i secret
+# empty as a zero-judgment tripwire.
+*secret*
+*Secret*
+*SECRET*
+# reach-engine/.secrets.env.example is EXCLUDED too. It was inspected and
+# contains only placeholders (<your-key-here> style, no real material), so it
+# is safe in principle — but it is excluded on purpose so that
+#   git ls-files | grep -i secret
+# stays a zero-judgment tripwire that returns nothing. If you want the
+# onboarding template tracked, delete these two lines and re-add it:
+#   !**/.secrets.env.example
+
+# Service-account / private key material
+*service-account*.json
+*service_account*.json
+*serviceaccount*.json
+*-credentials.json
+*credentials*.json
+gcp-*.json
+client_secret*.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ed25519*
+*.ppk
+
+# --- Dependencies ----------------------------------------------------------
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+bower_components/
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+htmlcov/
+
+# --- OS / editor junk ------------------------------------------------------
+.DS_Store
+**/.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# --- Local tool caches / state --------------------------------------------
+.gstack/
+.cache/
+**/.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.turbo/
+
+# --- Logs & scratch --------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-error.log*
+tmp/
+temp/
+scratch/
+
+# --- Large binary media (regenerable; keep git usable) ---------------------
+# Rendered hero videos regenerate from sendr-hero-video/<product>/index.html
+# via HyperFrames. Narration mp3s regenerate from video-demo/gen-tts.sh.
+# The originals stay on disk — they are simply not tracked.
+*.mp4
+*.mov
+*.webm
+*.avi
+*.mkv
+*.wav
+*.aiff
+*.mp3
+*.m4a
+sendr-hero-video/*/renders/
+
+# Per-lead scroll GIFs generated at runtime by reach-engine/make_scroll_gif.py
+reach-engine/gifs/
+
+# Small branded deliverables ARE kept (email GIFs ~450KB, posters ~32KB,
+# webfonts) — they are hand-built assets referenced by the docs:
+!sendr-hero-video/deliverables/*.gif
+!sendr-hero-video/deliverables/*.jpg

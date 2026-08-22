@@ -1,0 +1,277 @@
+{
+  "id": "VIOwf6sendrgen01",
+  "name": "VIO-sendr-generate-page",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-sendr-generate-page",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "vio-wf6-webhook",
+      "name": "Generate Page Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ],
+      "webhookId": "vio-wf6-sendr-generate",
+      "notes": "responseMode is lastNode, not onReceived: the caller needs the pageUrl back synchronously so it can be dropped into the Instantly {{personalization}} merge tag before the email is queued. Expects {product, first_name, company, company_domain, contact_email, apollo_id}."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Fail-closed auth: reject unless ?t= matches VIO_WEBHOOK_TOKEN. No env set = reject everything.\n// Same rule as every other VIO inbound webhook. This one spends real Sendr quota and publishes a\n// public page URL, so an open endpoint here is a resource-abuse hole, not just a data leak.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {};\nconst headers = item.headers || {};\nconst got = q.t || q.token || headers['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };"
+      },
+      "id": "vio-wf6-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// product -> Sendr page template + LinkedIn campaign, plus the campaign copy the page templates\n// declare as variables (signal / offer / cta).\n//\n// GENERATED from reach-engine/config-<product>.json by n8n-workflows/sync-routes.py.\n// Do not hand-edit: change the config, then run `python3 sync-routes.py --fix` and re-import.\n// Without this, the page silently falls back to whatever placeholder was typed into Sendr and the\n// page and the email argue different cases for the same prospect (seen live 2026-08-16).\n//\n// Fail closed on an unknown product: generating the WRONG product's page for a lead is worse than\n// generating none, because it looks deliberate and it is the thing they will actually read.\nconst ROUTES = {\n  oryoniq: {\n    product: \"OryonIQ\",\n    template_id: 8462,\n    template_name: \"OryonIQ - GovCon Capture Page\",\n    campaign_id: 10748,\n    gif_source: \"dynamic-website\",\n    gif_hyperlink_text: \"See the 3 pursuits OryonIQ is tracking for your NAICS codes\",\n    one_liner: \"AI market intelligence for GovCon \\u2014 surfaces federal pursuits before the RFP.\",\n    signal: \"The Pentagon suspended CMMC Phase II on July 13, 2026, and DoD committed $32B to AI, cloud, and cyber in H1 FY2026 \\u2014 federal set-asides are opening fast.\",\n    offer: \"OryonIQ flags the pursuits that fit your NAICS and SDB status before the RFP drops, so you're bidding while everyone else is still searching.\",\n    cta: \"https://www.oryoniq.com/contact\",\n    booking_url: \"\",\n  },\n  visioneerit: {\n    product: \"VisioneerIT\",\n    template_id: 8464,\n    template_name: \"VisioneerIT - Zero-Trust Readiness Page\",\n    campaign_id: 10751,\n    gif_source: \"dynamic-website\",\n    gif_hyperlink_text: \"See your agency's zero-trust readiness gaps\",\n    one_liner: \"AI automation, cybersecurity, and digital modernization for federal & SLED agencies.\",\n    signal: \"The Pentagon suspended CMMC Phase II on July 13, 2026, and agencies are under new zero-trust and AI-procurement mandates \\u2014 security and modernization budgets are moving now.\",\n    offer: \"VisioneerIT stands up zero-trust, CMMC readiness, and AI-augmented security operations without a year-long procurement cycle.\",\n    cta: \"https://www.visioneerit.com/contact\",\n    booking_url: \"\",\n  },\n};\n\nconst lead = $input.item.json;\nconst key = String(lead.product || '').toLowerCase().replace(/[^a-z]/g, '');\nconst route = ROUTES[key];\n\nif (!route) {\n  return { json: {\n    ok: false,\n    error: `unknown product \"${lead.product}\" — expected one of: ${Object.keys(ROUTES).join(', ')}`,\n    lead,\n  } };\n}\nif (!lead.first_name || !lead.company) {\n  return { json: {\n    ok: false,\n    error: 'lead needs at least first_name and company — a page with blank merge tags is worse than no page',\n    lead,\n  } };\n}\nreturn { json: { ok: true, ...route, lead } };"
+      },
+      "id": "vio-wf6-route",
+      "name": "Route Product to Template",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wf6-if-cond",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-wf6-if",
+      "name": "Routable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.sendr.io/api/v1/page-template/{{ $json.template_id }}/variables",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "vio-wf6-vars",
+      "name": "Get Template Variables",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        -80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "VIOsendrcred001",
+          "name": "VIO Sendr"
+        }
+      },
+      "notes": "Read live rather than hardcoded, so rewriting the template's copy in the Sendr UI never breaks this workflow. Returns an array, so n8n emits one item per declared variable — the next node folds them back together.",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Assemble the exact POST body. Mirrors reach-engine/push_to_sendr_page.py's build_body() —\n// same field names, same fallbacks, same degradation rule. Keep the two in sync.\nconst route = $('Route Product to Template').first().json;\nconst lead = route.lead;\nconst templateVars = $input.all().map(i => i.json).filter(v => v && v.tag);\n\n// Map our lead fields onto whatever tags the template actually declares.\nconst pool = {\n  // Per-lead\n  first_name: lead.first_name, firstname: lead.first_name,\n  company: lead.company, company_name: lead.company,\n  title: lead.title, job_title: lead.title,\n  company_domain: lead.company_domain,\n  opener: lead.opener, personalization: lead.opener,\n  // Campaign-level, from the route above. Mirrors push_to_sendr_page.py's pool so the Python and\n  // n8n legs fill identical values — anything missing here silently degrades to the placeholder\n  // typed into the Sendr template, which is how the two legs drift apart.\n  product: route.product, one_liner: route.one_liner,\n  signal: route.signal, offer: route.offer, cta: route.cta,\n  // Distinct from cta: Sendr's calendar element iframes this. An ordinary page that\n  // sets X-Frame-Options renders as a grey broken box (both templates, 2026-08-16).\n  booking_url: route.booking_url,\n};\nconst variablesValues = {};\nfor (const v of templateVars) {\n  variablesValues[v.tag] = pool[v.tag] || v.fallback || v.exampleValue || '';\n}\n\n// The lead's own site, for the dynamic-website GIF and the video background.\nlet domain = String(lead.company_domain || '').trim();\nif (!domain) {\n  const email = String(lead.contact_email || '');\n  domain = email.includes('@') ? email.split('@')[1] : '';\n}\ndomain = domain.replace(/^https?:\\/\\//, '').replace(/\\/+$/, '').split('/')[0];\nconst site = (domain && domain.includes('.')) ? `https://${domain}` : null;\n\n// gifSource is sent EXPLICITLY, never inherited from the template. A template whose GIF element is\n// set to dynamic-website or linkedin-profile makes the API reject the whole request with\n// \"gifWebsiteUrl is required when gifSource is dynamic-website or linkedin-profile\" unless a URL\n// comes with it (hit live 2026-08-10). Deciding here means a lead with no known domain degrades to\n// landing-page — which needs no external URL — instead of failing outright.\nconst NEEDS_URL = ['dynamic-website', 'linkedin-profile'];\nconst want = route.gif_source || 'landing-page';\nconst gifSource = (!NEEDS_URL.includes(want) || site) ? want : 'landing-page';\n\nconst body = {\n  templateId: route.template_id,\n  variablesValues,\n  gifSource,\n  // Echoed back on every engagement webhook — this is the ONLY thing that lets VIO-sendr-events\n  // turn an anonymous \"page 123 was viewed\" into \"Pratik at VisioneerIT opened his page\".\n  // camelCase deliberately: Sendr camelCases these on the way back (verified live), so sending\n  // camelCase keeps sent == received.\n  attributes: {\n    product: route.product,\n    leadEmail: lead.contact_email || '',\n    leadName: lead.first_name || '',\n    company: lead.company || '',\n    apolloId: String(lead.apollo_id || ''),\n    sendrCampaignId: String(route.campaign_id || ''),\n    source: 'n8n:VIO-sendr-generate-page',\n  },\n};\nif (NEEDS_URL.includes(gifSource)) body.gifWebsiteUrl = site;\nif (route.gif_hyperlink_text) body.gifHyperlinkText = route.gif_hyperlink_text;\nif (site) { body.videoBackgroundUrl = site; body.videoBackgroundType = 'scroll'; }\n\nreturn [{ json: { body, degraded: gifSource !== want, site, route_product: route.product,\n                  template_id: route.template_id, template_name: route.template_name } }];"
+      },
+      "id": "vio-wf6-build",
+      "name": "Build Page Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.sendr.io/api/v1/enrichment/sendr-page",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "vio-wf6-generate",
+      "name": "Generate Sendr Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        -80
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "VIOsendrcred001",
+          "name": "VIO Sendr"
+        }
+      },
+      "notes": "Generates a page. It cannot send anything and cannot enrol anyone into a sequence — Sendr has no add-lead-to-campaign endpoint, so campaign enrolment stays a human action in the Sendr UI. The page renders async; page:done arrives on VIO-sendr-events.",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// What the caller gets back. pageUrl is the payload — it goes into Instantly's\n// {{personalization}} merge tag, or into the Sendr LinkedIn message, before anything is queued.\nconst built = $('Build Page Request').first().json;\nconst res = $input.first().json;\nreturn [{ json: {\n  ok: true,\n  pageUrl: res.pageUrl || null,\n  pageId: res.pageId || null,\n  previewUrl: res.pagePreviewUrl || null,\n  product: built.route_product,\n  template: `${built.template_id} · ${built.template_name}`,\n  variablesUsed: res.variablesUsed || null,\n  gif_degraded_to_landing_page: built.degraded,\n  lead_site_used: built.site,\n  warnings: res.warnings || [],\n  note: 'Page generated only. Nothing sent, nobody enrolled. Assets render async — watch VIO-sendr-events for page:done.',\n} }];"
+      },
+      "id": "vio-wf6-report",
+      "name": "Report Page URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Unroutable input never reaches Sendr. Returned to the caller so the failure is visible where\n// it was triggered, rather than being swallowed as a silent no-op.\nconst j = $input.item.json;\nreturn { json: { ok: false, error: j.error, lead: j.lead,\n                 note: 'Nothing was generated and no Sendr quota was spent.' } };"
+      },
+      "id": "vio-wf6-reject",
+      "name": "Unroutable (logged)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Generate Page Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Route Product to Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Product to Template": {
+      "main": [
+        [
+          {
+            "node": "Routable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Routable?": {
+      "main": [
+        [
+          {
+            "node": "Get Template Variables",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unroutable (logged)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Template Variables": {
+      "main": [
+        [
+          {
+            "node": "Build Page Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Page Request": {
+      "main": [
+        [
+          {
+            "node": "Generate Sendr Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Sendr Page": {
+      "main": [
+        [
+          {
+            "node": "Report Page URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

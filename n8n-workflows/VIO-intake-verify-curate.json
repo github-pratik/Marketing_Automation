@@ -1,0 +1,945 @@
+{
+  "id": "VIOwf1intake0001",
+  "name": "VIO-intake-verify-curate",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "vio-wf1-trigger",
+      "name": "When clicking Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -780,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "email",
+              "value": "p.pshpatil@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "f2",
+              "name": "first_name",
+              "value": "Pratik",
+              "type": "string"
+            },
+            {
+              "id": "f3",
+              "name": "last_name",
+              "value": "Patil",
+              "type": "string"
+            },
+            {
+              "id": "f4",
+              "name": "title",
+              "value": "Founder",
+              "type": "string"
+            },
+            {
+              "id": "f5",
+              "name": "company",
+              "value": "VisioneerIT",
+              "type": "string"
+            },
+            {
+              "id": "f6",
+              "name": "company_domain",
+              "value": "visioneerit.com",
+              "type": "string"
+            },
+            {
+              "id": "f7",
+              "name": "phone",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "f8",
+              "name": "linkedin_url",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "f9",
+              "name": "apollo_id",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "f10",
+              "name": "source_config",
+              "value": "manual-test",
+              "type": "string"
+            },
+            {
+              "id": "f11",
+              "name": "signal",
+              "value": "smoke test of the intake gate",
+              "type": "string"
+            },
+            {
+              "id": "f12",
+              "name": "timezone",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "vio-wf1-testlead",
+      "name": "Test Lead (edit me)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// WF-1 Normalize Lead \u2014 decide this lead's identity once, before anything is spent on it.\n//\n// lead_id rule (fixed \u2014 every later workflow recomputes it to find this row again):\n//   the Apollo person id when the lead has one, otherwise the first 16 hex chars of\n//   sha256(lowercased, trimmed email). Deterministic, collision-free at pilot scale, and it needs\n//   no lookup against the Sheet.\n\n// ---- sha256, inline ----------------------------------------------------------------------\n// Implemented here rather than via require('crypto') because n8n's Code sandbox only exposes\n// node builtins when NODE_FUNCTION_ALLOW_BUILTIN is set on the host. lead_id is the key every\n// later workflow updates this row against, so it must not depend on a host env flag.\nfunction sha256hex(msg) {\n  const K = [\n    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,\n    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,\n    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,\n    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,\n    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,\n    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,\n    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,\n    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];\n  let H = [0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];\n  const rr = (v, n) => ((v >>> n) | (v << (32 - n))) >>> 0;\n  const bytes = [];\n  for (let i = 0; i < msg.length; i++) {\n    let c = msg.charCodeAt(i);\n    if (c < 0x80) bytes.push(c);\n    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63));\n    else if (c < 0xd800 || c >= 0xe000) bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));\n    else {\n      i++;\n      const cp = 0x10000 + (((c & 0x3ff) << 10) | (msg.charCodeAt(i) & 0x3ff));\n      bytes.push(0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63));\n    }\n  }\n  const bitLen = bytes.length * 8;\n  bytes.push(0x80);\n  while (bytes.length % 64 !== 56) bytes.push(0);\n  const hi = Math.floor(bitLen / 0x100000000), lo = bitLen >>> 0;\n  bytes.push((hi >>> 24) & 255, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255,\n             (lo >>> 24) & 255, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255);\n  const w = new Array(64);\n  for (let off = 0; off < bytes.length; off += 64) {\n    for (let i = 0; i < 16; i++) {\n      w[i] = ((bytes[off + i * 4] << 24) | (bytes[off + i * 4 + 1] << 16) |\n              (bytes[off + i * 4 + 2] << 8) | bytes[off + i * 4 + 3]) >>> 0;\n    }\n    for (let i = 16; i < 64; i++) {\n      const s0 = (rr(w[i-15], 7) ^ rr(w[i-15], 18) ^ (w[i-15] >>> 3)) >>> 0;\n      const s1 = (rr(w[i-2], 17) ^ rr(w[i-2], 19) ^ (w[i-2] >>> 10)) >>> 0;\n      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;\n    }\n    let a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];\n    for (let i = 0; i < 64; i++) {\n      const S1 = (rr(e, 6) ^ rr(e, 11) ^ rr(e, 25)) >>> 0;\n      const ch = ((e & f) ^ (~e & g)) >>> 0;\n      const t1 = (h + S1 + ch + K[i] + w[i]) >>> 0;\n      const S0 = (rr(a, 2) ^ rr(a, 13) ^ rr(a, 22)) >>> 0;\n      const maj = ((a & b) ^ (a & c) ^ (b & c)) >>> 0;\n      const t2 = (S0 + maj) >>> 0;\n      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;\n    }\n    H = [(H[0]+a)>>>0,(H[1]+b)>>>0,(H[2]+c)>>>0,(H[3]+d)>>>0,\n         (H[4]+e)>>>0,(H[5]+f)>>>0,(H[6]+g)>>>0,(H[7]+h)>>>0];\n  }\n  return H.map(x => x.toString(16).padStart(8, '0')).join('');\n}\n\n// ---- identifier normalisation (must stay identical in every node that compares identifiers) ----\nfunction normEmail(v) { return String(v == null ? '' : v).trim().toLowerCase(); }\nfunction normDomain(v) {\n  return String(v == null ? '' : v).trim().toLowerCase()\n    .replace(/^https?:\\/\\//, '').replace(/^www\\./, '')\n    .replace(/[/?#].*$/, '');\n}\nfunction normLinkedIn(v) {\n  let s = String(v == null ? '' : v).trim().toLowerCase();\n  if (!s) return '';\n  s = s.replace(/^https?:\\/\\//, '').replace(/^www\\./, '').replace(/[?#].*$/, '').replace(/\\/+$/, '');\n  return s;\n}\nfunction normPhone(v) {\n  // Compare on the last 10 digits so +1-202-555-0143, 12025550143 and (202) 555-0143 all match.\n  // Lossy for some international numbers, but it errs toward MORE suppression matches, which is\n  // the only safe direction for a compliance check.\n  const d = String(v == null ? '' : v).replace(/\\D/g, '');\n  return d.length > 10 ? d.slice(-10) : d;\n}\nfunction emailDomain(email) {\n  const e = normEmail(email);\n  return e.indexOf('@') > -1 ? normDomain(e.split('@').pop()) : '';\n}\n\nreturn $input.all().map(item => {\n  const l = item.json || {};\n  const email = normEmail(l.email || l.contact_email);\n  const apollo_id = String(l.apollo_id == null ? '' : l.apollo_id).trim();\n  const lead_id = apollo_id || (email ? sha256hex(email).slice(0, 16) : '');\n  const company_domain = normDomain(l.company_domain);\n  const linkedin_url = normLinkedIn(l.linkedin_url);\n  const phone = normPhone(l.phone);\n\n  return { json: {\n    lead_id: lead_id,\n    lead_id_source: apollo_id ? 'apollo_id' : (email ? 'sha256(email)' : 'none'),\n    source_config: String(l.source_config || ''),\n    apollo_id: apollo_id,\n    first_name: String(l.first_name || ''),\n    last_name: String(l.last_name || ''),\n    title: String(l.title || ''),\n    company: String(l.company || ''),\n    company_domain: company_domain,\n    email: email,\n    contact_email: email,\n    phone: String(l.phone || ''),\n    linkedin_url: String(l.linkedin_url || ''),\n    timezone: String(l.timezone || ''),\n    signal: String(l.signal || ''),\n    has_email: email ? true : false,\n    has_phone: phone ? true : false,\n    // normalised comparison keys \u2014 the gate and nothing else reads these\n    _ids: {\n      email: email,\n      email_domain: emailDomain(email),\n      company_domain: company_domain,\n      linkedin: linkedin_url,\n      phone: phone\n    }\n  }};\n});\n"
+      },
+      "id": "vio-wf1-normalize",
+      "name": "Normalize Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-wf1-readleads",
+      "name": "Read Leads (dedupe)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -120,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Suppression",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-wf1-readsupp",
+      "name": "Read Suppression",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        100,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// WF-1 Gate \u2014 the two checks that must happen BEFORE a Reoon credit is spent.\n//\n//   1. Suppression (compliance-critical): drop the lead if ANY identifier it has matches ANY row\n//      on the Suppression tab. A lead suppressed under one channel must never resurface under\n//      another, so email / email-domain / company-domain / phone / linkedin are all checked, and a\n//      row with a blank or unrecognised identifier_type is compared against every identifier shape\n//      rather than ignored. Erring toward blocking is the only safe direction here.\n//   2. Dedupe: skip a lead already on the Leads tab (matched on contact_email, and on lead_id so an\n//      Apollo id we already hold under a different address is still caught). Re-verifying a lead we\n//      already hold buys nothing and costs a credit.\n//\n// Suppression is evaluated first so a lead that is both suppressed and a duplicate is reported as\n// suppressed \u2014 that is the answer that matters in an audit.\n//\n// Fail-closed: a lead with neither an Apollo id nor an email has no stable key and cannot be\n// deduped or suppression-checked reliably, so it is skipped rather than verified.\n\n// ---- identifier normalisation (must stay identical in every node that compares identifiers) ----\nfunction normEmail(v) { return String(v == null ? '' : v).trim().toLowerCase(); }\nfunction normDomain(v) {\n  return String(v == null ? '' : v).trim().toLowerCase()\n    .replace(/^https?:\\/\\//, '').replace(/^www\\./, '')\n    .replace(/[/?#].*$/, '');\n}\nfunction normLinkedIn(v) {\n  let s = String(v == null ? '' : v).trim().toLowerCase();\n  if (!s) return '';\n  s = s.replace(/^https?:\\/\\//, '').replace(/^www\\./, '').replace(/[?#].*$/, '').replace(/\\/+$/, '');\n  return s;\n}\nfunction normPhone(v) {\n  // Compare on the last 10 digits so +1-202-555-0143, 12025550143 and (202) 555-0143 all match.\n  // Lossy for some international numbers, but it errs toward MORE suppression matches, which is\n  // the only safe direction for a compliance check.\n  const d = String(v == null ? '' : v).replace(/\\D/g, '');\n  return d.length > 10 ? d.slice(-10) : d;\n}\nfunction emailDomain(email) {\n  const e = normEmail(email);\n  return e.indexOf('@') > -1 ? normDomain(e.split('@').pop()) : '';\n}\n\nconst leadItems = $('Normalize Lead').all();\n\n// A Sheets read on a tab holding only its header row returns no rows; alwaysOutputData then hands\n// us a single empty placeholder item. Drop those so \"empty tab\" never looks like a real row.\nconst real = (arr) => arr.map(i => i.json || {}).filter(r => Object.keys(r).length > 0);\nconst leadRows = real($('Read Leads (dedupe)').all());\nconst suppRows = real($('Read Suppression').all());\n\n// ---- suppression index ----\nconst supp = { email: new Set(), phone: new Set(), linkedin: new Set(), domain: new Set(), untyped: new Set() };\nconst add = (set, v) => { if (v) set.add(v); };\nfor (const r of suppRows) {\n  const t = String(r.identifier_type || '').trim().toLowerCase();\n  const raw = String(r.identifier_value || '').trim();\n  if (!raw) continue;\n  if (t === 'email') add(supp.email, normEmail(raw));\n  else if (t === 'phone') add(supp.phone, normPhone(raw));\n  else if (t === 'linkedin') add(supp.linkedin, normLinkedIn(raw));\n  else if (t === 'domain') add(supp.domain, normDomain(raw));\n  else {\n    add(supp.untyped, normEmail(raw));\n    add(supp.untyped, normPhone(raw));\n    add(supp.untyped, normLinkedIn(raw));\n    add(supp.untyped, normDomain(raw));\n  }\n}\n\n// ---- existing-lead index ----\nconst seenEmail = new Set(), seenId = new Set();\nfor (const r of leadRows) {\n  const e = normEmail(r.contact_email);\n  if (e) seenEmail.add(e);\n  const id = String(r.lead_id || '').trim();\n  if (id) seenId.add(id);\n}\n\nreturn leadItems.map(item => {\n  const lead = item.json || {};\n  const ids = lead._ids || {};\n  let gate_action = 'verify', gate_reason = 'ok', gate_detail = '';\n\n  const checks = [\n    ['email', ids.email, supp.email],\n    ['domain_from_email', ids.email_domain, supp.domain],\n    ['company_domain', ids.company_domain, supp.domain],\n    ['phone', ids.phone, supp.phone],\n    ['linkedin', ids.linkedin, supp.linkedin]\n  ];\n  const hits = [];\n  for (const [label, value, set] of checks) {\n    if (value && set.has(value)) hits.push(label + '=' + value);\n  }\n  for (const [label, value] of Object.entries(ids)) {\n    if (value && supp.untyped.has(value)) hits.push('untyped:' + label + '=' + value);\n  }\n\n  if (!lead.lead_id) {\n    gate_action = 'skip';\n    gate_reason = 'no_identifier';\n    gate_detail = 'lead has neither an apollo_id nor an email - no stable key, refusing to verify';\n  } else if (hits.length) {\n    gate_action = 'skip';\n    gate_reason = 'suppressed';\n    gate_detail = 'suppression match on ' + hits.join(', ');\n  } else if (seenEmail.has(ids.email) || seenId.has(lead.lead_id)) {\n    gate_action = 'skip';\n    gate_reason = 'duplicate';\n    gate_detail = 'already on the Leads tab (' +\n      (seenEmail.has(ids.email) ? 'contact_email=' + ids.email : 'lead_id=' + lead.lead_id) +\n      ') - not re-verifying';\n  }\n\n  return { json: Object.assign({}, lead, {\n    gate_action: gate_action,\n    gate_reason: gate_reason,\n    gate_detail: gate_detail,\n    leads_rows_scanned: leadRows.length,\n    suppression_rows_scanned: suppRows.length,\n    gated_at: new Date().toISOString()\n  })};\n});\n"
+      },
+      "id": "vio-wf1-gate",
+      "name": "Gate (dedupe + suppression)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wf1-if-cond",
+              "leftValue": "={{ $json.gate_action }}",
+              "rightValue": "verify",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-wf1-ifgate",
+      "name": "Verify this lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://emailverifier.reoon.com/api/v1/verify",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            },
+            {
+              "name": "mode",
+              "value": "power"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "vio-wf1-reoon",
+      "name": "Reoon Verify (power)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        -120
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "VIOreooncred001",
+          "name": "VIO Reoon"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// WF-1 Classify \u2014 map Reoon power-mode result to an action.\n// Gate on `status`, per the live-tested Reoon behaviour in INTEGRATIONS.md:\n//   safe/valid           -> pass\n//   invalid/spamtrap     -> drop (SMTP-confirmed bad)\n//   disposable           -> needs_review  (Reoon mis-flags greylisted corporate domains as\n//                                          disposable - a false negative; a human confirms)\n//   catch_all/unknown/role/anything else -> needs_review\n// DO NOT \"improve\" this mapping. Auto-dropping on `disposable` silently loses good leads.\n//\n// The lead is recovered by email (Reoon echoes the address it verified) rather than by item index,\n// because the gate's IF node removes skipped leads and indices no longer line up.\nconst gated = $('Gate (dedupe + suppression)').all();\nconst byEmail = {};\nfor (const g of gated) {\n  const e = String((g.json || {}).email || '').toLowerCase();\n  if (e) byEmail[e] = g.json;\n}\nlet verified = [];\ntry { verified = $('Verify this lead?').all(0); } catch (e) { verified = []; }\n\nreturn $input.all().map((item, i) => {\n  const r = item.json || {};\n  const lead = byEmail[String(r.email || '').toLowerCase()] ||\n               ((verified[i] || {}).json) || {};\n  const status = String(r.status || 'unknown').toLowerCase();\n  const score = (r.overall_score !== undefined ? r.overall_score : null);\n  let action, reason;\n  if (['safe', 'valid'].includes(status)) {\n    action = 'pass'; reason = 'deliverable, safe to send';\n  } else if (['invalid', 'spamtrap'].includes(status)) {\n    action = 'drop'; reason = 'hard fail: ' + status;\n  } else if (status === 'disposable') {\n    action = 'needs_review';\n    reason = 'flagged disposable - confirm real throwaway vs greylisted corporate (known Reoon false-negative)';\n  } else {\n    action = 'needs_review'; reason = 'ambiguous (' + status + ') - human judges';\n  }\n  return { json: {\n    lead_id: lead.lead_id || null,\n    email: lead.email || r.email || null,\n    name: [lead.first_name, lead.last_name].filter(Boolean).join(' ') || null,\n    company: lead.company || null,\n    reoon_status: status,\n    overall_score: score,\n    is_safe_to_send: (r.is_safe_to_send !== undefined ? r.is_safe_to_send : null),\n    is_catch_all: (r.is_catch_all !== undefined ? r.is_catch_all : null),\n    is_deliverable: (r.is_deliverable !== undefined ? r.is_deliverable : null),\n    action: action,\n    reason: reason,\n    verified_at: new Date().toISOString(),\n    lead: lead\n  }};\n});\n"
+      },
+      "id": "vio-wf1-classify",
+      "name": "Classify (pass / drop / needs_review)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Shape the Events row for the Reoon call that just happened. Keys MUST equal Events column names.\n//\n// est_cost_usd is deliberately left blank: COSTS.md records Reoon's $/credit as [UNKNOWN] on\n// purpose (\"measure, don't estimate\"), and a made-up number in the cost meter is worse than a gap.\n// `units: 1` is the honest, meterable fact - one /verify call, one credit.\nreturn $input.all().map(item => {\n  const c = item.json || {};\n  const l = c.lead || {};\n  const detail = [c.reoon_status, (c.overall_score === null || c.overall_score === undefined)\n    ? null : 'score ' + c.overall_score].filter(Boolean).join(', ');\n  return { json: {\n    timestamp: c.verified_at || new Date().toISOString(),\n    lead_id: c.lead_id || '',\n    lead_email: c.email || '',\n    tool: 'reoon',\n    action: 'verify',\n    units: 1,\n    est_cost_usd: '',\n    result: c.action + (detail ? ' (' + detail + ')' : ''),\n    workflow: 'VIO-intake-verify-curate',\n    source_config: l.source_config || ''\n  }};\n});\n"
+      },
+      "id": "vio-wf1-shapeevent",
+      "name": "Shape Reoon Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Shape the Leads row. Keys here MUST equal Leads column names exactly \u2014 the Sheets node runs in\n// autoMapInputData mode and matches on the header text, so a typo silently drops a value.\n// (`handlingExtraData: ignoreIt` on that node stops an unexpected key from adding a new column.)\n//\n// Columns this stage genuinely cannot know yet are written as empty strings rather than left out,\n// so the row is full-width and later in-place updates line up.\nreturn $input.all().map(item => {\n  const c = item.json || {};\n  const l = c.lead || {};\n  const now = new Date().toISOString();\n  return { json: {\n    lead_id: c.lead_id || '',\n    source_config: l.source_config || '',\n    apollo_id: l.apollo_id || '',\n    first_name: l.first_name || '',\n    last_name: l.last_name || '',\n    title: l.title || '',\n    company: l.company || '',\n    company_domain: l.company_domain || '',\n    has_email: l.has_email === true,\n    has_phone: l.has_phone === true,\n    contact_email: c.email || '',\n    phone: l.phone || '',\n    linkedin_url: l.linkedin_url || '',\n    timezone: l.timezone || '',\n    signal: l.signal || '',\n    opener: '',\n    email_draft: '',\n    reoon_status: c.reoon_status || '',\n    verify_action: c.action || '',\n    verify_reason: c.reason || '',\n    sendr_page_id: '',\n    sendr_page_url: '',\n    gif_url: '',\n    channel_state_email: 'not_sent',\n    channel_state_linkedin: 'not_sent',\n    idempotency_key: '',\n    reply_received: false,\n    reply_sentiment: '',\n    reply_out_of_office: false,\n    // 4-value enum, never a boolean: not_eligible / pending_approval / called / skipped.\n    // `pending_approval` is the legally-required human gate before any automated call (TCPA), so a\n    // new lead starts at not_eligible and only a confirmed positive reply can ever move it.\n    call_state: 'not_eligible',\n    meeting_booked: false,\n    created_at: now,\n    updated_at: now\n  }};\n});\n"
+      },
+      "id": "vio-wf1-shapelead",
+      "name": "Shape Lead Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Events",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "operation": "append",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_email",
+              "displayName": "lead_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tool",
+              "displayName": "tool",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "units",
+              "displayName": "units",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "est_cost_usd",
+              "displayName": "est_cost_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "result",
+              "displayName": "result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_config",
+              "displayName": "source_config",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "id": "vio-wf1-events",
+      "name": "Log Reoon Call (Events)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1420,
+        -240
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "operation": "append",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_config",
+              "displayName": "source_config",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "apollo_id",
+              "displayName": "apollo_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company_domain",
+              "displayName": "company_domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "has_email",
+              "displayName": "has_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "has_phone",
+              "displayName": "has_phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_url",
+              "displayName": "linkedin_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timezone",
+              "displayName": "timezone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "signal",
+              "displayName": "signal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opener",
+              "displayName": "opener",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_draft",
+              "displayName": "email_draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reoon_status",
+              "displayName": "reoon_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "verify_action",
+              "displayName": "verify_action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "verify_reason",
+              "displayName": "verify_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sendr_page_id",
+              "displayName": "sendr_page_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sendr_page_url",
+              "displayName": "sendr_page_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "gif_url",
+              "displayName": "gif_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_email",
+              "displayName": "channel_state_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_linkedin",
+              "displayName": "channel_state_linkedin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "idempotency_key",
+              "displayName": "idempotency_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_received",
+              "displayName": "reply_received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_sentiment",
+              "displayName": "reply_sentiment",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reply_out_of_office",
+              "displayName": "reply_out_of_office",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "call_state",
+              "displayName": "call_state",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "meeting_booked",
+              "displayName": "meeting_booked",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "id": "vio-wf1-leads",
+      "name": "Write Lead Row (Leads)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1420,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {},
+      "id": "vio-wf1-skipped",
+      "name": "Skipped (duplicate / suppressed / no id)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        760,
+        160
+      ],
+      "notes": "Terminal. Nothing was verified and nothing was written - the reason is on gate_reason / gate_detail in this node's input. No Reoon credit was spent."
+    }
+  ],
+  "connections": {
+    "When clicking Test": {
+      "main": [
+        [
+          {
+            "node": "Test Lead (edit me)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Lead (edit me)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Read Leads (dedupe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads (dedupe)": {
+      "main": [
+        [
+          {
+            "node": "Read Suppression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Suppression": {
+      "main": [
+        [
+          {
+            "node": "Gate (dedupe + suppression)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gate (dedupe + suppression)": {
+      "main": [
+        [
+          {
+            "node": "Verify this lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify this lead?": {
+      "main": [
+        [
+          {
+            "node": "Reoon Verify (power)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skipped (duplicate / suppressed / no id)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reoon Verify (power)": {
+      "main": [
+        [
+          {
+            "node": "Classify (pass / drop / needs_review)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify (pass / drop / needs_review)": {
+      "main": [
+        [
+          {
+            "node": "Shape Reoon Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Shape Lead Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Reoon Event": {
+      "main": [
+        [
+          {
+            "node": "Log Reoon Call (Events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Lead Row": {
+      "main": [
+        [
+          {
+            "node": "Write Lead Row (Leads)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

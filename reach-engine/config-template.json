@@ -1,0 +1,18 @@
+{
+  "product": "<PRODUCT NAME, e.g. OryonIQ>",
+  "one_liner": "<ONE plain sentence: what the product does and for whom>",
+  "icp": {
+    "person_titles": ["<TITLE to target, e.g. Capture Manager>", "<another title>", "<another title>"],
+    "person_locations": ["United States"],
+    "q_keywords": "<free-text terms describing the buyer's world, e.g. government contracting>"
+  },
+  "signal": "<THE TRIGGER: a real, dated market event — a policy change, budget move, award, or mandate. 1-2 sentences. Keep it current and specific.>",
+  "offer": "<ONE sentence: the concrete outcome the product delivers for this ICP>",
+  "_comment_cta": "URL for the soft ask at the end of the email, and the page's link button. Use THIS PRODUCT'S OWN domain — do not inherit another product's contact page. OryonIQ shipped with visioneerit.com here by mistake and it read as bait-and-switch (fixed 2026-08-17). NOTE: this is a link, not an embed — see `booking_url` below before putting it anywhere near Sendr's calendar element.",
+  "cta": "<https://www.THIS-PRODUCT.com/contact — this product's own domain>",
+
+  "_comment_booking_url": "A URL that can be EMBEDDED — Sendr's calendar element puts its value in an <iframe src>. Deliberately SEPARATE from `cta`. Leave EMPTY unless you have a genuinely embeddable booking link (Calendly, HubSpot Meetings, Cal.com). An ordinary marketing or contact page will NOT work: they typically send `X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'`, so the browser refuses to render them and the page shows a grey broken-content box. Verified on both company contact pages 2026-08-17. While this is empty, remove the calendar element from the Sendr template.",
+  "booking_url": "",
+  "sender": "<SENDER NAME>\n<Company>",
+  "personalization_prompt": "Write ONE specific opening line (max 2 sentences) for a cold email to {first_name}, {title} at {company}. Tie the signal to their reality. Do NOT invent facts about {company}. Keep the {first_name}, {title}, and {company} tokens exactly as written."
+}

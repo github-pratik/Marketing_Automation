@@ -1,0 +1,305 @@
+{
+  "id": "VIOwf8askhuman1",
+  "name": "VIO-agent-tool-ask-human",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Tool Call In",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Normalise whatever the agent passed into a proposal a human can actually judge.\n// The agent supplies free text, so nothing here may be trusted as a control value — this node\n// only shapes a message. The decision itself comes from Slack, below.\nconst j = $input.item.json || {};\nconst q = j.query || j;\n\nconst action  = String(q.action  || '(unspecified action)').slice(0, 200);\nconst detail  = String(q.detail  || '').slice(0, 1500);\nconst cost    = String(q.cost    || 'not stated').slice(0, 200);\nconst touches = String(q.touches || 'not stated').slice(0, 400);\n\n// When the agent re-proposes after an \"Adjust\" it echoes back the feedback it was given. Showing\n// that here is how a human tells round two from round one — without it a revision is\n// indistinguishable from the original ask, and the feedback is unverifiable.\nconst priorFeedback = String(q.prior_feedback || '').slice(0, 1000);\nconst feedbackNote = priorFeedback\n  ? `\\n\\n:repeat: *Revised after your feedback:* ${priorFeedback}\\nThis is a NEW approval request. Your earlier feedback was not an approval and nothing has run.`\n  : '';\n\n// A proposal with no stated cost or blast radius is not approvable. Say so in the message\n// rather than letting a human rubber-stamp a blank cheque.\nconst gaps = [];\nif (q.cost === undefined || q.cost === null || q.cost === '') gaps.push('cost');\nif (q.touches === undefined || q.touches === null || q.touches === '') gaps.push('who it touches');\n\nreturn { json: { action, detail, cost, touches, gaps, priorFeedback, feedbackNote, gapNote: gaps.length ? `\\n\\n:warning: The agent did not state: ${gaps.join(', ')}. Reject unless you know.` : '' } };"
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Shape Proposal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "message",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#marketing_testing_1"
+        },
+        "subject": "=Agent wants approval: {{ $json.action }}",
+        "message": "=The Outbound Operator Agent is asking to do something gated. It is BLOCKED until you answer here.\n\n*Action:* {{ $json.action }}\n*Who it touches:* {{ $json.touches }}\n*Cost:* {{ $json.cost }}\n\n{{ $json.detail }}{{ $json.feedbackNote }}{{ $json.gapNote }}\n\n*Approve* — it proceeds with exactly what is described above, nothing more.\n*Reject* — it does NOT proceed. You will then be asked for one line: type an adjustment and the agent revises the plan and comes back for a fresh approval, or type DENY (or say nothing) and it stops and logs why. An adjustment is not an approval.\n*No answer at all* — it stays blocked and nothing happens.",
+        "responseType": "approval",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Approve",
+            "disapproveLabel": "Reject"
+          }
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Ask Human (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        220,
+        0
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "niWxNp4EIL0Dvgfh",
+          "name": "slack marketing"
+        }
+      },
+      "notes": "Slack sendAndWait renders parameters.message — a `text` key on this operation is stored and silently IGNORED (found live 2026-08-17). Approval mode offers exactly two buttons, which is why the third outcome (Adjust) is reached through the Reject branch rather than a third button: that makes 'adjust' structurally a NON-approval rather than a sibling of approval."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// FAIL CLOSED. This is the whole safety property of the agent: a gated tool may proceed only\n// on an explicit, unambiguous human approval. Anything else — a missing field, a malformed\n// payload, an unexpected shape from a Slack node upgrade — must read as DENIED.\n//\n// Deliberately NOT written as `approved: !!data.approved`: if the field is absent because the\n// node changed shape, that coerces to false, which is right by luck rather than by design.\n// Here the only path to true is the boolean true.\nconst j = $input.item.json || {};\nconst raw = j.data && Object.prototype.hasOwnProperty.call(j.data, 'approved')\n  ? j.data.approved\n  : (Object.prototype.hasOwnProperty.call(j, 'approved') ? j.approved : undefined);\n\nconst approved = raw === true;\n\nlet reason;\nif (approved) reason = 'human approved in Slack';\nelse if (raw === false) reason = 'human declined in Slack';\nelse reason = `no usable decision (received ${JSON.stringify(raw)}) — treated as DENIED`;\n\nreturn { json: { approved, reason, decided_at: new Date().toISOString() } };"
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Decision (fail closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "notes": "Unchanged by the adjust-path work of 2026-08-21 and must stay that way: test-ask-human-gate.mjs reads this jsCode out of this file and holds it to 19 cases with exactly one path to approved:true. The Adjust outcome is derived downstream, on this node's FALSE branch only."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wf8-if-approved",
+              "leftValue": "={{ $json.approved }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "notes": "Strict boolean equality against the fail-closed decision. The FALSE branch is the only way to reach the adjust path, so no adjustment can ever be routed into the approve branch."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// APPROVAL BRANCH. This node decides nothing. It only labels an outcome that\n// `Decision (fail closed)` already made, and it re-checks that decision rather than assuming the\n// IF node routed correctly — a node that trusts its own position in the graph is one rewire away\n// from being wrong.\nconst j = $input.item.json || {};\nconst approved = j.approved === true;\nreturn { json: {\n  approved,\n  outcome: approved ? 'approve' : 'deny',\n  feedback: '',\n  reason: approved ? String(j.reason || 'human approved in Slack')\n                   : 'reached the approval branch without an approval — treated as DENIED',\n  decided_at: String(j.decided_at || new Date().toISOString()),\n} };"
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Approved Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "message",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#marketing_testing_1"
+        },
+        "subject": "=Rejected — adjust or deny: {{ $('Shape Proposal').first().json.action }}",
+        "message": "=You rejected that proposal, so the agent is *not* proceeding. One more line decides what happens next.\n\n*Type an adjustment* — e.g. \"only 10 leads, OryonIQ only\" — and the agent revises its plan and comes back here for a fresh approval. An adjustment is NOT an approval: nothing runs until you press Approve on the revised plan.\n*Type DENY, or don't reply* — the agent stops and logs why.\n\nTyping \"approved\" here does nothing. The Approve button is the only approval channel.",
+        "responseType": "freeText",
+        "options": {
+          "limitWaitTime": true,
+          "limitType": "afterTimeInterval",
+          "resumeAmount": 12,
+          "resumeUnit": "hours"
+        }
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Ask Reason (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        140
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "niWxNp4EIL0Dvgfh",
+          "name": "slack marketing"
+        }
+      },
+      "notes": "Reached only after a NON-approval, so nothing downstream of here can approve. limitWaitTime is set so a rejection that never gets its follow-up line times out into DENY instead of hanging the execution forever — unlike the first ask, where waiting indefinitely IS the safe state. Uses .first() rather than .item on Shape Proposal: paired-item linkage does not survive the IF node (same trap as WF-1's Classify node), and this branch always carries exactly one proposal."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// REJECTION BRANCH — reachable ONLY when `Decision (fail closed)` returned approved === false.\n// It splits one rejection into two: ADJUST (revise and come back) and DENY (stop).\n//\n// Read this before changing anything here: NO value of the free text can set `approved` to true.\n// `approved` below is a hardcoded literal false, not a derived expression. \"Adjust\" is a rejection\n// with instructions attached — it is not a weaker approval, and the agent must still come back\n// through the Approve button with its revised plan.\nconst j = $input.item.json || {};\nconst raw = j.data && Object.prototype.hasOwnProperty.call(j.data, 'text')\n  ? j.data.text\n  : (Object.prototype.hasOwnProperty.call(j, 'text') ? j.text : undefined);\n\n// Only a real string counts as an instruction. An object, an array, a number, a missing field —\n// each means we did not get a usable adjustment, so this is a plain DENY.\nconst feedback = typeof raw === 'string' ? raw.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim() : '';\n\nconst DENY = /^(deny|denied|no|nope|stop|cancel|abort|reject|rejected|n)\\s*[.!]?$/i;\n\n// Approval-flavoured text typed into the ADJUST box is a DENY, not an adjustment. This matters\n// because the feedback string is handed back to the agent as tool output and lands in its context:\n// letting \"you have my approval\" through as feedback would put the words of an approval in front of\n// a model that has just been refused. The button is the only approval channel; typed text never is.\nconst CONSENT = /\\b(approved?|approval|go ahead|proceed|permission granted|you have my|do it|send it|fire away|green ?light|sign(ed)? off)\\b/i;\n\nlet outcome, reason;\nif (!feedback) {\n  outcome = 'deny';\n  reason = 'rejected in Slack and no adjustment was supplied (or the follow-up ask timed out) — treated as DENIED';\n} else if (DENY.test(feedback)) {\n  outcome = 'deny';\n  reason = `rejected in Slack and explicitly denied (\"${feedback.slice(0, 120)}\")`;\n} else if (CONSENT.test(feedback)) {\n  outcome = 'deny';\n  reason = 'rejected in Slack, then approval-like text was typed into the adjustment box — approval comes only from the Approve button, so this is DENIED';\n} else {\n  outcome = 'adjust';\n  reason = 'rejected in Slack with an adjustment — the agent must revise the plan and ask again';\n}\n\nreturn { json: {\n  approved: false,\n  outcome,\n  feedback: outcome === 'adjust' ? feedback.slice(0, 1000) : '',\n  reason,\n  decided_at: new Date().toISOString(),\n} };"
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Classify Rejection (fail closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// SINGLE EXIT for the tool: both branches converge here, so this is the last word on what the\n// agent is told. It NARROWS, never widens — approval survives only if the branch that set it also\n// labelled the outcome 'approve'. Two independent facts must agree; either one missing reads as\n// denied, so a future rewire that lands the adjust branch here cannot smuggle an approval through.\nconst j = $input.item.json || {};\nconst approved = j.approved === true && j.outcome === 'approve';\nconst outcome = approved ? 'approve' : (j.outcome === 'adjust' ? 'adjust' : 'deny');\n\nconst feedback = (outcome === 'adjust' && typeof j.feedback === 'string')\n  ? j.feedback.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, 1000)\n  : '';\n\n// What the agent must do next, stated in the tool output itself rather than left to the prompt.\nconst NEXT = {\n  approve: 'APPROVED. Do exactly what you proposed — nothing more, and nothing you did not describe. If any part of the plan has changed since you asked, ask again.',\n  adjust: 'NOT APPROVED. The human rejected this and gave an adjustment instead. Revise the plan to follow the feedback, then call ask_human AGAIN with the revised plan and pass the feedback back as prior_feedback. You still hold no approval and must not execute anything gated.',\n  deny: 'DENIED. Stop. Do not re-ask for the same action. Log the reason and report it.',\n};\n\nreturn { json: {\n  approved,\n  outcome,\n  feedback,\n  reason: String(j.reason || 'no reason recorded — treated as DENIED'),\n  decided_at: String(j.decided_at || new Date().toISOString()),\n  next: NEXT[outcome],\n} };"
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Tool Response (fail closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        0
+      ],
+      "notes": "Last node executed, so this is what the calling agent receives back from the sub-workflow tool. Both branches feed input index 0; exactly one ever carries data."
+    }
+  ],
+  "connections": {
+    "Tool Call In": {
+      "main": [
+        [
+          {
+            "node": "Shape Proposal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Proposal": {
+      "main": [
+        [
+          {
+            "node": "Ask Human (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Human (Slack)": {
+      "main": [
+        [
+          {
+            "node": "Decision (fail closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision (fail closed)": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Approved Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ask Reason (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved Result": {
+      "main": [
+        [
+          {
+            "node": "Tool Response (fail closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Reason (Slack)": {
+      "main": [
+        [
+          {
+            "node": "Classify Rejection (fail closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Rejection (fail closed)": {
+      "main": [
+        [
+          {
+            "node": "Tool Response (fail closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

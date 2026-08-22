@@ -1,0 +1,404 @@
+<title>Reach Engine Drafts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root{
+  --paper:#F4F6F7;
+  --card:#FFFFFF;
+  --ink:#15181B;
+  --ink-2:#4A535B;
+  --ink-3:#78838C;
+  --rule:#D8DDE1;
+  --rule-soft:#E7EBEE;
+  --accent:#1F4E6B;
+  --accent-soft:#E3EDF3;
+  --flag:#A63A18;
+  --flag-soft:#F7E7E1;
+  --ok:#35664A;
+  --ok-soft:#E2EDE6;
+  --warn:#8A6412;
+  --warn-soft:#F5EDD9;
+  --shadow:0 1px 2px rgba(21,24,27,.05),0 6px 18px -10px rgba(21,24,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#111417;
+    --card:#171B1F;
+    --ink:#E7EAEC;
+    --ink-2:#A7B1B9;
+    --ink-3:#7A858D;
+    --rule:#2A3137;
+    --rule-soft:#222930;
+    --accent:#7FB0CD;
+    --accent-soft:#1B2C38;
+    --flag:#E08862;
+    --flag-soft:#33201A;
+    --ok:#84B694;
+    --ok-soft:#1B2A21;
+    --warn:#D6B25F;
+    --warn-soft:#2C2517;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px -10px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#111417;
+  --card:#171B1F;
+  --ink:#E7EAEC;
+  --ink-2:#A7B1B9;
+  --ink-3:#7A858D;
+  --rule:#2A3137;
+  --rule-soft:#222930;
+  --accent:#7FB0CD;
+  --accent-soft:#1B2C38;
+  --flag:#E08862;
+  --flag-soft:#33201A;
+  --ok:#84B694;
+  --ok-soft:#1B2A21;
+  --warn:#D6B25F;
+  --warn-soft:#2C2517;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px -10px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:50rem;margin:0 auto;padding:3.5rem 1.5rem 6rem;display:flex;flex-direction:column;gap:3rem}
+
+/* ---- masthead ---- */
+.mast{display:flex;flex-direction:column;gap:.9rem;border-bottom:2px solid var(--ink);padding-bottom:1.5rem}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:.7rem;font-weight:500;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+}
+h1{
+  font-family:Newsreader,Georgia,serif;font-weight:500;font-size:clamp(2.1rem,5.5vw,3rem);
+  line-height:1.08;letter-spacing:-.015em;margin:0;text-wrap:balance;
+}
+.standfirst{font-size:1.06rem;color:var(--ink-2);margin:0;max-width:38rem}
+.meta{
+  display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;font-family:"IBM Plex Mono",monospace;
+  font-size:.72rem;color:var(--ink-3);letter-spacing:.03em;padding-top:.4rem;
+}
+.meta b{color:var(--ink-2);font-weight:500}
+
+/* ---- section headings ---- */
+section{display:flex;flex-direction:column;gap:1.25rem}
+h2{
+  font-family:Newsreader,Georgia,serif;font-weight:500;font-size:1.75rem;line-height:1.2;
+  margin:0;letter-spacing:-.01em;text-wrap:balance;
+}
+h3{
+  font-family:"IBM Plex Sans",sans-serif;font-weight:600;font-size:.78rem;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0;
+}
+p{margin:0}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+a:focus-visible,.opt:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+
+/* ---- status strip ---- */
+.status{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5rem,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.stat{background:var(--card);padding:.95rem 1rem;display:flex;flex-direction:column;gap:.2rem}
+.stat .n{font-family:Newsreader,Georgia,serif;font-size:1.9rem;line-height:1;font-variant-numeric:tabular-nums;font-weight:500}
+.stat .l{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.stat.good .n{color:var(--ok)}
+.stat.hold .n{color:var(--flag)}
+
+/* ---- callout ---- */
+.note{
+  background:var(--ok-soft);border-left:3px solid var(--ok);padding:.9rem 1.1rem;
+  border-radius:0 3px 3px 0;font-size:.94rem;color:var(--ink-2);
+}
+.note b{color:var(--ink)}
+
+/* ---- issue blocks ---- */
+.issues{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.issue{background:var(--card);padding:1.2rem 1.3rem;display:flex;flex-direction:column;gap:.55rem}
+.issue-head{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap}
+.tag{
+  font-family:"IBM Plex Mono",monospace;font-size:.64rem;font-weight:500;letter-spacing:.08em;
+  text-transform:uppercase;padding:.2rem .45rem;border-radius:2px;white-space:nowrap;
+}
+.tag.block{background:var(--flag-soft);color:var(--flag)}
+.tag.fix{background:var(--warn-soft);color:var(--warn)}
+.issue-title{font-weight:600;font-size:1rem;letter-spacing:-.005em}
+.issue p{font-size:.94rem;color:var(--ink-2)}
+.where{font-family:"IBM Plex Mono",monospace;font-size:.72rem;color:var(--ink-3);word-break:break-word}
+.quote{
+  font-family:Newsreader,Georgia,serif;font-style:italic;font-size:1.02rem;color:var(--ink);
+  border-left:2px solid var(--flag);padding-left:.85rem;
+}
+
+/* ---- email specimen ---- */
+.touch{display:flex;flex-direction:column;gap:.65rem}
+.touch-label{display:flex;align-items:center;gap:.6rem}
+.num{
+  font-family:"IBM Plex Mono",monospace;font-size:.68rem;font-weight:500;color:var(--card);
+  background:var(--accent);width:1.35rem;height:1.35rem;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;flex:none;
+}
+.specimen{background:var(--card);border:1px solid var(--rule);border-radius:4px;box-shadow:var(--shadow);overflow:hidden}
+.specimen.flagged{border-left:3px solid var(--flag)}
+.hdr{border-bottom:1px solid var(--rule-soft);padding:.8rem 1.2rem;display:flex;flex-direction:column;gap:.25rem;background:var(--accent-soft)}
+.hdr-row{display:flex;gap:.6rem;font-family:"IBM Plex Mono",monospace;font-size:.73rem;color:var(--ink-2);word-break:break-word}
+.hdr-row span:first-child{color:var(--ink-3);flex:none;width:3.6rem}
+.hdr-row.subj{font-family:"IBM Plex Sans",sans-serif;font-size:.95rem;font-weight:600;color:var(--ink);padding-top:.2rem}
+.hdr-row.subj span:first-child{font-family:"IBM Plex Mono",monospace;font-size:.73rem;font-weight:400;color:var(--ink-3);width:3.6rem;padding-top:.18rem}
+.body{padding:1.2rem;display:flex;flex-direction:column;gap:.85rem;font-size:.97rem;line-height:1.62}
+.body .mark{background:var(--flag-soft);color:var(--ink);box-shadow:0 0 0 2px var(--flag-soft);border-radius:1px}
+.sig{color:var(--ink-2);font-size:.93rem}
+.cap{font-size:.83rem;color:var(--ink-3);display:flex;gap:.45rem;align-items:flex-start}
+.cap .k{color:var(--flag);font-weight:600;font-family:"IBM Plex Mono",monospace;font-size:.72rem;flex:none;padding-top:.13rem}
+
+/* ---- rewrite compare ---- */
+.rw{display:flex;flex-direction:column;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.rw-row{background:var(--card);padding:1rem 1.2rem;display:flex;flex-direction:column;gap:.4rem}
+.rw-label{font-family:"IBM Plex Mono",monospace;font-size:.65rem;letter-spacing:.09em;text-transform:uppercase}
+.rw-row.was .rw-label{color:var(--flag)}
+.rw-row.now .rw-label{color:var(--ok)}
+.rw-row.was p{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--rule)}
+.rw-row p{font-size:.96rem;line-height:1.6}
+
+/* ---- decisions ---- */
+.opts{display:flex;flex-direction:column;gap:.75rem}
+.opt{display:flex;gap:.9rem;background:var(--card);border:1px solid var(--rule);border-radius:4px;padding:1rem 1.15rem}
+.box{width:1.05rem;height:1.05rem;border:1.5px solid var(--ink-3);border-radius:2px;flex:none;margin-top:.22rem}
+.opt-t{font-weight:600;font-size:.98rem;display:block;margin-bottom:.2rem}
+.opt-d{font-size:.92rem;color:var(--ink-2)}
+.opt.rec{border-color:var(--accent);background:var(--accent-soft)}
+.opt.rec .box{border-color:var(--accent)}
+.rec-tag{font-family:"IBM Plex Mono",monospace;font-size:.62rem;letter-spacing:.09em;text-transform:uppercase;color:var(--accent);margin-left:.5rem}
+
+ul{margin:0;padding-left:1.1rem;display:flex;flex-direction:column;gap:.45rem;font-size:.95rem;color:var(--ink-2)}
+li::marker{color:var(--ink-3)}
+code{font-family:"IBM Plex Mono",monospace;font-size:.86em;background:var(--rule-soft);padding:.1em .35em;border-radius:2px}
+footer{border-top:1px solid var(--rule);padding-top:1.25rem;font-size:.85rem;color:var(--ink-3)}
+hr.div{border:0;border-top:1px solid var(--rule);margin:0}
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">Internal review · not sent</div>
+    <h1>Reach Engine Drafts</h1>
+    <p class="standfirst">The exact copy that would land in a prospect's inbox, for both products, with two claims I can't stand behind flagged. Nothing goes out until you call it.</p>
+    <div class="meta">
+      <span><b>For</b> Gav</span>
+      <span><b>Date</b> 20 Aug 2026</span>
+      <span><b>Sender</b> ellen@getoryoniq.com</span>
+      <span><b>Status</b> awaiting sign-off</span>
+    </div>
+  </header>
+
+  <section>
+    <h3>Where the pipeline stands</h3>
+    <div class="status">
+      <div class="stat"><span class="n">3</span><span class="l">test sends</span></div>
+      <div class="stat good"><span class="n">0</span><span class="l">real prospects</span></div>
+      <div class="stat"><span class="n">1</span><span class="l">bounce (fake domain)</span></div>
+      <div class="stat hold"><span class="n">2</span><span class="l">blocking issues</span></div>
+    </div>
+    <p class="note"><b>No prospect has been emailed.</b> All three sends went to internal addresses — Pratik, yourself, and a <code>@example.com</code> smoke test that produced the single bounce. The engine, verification, personalization and send path are all proven end to end. What's holding the first real send is the copy below, not the plumbing.</p>
+  </section>
+
+  <hr class="div">
+
+  <section>
+    <h2>Two things I can't sign off on</h2>
+
+    <div class="issues">
+      <div class="issue">
+        <div class="issue-head"><span class="tag block">Blocking</span><span class="issue-title">The set-asides claim isn't true</span></div>
+        <p class="quote">"…federal set-asides are opening fast."</p>
+        <p>The CMMC Phase II suspension on 13 July is real, and so is the $32B DoD figure. But suspending a cybersecurity assessment requirement does not open set-asides — those are socioeconomic vehicles (8(a), SDVOSB, HUBZone) with no connection to CMMC. What actually happened is that a <em>bidding barrier</em> came down. Every Capture Manager on this list will know the difference.</p>
+        <p class="where">config-oryoniq.json → signal · sendr-linkedin-message.md → step 2</p>
+      </div>
+
+      <div class="issue">
+        <div class="issue-head"><span class="tag block">Blocking</span><span class="issue-title">We promise a feature I can't find on the site</span></div>
+        <p class="quote">"…flags the pursuits that fit your NAICS and SDB status before the RFP drops."</p>
+        <p>Nothing on oryoniq.com describes pre-RFP alerting, NAICS filtering, or SDB matching. The product's published modules are Orbit (AI-suggested matches, fit signals, chat), Constellation (community and teaming), competitive intelligence on who's winning and teaming, events, and OryonAI. That's relationship intelligence, not an early-warning feed. The CTA then asks the prospect if they want <em>"the three it's surfacing"</em> — a specific deliverable someone has to produce on the call.</p>
+        <p class="where">config-oryoniq.json → offer, sendr.gif_hyperlink_text · campaign-oryoniq-pilot.json → CTA</p>
+      </div>
+
+      <div class="issue">
+        <div class="issue-head"><span class="tag fix">Copy bug</span><span class="issue-title">The VisioneerIT CTA has no antecedent</span></div>
+        <p class="quote">"Put together a quick page with the ones it's surfacing for VisioneerIT"</p>
+        <p>"The ones" refers to nothing — the sentence was lifted from the OryonIQ email, where "the pursuits" came directly before it. In the VisioneerIT email the preceding line is about zero-trust services, so the reader hits a dangling pronoun in the most important sentence.</p>
+        <p class="where">config-visioneerit.json → offer / page CTA</p>
+      </div>
+
+      <div class="issue">
+        <div class="issue-head"><span class="tag fix">Positioning</span><span class="issue-title">VisioneerIT's hook argues against its own offer</span></div>
+        <p>The email opens by saying CMMC Phase II was suspended, then sells CMMC readiness. We're telling the prospect the pressure came off and asking them to buy relief from it. Separately, the list targets agency CIOs and CISOs — but agencies don't get CMMC-assessed, their contractors do. The untouched zero-trust mandate (every DoD component by 30 Sept 2027) is the stronger hook for this audience.</p>
+        <p class="where">config-visioneerit.json → signal, icp</p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <section>
+    <h2>OryonIQ — GovCon capture &amp; BD</h2>
+    <p class="standfirst">Three touches in sequence. Shown with a real Apollo-sourced lead: Kiara, Capture Manager at Modernized Mobile LLC.</p>
+
+    <div class="touch">
+      <div class="touch-label"><span class="num">1</span><h3>Email · day 0</h3></div>
+      <div class="specimen flagged">
+        <div class="hdr">
+          <div class="hdr-row"><span>From</span><span>Ellen Grant &lt;ellen@getoryoniq.com&gt;</span></div>
+          <div class="hdr-row"><span>To</span><span>kiara@modernizedmobile.com</span></div>
+          <div class="hdr-row subj"><span>Subject</span><span>quick one, Kiara</span></div>
+        </div>
+        <div class="body">
+          <p>Hi Kiara,</p>
+          <p>With the Pentagon pausing CMMC Phase II, capture teams like yours at Modernized Mobile LLC face shifting compliance priorities just as the DoD commits $32B to AI, cloud, and cyber investments. Identifying the right opportunities in this evolving landscape is critical for your upcoming bids.</p>
+          <p><span class="mark">OryonIQ flags the pursuits that fit your NAICS and SDB status before the RFP drops</span>, so you're bidding while everyone else is still searching.</p>
+          <p><span class="mark">Want the three it's surfacing for a firm like yours?</span> <a href="https://www.oryoniq.com/contact">https://www.oryoniq.com/contact</a></p>
+          <p class="sig">Ellen<br>OryonIQ, VisioneerIT</p>
+        </div>
+      </div>
+      <p class="cap"><span class="k">FLAG</span><span>The AI-written opener is accurate and well-grounded — it says "pausing CMMC Phase II" and stops there. The two highlighted lines are hardcoded config copy, and both are the unverified feature promise.</span></p>
+    </div>
+
+    <div class="touch">
+      <div class="touch-label"><span class="num">2</span><h3>LinkedIn connection note · ≤300 chars</h3></div>
+      <div class="specimen">
+        <div class="body">
+          <p>Hi Kiara — following the CMMC Phase II news and DoD's AI/cloud push this year, figured it's a good time to connect with capture folks in the GovCon space. Wanted to say hello.</p>
+        </div>
+      </div>
+      <p class="cap"><span class="k">OK</span><span>195 characters, no pitch, no claim to verify. This one is clean as written.</span></p>
+    </div>
+
+    <div class="touch">
+      <div class="touch-label"><span class="num">3</span><h3>LinkedIn message · after accept</h3></div>
+      <div class="specimen flagged">
+        <div class="body">
+          <p><em>[AI-written opener]</em></p>
+          <p>The Pentagon suspended CMMC Phase II on July 13, 2026, and DoD committed $32B to AI, cloud, and cyber in H1 FY2026 — <span class="mark">set-asides are opening fast</span>.</p>
+          <p><span class="mark">OryonIQ flags the pursuits that fit your NAICS and SDB status before the RFP drops.</span> Put together a quick page with the ones it's surfacing for Modernized Mobile LLC: <em>[page URL]</em></p>
+          <p class="sig">Ellen, OryonIQ / VisioneerIT</p>
+        </div>
+      </div>
+      <p class="cap"><span class="k">FLAG</span><span>Carries both blocking issues, stated more baldly than the email does.</span></p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <section>
+    <h2>VisioneerIT — federal &amp; SLED IT / security</h2>
+    <p class="standfirst">No live campaign yet — this is the assembled draft from the seed run against Pratik. Sendr page and LinkedIn sequence still need building in the Sendr UI.</p>
+
+    <div class="touch">
+      <div class="touch-label"><span class="num">1</span><h3>Email · day 0</h3></div>
+      <div class="specimen flagged">
+        <div class="hdr">
+          <div class="hdr-row"><span>From</span><span>Ellen Grant &lt;ellen@getvisioneerit.com&gt;</span></div>
+          <div class="hdr-row"><span>To</span><span>pratik.patil@visioneerit.com</span></div>
+          <div class="hdr-row subj"><span>Subject</span><span>quick one, Pratik</span></div>
+        </div>
+        <div class="body">
+          <p>Hi Pratik,</p>
+          <p>With the Pentagon's suspension of CMMC Phase II and the shift to zero-trust and AI procurement mandates, agencies are reallocating security and modernization budgets rapidly. I wanted to share how VisioneerIT can navigate this evolving landscape to meet new compliance and technology goals.</p>
+          <p>VisioneerIT stands up zero-trust, CMMC readiness, and AI-augmented security operations without a year-long procurement cycle.</p>
+          <p><span class="mark">Put together a quick page with the ones it's surfacing for VisioneerIT:</span> <a href="https://sendrpage.com/u3avr09j21">https://sendrpage.com/u3avr09j21</a></p>
+          <p class="sig">Ellen<br>VisioneerIT</p>
+        </div>
+      </div>
+      <p class="cap"><span class="k">FLAG</span><span>Dangling "the ones", and the opener sells against the offer — it tells an IT leader the compliance pressure eased, then offers compliance help.</span></p>
+    </div>
+
+    <div class="touch">
+      <div class="touch-label"><span class="num">2</span><h3>LinkedIn connection note · ≤300 chars</h3></div>
+      <div class="specimen">
+        <div class="body">
+          <p>Hi Pratik — following the CMMC Phase II suspension and the new zero-trust mandates hitting agencies this year. Connecting with IT/security leaders navigating that shift.</p>
+        </div>
+      </div>
+      <p class="cap"><span class="k">OK</span><span>180 characters. Fine, though it leads on CMMC to an audience that isn't assessed under it.</span></p>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <section>
+    <h2>What I'd send instead</h2>
+    <p class="standfirst">Same news, same structure, claims we can defend. These are proposals — nothing is changed in the configs yet.</p>
+
+    <h3>OryonIQ signal line</h3>
+    <div class="rw">
+      <div class="rw-row was"><span class="rw-label">Current</span><p>The Pentagon suspended CMMC Phase II on July 13, 2026, and DoD committed $32B to AI, cloud, and cyber in H1 FY2026 — federal set-asides are opening fast.</p></div>
+      <div class="rw-row now"><span class="rw-label">Proposed</span><p>The Pentagon suspended CMMC Phase II on July 13, 2026 — third-party assessments are paused pending a 60-day review, while DoD committed $32B to AI, cloud, and cyber in H1 FY2026. The bid barrier just dropped on a lot of money.</p></div>
+    </div>
+
+    <h3>OryonIQ offer + CTA</h3>
+    <div class="rw">
+      <div class="rw-row was"><span class="rw-label">Current</span><p>OryonIQ flags the pursuits that fit your NAICS and SDB status before the RFP drops… Want the three it's surfacing for a firm like yours?</p></div>
+      <div class="rw-row now"><span class="rw-label">Proposed — if pre-RFP alerting doesn't exist</span><p>Every firm that was going to fail a Phase II assessment is back in the running, so the fields you're bidding just got more crowded. OryonIQ maps who's already winning in your NAICS and who they're teaming with — so you know who to partner with instead of who to outbid. Want to see your map?</p></div>
+    </div>
+    <p class="cap"><span class="k">NOTE</span><span>This version sells Constellation and the competitive-intelligence data — features that demonstrably ship — and it uses the same CMMC news as the hook. If pre-RFP alerting <em>does</em> exist and simply isn't marketed, tell me and I'll keep the original.</span></p>
+
+    <h3>VisioneerIT signal line</h3>
+    <div class="rw">
+      <div class="rw-row was"><span class="rw-label">Current</span><p>The Pentagon suspended CMMC Phase II on July 13, 2026, and agencies are under new zero-trust and AI-procurement mandates — security and modernization budgets are moving now.</p></div>
+      <div class="rw-row now"><span class="rw-label">Proposed</span><p>Every DoD component has to reach zero-trust architecture by September 30, 2027, and that deadline hasn't moved — while AI procurement mandates land on top of it. Security and modernization budgets are committed now.</p></div>
+    </div>
+  </section>
+
+  <hr class="div">
+
+  <section>
+    <h2>What I need from you</h2>
+    <div class="opts">
+      <div class="opt rec" tabindex="0">
+        <div class="box"></div>
+        <div>
+          <span class="opt-t">Fix the copy, then send<span class="rec-tag">recommended</span></span>
+          <span class="opt-d">Answer the one question below, I apply the rewrites across configs, Instantly and Sendr, and we enroll a first real batch. Roughly a day of work once you answer.</span>
+        </div>
+      </div>
+      <div class="opt" tabindex="0">
+        <div class="box"></div>
+        <div>
+          <span class="opt-t">Send as-is</span>
+          <span class="opt-d">Pipeline is ready today. Accepts that a Capture Manager may fault the set-asides line and that replies will ask for three pursuits we then have to produce by hand.</span>
+        </div>
+      </div>
+      <div class="opt" tabindex="0">
+        <div class="box"></div>
+        <div>
+          <span class="opt-t">Hold until the September review closes</span>
+          <span class="opt-d">The CMMC task force reports around 11 Sept. Its outcome is a fresher hook — but it's three weeks of dead pipeline, and the current news is at its most useful right now.</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>The one question that blocks everything</h3>
+    <ul>
+      <li><b>Does OryonIQ actually do pre-RFP pursuit alerting by NAICS and SDB status?</b> If yes, the copy is fine and the website is what needs fixing. If no, we go with the teaming rewrite above.</li>
+    </ul>
+
+    <h3>Also open, not blocking</h3>
+    <ul>
+      <li>VisioneerIT sells to agencies, prime contractors <em>and</em> commercial clients — one config can't hook all three. Needs splitting into three, which means two new Sendr page templates and campaigns built by hand (no API for it).</li>
+      <li>What's the commercial pitch? No government mandate applies there, and I won't invent a market trigger.</li>
+      <li>Sendr template 8462 still doesn't declare <code>cta</code>, so OryonIQ's contact URL reaches the email but not the page.</li>
+      <li>Google Sheets is connected but no workflow writes to it yet.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Figures pulled live from the Instantly API on 20 Aug 2026. Product features verified against oryoniq.com the same day. Draft copy quoted verbatim from <code>config-oryoniq.json</code>, <code>config-visioneerit.json</code>, <code>campaign-oryoniq-pilot.json</code> and the Sendr message drafts.
+  </footer>
+
+</div>
