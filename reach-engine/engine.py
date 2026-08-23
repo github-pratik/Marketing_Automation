@@ -192,7 +192,11 @@ def assemble_email(lead, opener, cfg, page_url=None):
     fn = lead.get("first_name", "there")
     company = lead.get("company") or org_name(lead)
     if page_url:
-        cta_line = f"Put together a quick page with the ones it's surfacing for {company}: {page_url}"
+        # Must match the DEPLOYED Instantly step-1 sentence verbatim — the template is what the
+        # prospect actually reads, so this preview is the side that follows it, not the reverse.
+        # sync-routes.py's `cta-sentence` check enforces this; the previous wording ("the ones
+        # it's surfacing") also dangled — its antecedent lived in a line that no longer precedes it.
+        cta_line = f"I put together a short page for {company}: {page_url}"
     else:
         cta_line = f"Want the three it's surfacing for a firm like yours? {cfg['cta']}"
     return f"Hi {fn},\n\n{opener}\n\n{cfg['offer']}\n\n{cta_line}\n\n{cfg['sender']}"

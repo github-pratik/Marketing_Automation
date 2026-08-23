@@ -69,7 +69,13 @@ not yet wired into anything · `[BLOCKED]` missing a credential.
   only the first `sequences[0]` array element is read), `GET /campaigns/{id}`. Created campaigns
   start in **draft** (`status: 0`) — creating one does not send anything; a separate activation
   action does, which nothing in this repo calls.
-- **⚠️ `PATCH /campaigns/{id}` with a `sequences` body REACTIVATES the campaign.** Verified
+- **⚠️ `PATCH /campaigns/{id}` with a `sequences` body can REACTIVATE the campaign — it is
+  state-dependent.** From `status: 3` (completed) a sequences PATCH flipped it to `status: 1`
+  (active, sending) on 2026-08-21. From `status: 2` (paused) the same shape of PATCH left it
+  paused on 2026-08-22. So pausing first is a real mitigation, not just hygiene — but the
+  rule stands regardless: **always `GET` the status straight after any PATCH and pause if it
+  moved.** The response body says nothing about the change either way. Original note:
+  Verified
   2026-08-21: a campaign sitting at `status: 3` (completed) was flipped to `status: 1` (active,
   sending) purely as a side effect of updating its email template. The response is a bare `200`
   and says nothing about the status change — the only way to see it is to `GET` the campaign
