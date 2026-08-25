@@ -21,11 +21,13 @@ messages read as spam — keep it under ~700 characters, same discipline as the 
 
 > {{opener}}
 >
-> The Pentagon suspended CMMC Phase II on July 13, 2026, and DoD committed $32B to AI, cloud, and
-> cyber in H1 FY2026 — set-asides are opening fast.
+> The Pentagon suspended CMMC Phase II on July 13, 2026 — third-party assessments are paused
+> pending a 60-day review, while DoD committed $32B to AI, cloud, and cyber in H1 FY2026. The bid
+> barrier just dropped on a lot of money.
 >
-> OryonIQ flags the pursuits that fit your NAICS and SDB status before the RFP drops. Put
-> together a quick page with the ones it's surfacing for {{company}}: {{page_url}}
+> OryonIQ maps who's already winning in your NAICS and who they're teaming with — so you know
+> who to partner with instead of who to outbid. I put together a short page for {{company}}:
+> {{page_url}}
 >
 > Ellen, OryonIQ / VisioneerIT
 

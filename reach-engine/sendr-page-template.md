@@ -51,7 +51,10 @@ changes** — there is no automatic link between the two, and the failure is sil
 
 ## Part 2 — The out-of-the-box move: stop claiming the three pursuits, *name* them
 
-The page's entire promise is **"See the 3 pursuits it's surfacing."** Today that's an assertion.
+The page's entire promise is **"See who is already winning your work, and who they team with."**
+Today that is an assertion. (Superseded 2026-08-22: the earlier promise named "the 3 pursuits it
+is surfacing" — a capability that appears nowhere on oryoniq.com. Do not reinstate it without
+confirming the product actually does pre-RFP alerting.)
 Every other line on the page is also an assertion. A capture manager reads a dozen of these a
 month and discounts all of them equally.
 
@@ -193,8 +196,8 @@ an iframe again.
 ## Current page copy (live in 8462 — for reference when editing)
 
 **Hero headline** — `{{firstname}}, the RFP hasn't dropped yet — that's the point.`
-**Sub** — `See the 3 pursuits it's surfacing 👇`
-**Personal line** — `{{firstname}}, this page is specific to {{company}}'s NAICS and SDB status.`
+**Sub** — `See who is already winning in your NAICS 👇`
+**Personal line** — `{{firstname}}, this page is built from {{company}}'s own NAICS codes.`
 **FAQ** — what OryonIQ does · vs. checking SAM.gov yourself · does it change my process · cost
 **CTA band** — `{{company}} shouldn't find out about a pursuit from a FedBizOpps alert`
 **Evidence chain** — signal detected → matched to your profile → pursuit surfaced

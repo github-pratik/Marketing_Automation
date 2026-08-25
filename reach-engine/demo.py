@@ -86,7 +86,10 @@ def step_validate():
 
 
 CONFIG_SIGNAL = ("The Pentagon suspended CMMC Phase II on July 13, 2026, and the DoD committed "
-                 "$32B to AI, cloud, and cyber in H1 FY2026 — federal set-asides are opening fast.")
+                 "$32B to AI, cloud, and cyber in H1 FY2026. The bid barrier just dropped on a lot of money.")
+
+CONFIG_OFFER = ("OryonIQ maps who's already winning in your NAICS and who they're teaming with "
+                "— so you know who to partner with instead of who to outbid.")
 
 RAW = [
     {"first_name": "Kiara", "company": "Modernized Mobile LLC", "has_email": True},
@@ -160,9 +163,8 @@ def step_output():
     print("\n      Example finished email (Kiara):")
     print("      " + "┄" * 60)
     body = (f"Subject: cmmc phase 2 just got paused\n\n{OPENERS['Kiara']}\n\n"
-            "OryonIQ flags the pursuits that fit your NAICS and SDB status before the RFP "
-            "drops, so you're bidding while everyone else is still searching.\n\n"
-            "Want the three it's surfacing for a firm like yours? oryoniq.com/contact\n\n"
+            f"{CONFIG_OFFER}\n\n"
+            "Worth a quick look? oryoniq.com/contact\n\n"
             "Ellen\nOryonIQ, VisioneerIT")
     for line in body.split("\n"):
         wrap(line, indent="        ") if line.strip() else print()
