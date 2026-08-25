@@ -198,7 +198,11 @@ def assemble_email(lead, opener, cfg, page_url=None):
         # it's surfacing") also dangled — its antecedent lived in a line that no longer precedes it.
         cta_line = f"I put together a short page for {company}: {page_url}"
     else:
-        cta_line = f"Want the three it's surfacing for a firm like yours? {cfg['cta']}"
+        # No page for this lead. Must stay product-NEUTRAL — both configs share this branch, so
+        # anything naming a specific artefact ("the map", "the pursuits") is wrong for the other
+        # product. The previous wording ("the three it's surfacing") also outlived its antecedent
+        # when the offer stopped mentioning pursuits, leaving "it" pointing at nothing.
+        cta_line = f"Worth a quick look for {company}? {cfg['cta']}"
     return f"Hi {fn},\n\n{opener}\n\n{cfg['offer']}\n\n{cta_line}\n\n{cfg['sender']}"
 
 
