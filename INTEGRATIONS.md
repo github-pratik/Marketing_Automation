@@ -18,6 +18,20 @@ not yet wired into anything · `[BLOCKED]` missing a credential.
 - **Auth:** header `X-Api-Key: <APOLLO_API_KEY>`
 - **Free search:** `POST /mixed_people/api_search` — names, titles, `has_email` / `has_direct_phone`
   flags. Costs **0 credits**. This is the only Apollo call `reach-engine/engine.py` makes today.
+- **⚠️ What the FREE search actually returns — verified live 2026-08-22, and it is less than the
+  code assumed.** A `mixed_people/api_search` person carries only: `id`, `first_name`, `title`,
+  `has_email`, `has_direct_phone`, `has_city/state/country`, `last_name_obfuscated`,
+  `last_refreshed_at`, and an `organization` object. Three traps:
+  - **No surname.** `last_name` does not exist; only `last_name_obfuscated` (e.g. `"B."`).
+  - **No company domain.** `organization` has `name` plus `has_*` booleans — **no
+    `primary_domain`, no `website_url`**. `engine.py`'s `org_domain()` comment claims the domain
+    "comes back on Apollo's unpaid search". **It does not.** This matters beyond tidiness:
+    `company_domain` drives Sendr's `gifSource: dynamic-website`, so without it the personalized
+    page silently degrades to a generic preview instead of the lead's own site.
+  - **`has_direct_phone` is a STRING, not a boolean** — literally
+    `"Maybe: please request direct dial via people/bulk_match"`. `Boolean()` on that is `true`, so
+    a naive coercion marks every lead as having a confirmed direct dial. Treat it as tri-state.
+  Response top level is `{people, total_entries}` — there is no `pagination` object.
 - **Paid reveal:** `POST /people/match` — spends lead credits. Matched by Apollo's own person
   `id` (from the free search, no ambiguity), `reveal_personal_emails: true`. Only ever called on
   the already-filtered survivor list, never the raw search results — search wide for free, reveal

@@ -1,0 +1,171 @@
+{
+  "id": "VIOwf9source0001",
+  "name": "VIO-source-leads",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-source-leads",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "vio-wf9-trigger",
+      "name": "Source Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ],
+      "webhookId": "vio-wf9-source-leads"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Fail-closed auth, same contract as every other VIO webhook. This endpoint spends no credits\n// (Apollo's mixed_people/api_search is free), but it DOES reach a paid vendor with our key and\n// returns real people's names to whoever calls it \u2014 an open endpoint here leaks a prospect list.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {};\nconst headers = item.headers || {};\nconst got = q.t || q.token || headers['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };\n"
+      },
+      "id": "vio-wf9-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -340,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Resolve the product to its ICP filters, and build the Apollo request body.\n//\n// FAILS CLOSED on an unknown product, exactly like VIO-sendr-generate-page: sourcing against a\n// guessed ICP would put the wrong people into the pipeline, and every later stage would treat\n// them as legitimate. Better to refuse than to source strangers.\n//\n// The ICP is embedded rather than read from config-<product>.json because n8n has no filesystem\n// access to the repo. That makes this a THIRD copy of the ICP (config, this node, and the\n// operator agents' validate_config). sync-routes.py does not yet cover `icp` \u2014 see its docstring.\nconst ICP = {\n  oryoniq: {\n    product: 'OryonIQ',\n    person_titles: ['Capture Manager', 'VP of Business Development',\n                    'Director of Business Development', 'Proposal Manager'],\n    person_locations: ['United States'],\n    q_keywords: 'government contracting',\n  },\n  visioneerit: {\n    product: 'VisioneerIT',\n    person_titles: ['CIO', 'CISO', 'Director of IT', 'IT Program Manager',\n                    'Digital Transformation Lead'],\n    person_locations: ['United States'],\n    q_keywords: 'federal government IT modernization',\n  },\n};\n\nconst body = $input.first().json || {};\n// Require a STRING. String(['oryoniq']) === 'oryoniq', so coercing here would let an array (or\n// any object with a matching toString) through a gate whose whole job is to refuse the unknown.\n// A gate that coerces is not a gate.\nif (typeof body.product !== 'string') {\n  throw new Error(`REFUSED: 'product' must be a string, got ${Array.isArray(body.product) ? 'array' : typeof body.product}`);\n}\nconst key = body.product.trim().toLowerCase();\nconst icp = ICP[key];\nif (!icp) {\n  throw new Error(`REFUSED: unknown product '${body.product}'. Known: ${Object.keys(ICP).join(', ')}`);\n}\n\n// Hard cap. per_page is the only lever a caller has on result size, and an unbounded value would\n// pull a huge page, blow the response size, and hand back a prospect list nobody asked for.\n// 25 matches the operator agent's per-run budget ceiling.\nconst MAX = 25;\nconst asked = Number(body.limit);\nconst per_page = Number.isFinite(asked) && asked > 0 ? Math.min(Math.floor(asked), MAX) : 10;\n\nreturn { json: {\n  source_config: key,\n  product: icp.product,\n  per_page,\n  capped: Number.isFinite(asked) && asked > MAX,\n  apollo_body: {\n    person_titles: icp.person_titles,\n    person_locations: icp.person_locations,\n    q_keywords: icp.q_keywords,\n    page: 1,\n    per_page,\n  },\n} };\n"
+      },
+      "id": "vio-wf9-icp",
+      "name": "Resolve ICP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/api/v1/mixed_people/api_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.apollo_body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "vio-wf9-apollo",
+      "name": "Apollo Search (free)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        100,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "VIOapollocred01",
+          "name": "VIO Apollo"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Filter Apollo's free results down to emailable leads and shape them onto the Sheet's column\n// names. Mirrors engine.py: `[p for p in people if p.get('has_email')][:limit]`.\n//\n// NOTHING here spends a credit. has_email / has_direct_phone are FLAGS on the free search \u2014 the\n// actual address requires people/match, which is a separate, human-gated step and is deliberately\n// not reachable from this workflow.\nconst meta = $('Resolve ICP').first().json;\nconst resp = $input.first().json || {};\nconst people = Array.isArray(resp.people) ? resp.people : [];\n\nconst orgName = (p) => ((p.organization || {}).name)\n  || ((p.account || {}).name) || p.organization_name || 'their firm';\n\n// VERIFIED against the live API 2026-08-22: Apollo's FREE mixed_people/api_search does NOT\n// return a company domain. `organization` carries `name` plus has_* booleans and nothing else \u2014\n// no primary_domain, no website_url. The extraction below is kept for paid/enriched shapes, but\n// on the free path it correctly yields ''.\n//\n// This contradicts the comment on engine.py's org_domain(), which states the domain is \"free \u2014 it\n// comes back on Apollo's unpaid search\". It does not. The consequence is real: company_domain\n// drives Sendr's `gifSource: dynamic-website`, so without it the personalized page silently falls\n// back to a generic preview instead of screenshotting the lead's own site.\nconst orgDomain = (p) => {\n  const org = p.organization || p.account || {};\n  const raw = org.primary_domain || org.website_url || '';\n  if (!raw) return '';\n  return String(raw).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').split('/')[0];\n};\n\n// Apollo returns has_direct_phone as a STRING on the free tier \u2014 literally\n// \"Maybe: please request direct dial via people/bulk_match\". Boolean() on that is `true`, which\n// would mark every lead as having a confirmed direct dial. It is a maybe, and it must say so.\nconst phoneState = (v) => {\n  if (v === true) return true;\n  if (typeof v === 'string' && /^maybe/i.test(v.trim())) return 'maybe';\n  return Boolean(v);\n};\n\nconst clean = (v, cap = 200) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, cap) : '');\n\nconst survivors = people.filter((p) => p && p.has_email).slice(0, meta.per_page);\n\nconst leads = survivors.map((p) => ({\n  source_config: meta.source_config,\n  apollo_id: clean(p.id, 64),\n  first_name: clean(p.first_name, 80) || 'there',\n  // Free search withholds the surname \u2014 only `last_name_obfuscated` (e.g. \"B.\") comes back.\n  last_name: clean(p.last_name, 80),\n  last_name_obfuscated: clean(p.last_name_obfuscated, 80),\n  title: clean(p.title, 120) || '(role)',\n  company: clean(orgName(p), 160),\n  company_domain: clean(orgDomain(p), 160),\n  has_email: Boolean(p.has_email),\n  has_phone: phoneState(p.has_direct_phone),\n  linkedin_url: clean(p.linkedin_url, 240),\n  contact_email: '',        // stays empty \u2014 revealing costs a credit and is human-gated\n}));\n\nreturn [{ json: {\n  source_config: meta.source_config,\n  product: meta.product,\n  returned_by_apollo: people.length,\n  total_entries: resp.pagination ? resp.pagination.total_entries : (resp.total_entries ?? null),\n  emailable: leads.length,\n  dropped_no_email: people.length - survivors.length,\n  per_page: meta.per_page,\n  limit_capped: Boolean(meta.capped),\n  credits_spent: 0,\n  company_domain_available: leads.some((l) => l.company_domain !== ''),\n  leads,\n} }];\n"
+      },
+      "id": "vio-wf9-filter",
+      "name": "Filter + Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Normalise for the caller and restate the boundary in the response itself \u2014 whoever reads this\n// should not have to infer what did and did not happen. Strings are control-char scrubbed: n8n's\n// lastNode response serialises with RAW control characters, which strict JSON parsers reject\n// (found live 2026-08-16).\nconst scrub = (v) => Array.isArray(v) ? v.map(scrub)\n  : (v && typeof v === 'object') ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)]))\n  : (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\n\nconst r = $input.first().json;\nreturn [{ json: scrub({\n  ok: true,\n  ran: ['resolve_icp', 'apollo_search_free', 'filter_has_email'],\n  ...r,\n  note: 'Apollo free search only. No lead credit was spent and no email address was revealed \u2014 '\n      + 'revealing is people/match, a separate human-gated step this workflow cannot reach.',\n}) }];\n"
+      },
+      "id": "vio-wf9-report",
+      "name": "Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Source Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Resolve ICP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve ICP": {
+      "main": [
+        [
+          {
+            "node": "Apollo Search (free)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apollo Search (free)": {
+      "main": [
+        [
+          {
+            "node": "Filter + Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter + Shape": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
