@@ -659,43 +659,25 @@ def _compare_copy(r, label, want, got, missing_is_drift=True):
             r.drift.append(f"  {label}.{field}\n      config:   {exp!r}\n      workflow: {act!r}")
 
 
-def check_agent_v1_config(state):
-    r = Result("agent-v1-config",
-               "VIO-operator-agent.json / 'validate_config' embedded cfg",
-               refuse_reason=REFUSE_AGENT)
-    wf = load_json(AGENT_V1, r, "VIO-operator-agent.json")
-    if wf is None:
-        return r
-    node = find_node(wf, AGENT_CONFIG_NODE, AGENT_V1, r)
-    if node is None:
-        return r
-    obj, err = js_object_source(node["parameters"]["jsCode"], r"const\s+cfg\s*=\s*\{",
-                                f"`const cfg = {{...}}` in node '{AGENT_CONFIG_NODE}'")
-    if err:
-        return fail(r, f"VIO-operator-agent.json: {err} — it embeds config-oryoniq.json's copy; "
-                       "if the shape changed legitimately, re-point this check")
-    _compare_copy(r, "oryoniq", state["cfgs"]["oryoniq"], js_string_fields(obj, AGENT_COPY_FIELDS))
-    return r
-
-
-def check_agent_v2_config(state):
-    r = Result("agent-v2-config",
-               "VIO-operator-agent-v2.json / 'validate_config' embedded CONFIGS map",
-               refuse_reason=REFUSE_AGENT)
-    wf = load_json(AGENT_V2, r, "VIO-operator-agent-v2.json")
+def _check_agent_configs_map(state, r, wf_path, wf_label):
+    """Both operator agents now embed the SAME shape — a `const CONFIGS = {oryoniq: {...},
+    visioneerit: {...}}` map keyed by product. v1 used to hold a single `const cfg = {...}`
+    OryonIQ literal; it was made product-aware on 2026-08-22 after a live run drafted OryonIQ
+    copy for a VisioneerIT-sourced county-government CIO. One extractor now serves both, so the
+    two checks cannot drift from each other the way their subjects did."""
+    wf = load_json(wf_path, r, wf_label)
     if wf is None:
         return r
     node = next((n for n in wf.get("nodes", []) if n.get("name") == AGENT_CONFIG_NODE), None)
     if node is None:
-        return fail(r, f"no node named '{AGENT_CONFIG_NODE}' in VIO-operator-agent-v2.json")
+        return fail(r, f"no node named '{AGENT_CONFIG_NODE}' in {wf_label}")
     js = node.get("parameters", {}).get("jsCode")
     if not isinstance(js, str):
-        return fail(r, f"node '{AGENT_CONFIG_NODE}' in VIO-operator-agent-v2.json has no "
-                       "`parameters.jsCode` string")
+        return fail(r, f"node '{AGENT_CONFIG_NODE}' in {wf_label} has no `parameters.jsCode` string")
     outer, err = js_object_source(js, r"const\s+CONFIGS\s*=\s*\{",
                                   f"`const CONFIGS = {{...}}` in node '{AGENT_CONFIG_NODE}'")
     if err:
-        return fail(r, f"VIO-operator-agent-v2.json: {err}")
+        return fail(r, f"{wf_label}: {err} — if the shape changed legitimately, re-point this check")
     for key in PRODUCTS:
         block, err = js_object_source(outer, r"(?<![\w$])" + key + r"\s*:\s*\{",
                                       f"product block `{key}: {{...}}` inside CONFIGS")
@@ -704,6 +686,24 @@ def check_agent_v2_config(state):
             continue
         _compare_copy(r, key, state["cfgs"][key], js_string_fields(block, AGENT_COPY_FIELDS))
     return r
+
+
+def check_agent_v1_config(state):
+    return _check_agent_configs_map(
+        state,
+        Result("agent-v1-config",
+               "VIO-operator-agent.json / 'validate_config' embedded CONFIGS map",
+               refuse_reason=REFUSE_AGENT),
+        AGENT_V1, "VIO-operator-agent.json")
+
+
+def check_agent_v2_config(state):
+    return _check_agent_configs_map(
+        state,
+        Result("agent-v2-config",
+               "VIO-operator-agent-v2.json / 'validate_config' embedded CONFIGS map",
+               refuse_reason=REFUSE_AGENT),
+        AGENT_V2, "VIO-operator-agent-v2.json")
 
 
 # --------------------------------------------------------------------------------------------

@@ -129,6 +129,37 @@ class Sandbox:
         shutil.rmtree(self.root, ignore_errors=True)
 
 
+def _field_literal(sb, wf_rel, field, node="validate_config"):
+    """Return a `field: <literal>` fragment exactly as it appears in the workflow today.
+
+    Fixtures used to hardcode these (`sender: 'Ellen\\n...'`, `person_titles: ['Capture Manager',
+    ...]`). Both agents now emit JSON-escaped DOUBLE-quoted literals, because `sender` holds a
+    newline a single-quoted JS literal cannot. Anchoring on a quote style turned an ordinary shape
+    change into a test failure, so read the anchor out of the file instead."""
+    wf = sb.json(wf_rel)
+    js = next(n for n in wf["nodes"] if n["name"] == node)["parameters"]["jsCode"]
+    pat = (rf"{field}:\s*\[[^\]]*\]" if field.endswith("s")
+           else rf"{field}:\s*(['\"])(?:[^\\]|\\.)*?\1")
+    m = re.search(pat, js)
+    if not m:
+        raise AssertionError(f"no `{field}:` literal in {wf_rel}/{node} — update this helper")
+    return m.group(0)
+
+
+def _sender_literal(sb, wf_rel, node="validate_config"):
+    """Return the `sender: <literal>` source exactly as it appears in the workflow today.
+
+    The fixture used to hardcode `sender: 'Ellen\\nOryonIQ, VisioneerIT'`. Both agents now emit
+    JSON-escaped double-quoted literals, because `sender` contains a newline that a single-quoted
+    JS literal cannot hold. Anchoring on a quote style made an ordinary shape change look like a
+    test failure, so read the anchor out of the file instead."""
+    wf = sb.json(wf_rel)
+    js = next(n for n in wf["nodes"] if n["name"] == node)["parameters"]["jsCode"]
+    m = re.search(r"sender:\s*(['\"])(?:[^\\]|\\.)*?\1", js)
+    if not m:
+        raise AssertionError(f"no `sender:` literal in {wf_rel}/{node} — update this helper")
+    return m.group(0)
+
 def check(name, cond, detail=""):
     (PASS if cond else FAIL).append(name)
     print(("  ok   " if cond else "  FAIL ") + name + (("\n         " + detail) if
@@ -374,15 +405,14 @@ case("an extra A/B variant that drops the offer is not drift (one variant must k
 
 case("rendering the sign-off on one comma-separated line is not drift",
      lambda sb: sb.sub_node_js("n8n-workflows/VIO-operator-agent.json", "validate_config",
-                               "sender: 'Ellen\\nOryonIQ, VisioneerIT'",
+                               _sender_literal(sb, "n8n-workflows/VIO-operator-agent.json"),
                                "sender: 'Ellen, OryonIQ, VisioneerIT'"),
      0, forbid_checks=NO_DRIFT)
 
 case("truncating an agent's illustrative icp list is not drift (icp never reaches a prospect)",
      lambda sb: sb.sub_node_js(
          "n8n-workflows/VIO-operator-agent.json", "validate_config",
-         "person_titles: ['Capture Manager', 'VP of Business Development', "
-         "'Director of Business Development', 'Proposal Manager']",
+         _field_literal(sb, "n8n-workflows/VIO-operator-agent.json", "person_titles"),
          "person_titles: ['Capture Manager']"),
      0, forbid_checks=NO_DRIFT)
 
@@ -440,12 +470,18 @@ case("restructuring the Instantly campaign -> exit 2 naming the path it expected
 
 
 def unclosed_object(sb):
-    """A half-finished edit by a concurrent agent: the literal never closes."""
+    """A half-finished edit by a concurrent agent: the literal never closes.
+
+    Cuts the CONFIGS map mid-literal rather than anchoring on the text that follows it. The
+    previous version partitioned on `};\\n\\nconst REQUIRED_STR`, which encoded v1's old
+    single-`const cfg` shape — so making v1 product-aware broke the fixture rather than the
+    thing it tests. What must hold is only that an unclosed literal errors instead of crashing.
+    """
     wf, n = sb.node("n8n-workflows/VIO-operator-agent.json", "validate_config")
     js = n["parameters"]["jsCode"]
-    head, sep, tail = js.partition("};\n\nconst REQUIRED_STR")
-    assert sep, "fixture anchor missing: the end of `const cfg = {...}`"
-    n["parameters"]["jsCode"] = head + "\n\nconst REQUIRED_STR" + tail
+    start = js.find("const CONFIGS = {")
+    assert start != -1, "no `const CONFIGS = {` in validate_config — update this fixture"
+    n["parameters"]["jsCode"] = js[:start + 220]
     sb.put_json("n8n-workflows/VIO-operator-agent.json", wf)
 
 

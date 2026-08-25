@@ -5,22 +5,26 @@
     "person_titles": [
       "CIO",
       "CISO",
+      "Chief Information Officer",
+      "Chief Information Security Officer",
       "Director of IT",
+      "IT Director",
+      "Director of Information Technology",
       "IT Program Manager",
       "Digital Transformation Lead"
     ],
     "person_locations": [
       "United States"
     ],
-    "q_keywords": "federal government IT modernization"
+    "q_keywords": "government"
   },
-  "signal": "Every DoD component has to reach zero-trust architecture by September 30, 2027, and that deadline hasn't moved \u2014 while AI procurement mandates land on top of it. Security and modernization budgets are committed now.",
+  "signal": "Every DoD component has to reach zero-trust architecture by September 30, 2027, and that deadline hasn't moved — while AI procurement mandates land on top of it. Security and modernization budgets are committed now.",
   "offer": "VisioneerIT stands up zero-trust architecture and AI-augmented security operations without a year-long procurement cycle, with CMMC readiness alongside.",
-  "_comment_cta": "URL dropped into the soft ask at the end of every assembled email, and rendered as the page's link button. Use THIS PRODUCT'S OWN domain \u2014 see config-oryoniq.json, which points at oryoniq.com for the same reason.",
+  "_comment_cta": "URL dropped into the soft ask at the end of every assembled email, and rendered as the page's link button. Use THIS PRODUCT'S OWN domain — see config-oryoniq.json, which points at oryoniq.com for the same reason.",
   "cta": "https://www.visioneerit.com/contact",
   "sender": "Ellen\nVisioneerIT",
-  "personalization_prompt": "Write ONE specific opening line (max 2 sentences) for a cold email to {first_name}, {title} at {company} \u2014 a federal or SLED organization. Tie the current signal to their security/modernization mandate. Do NOT invent specific facts about {company}.",
-  "_comment_booking_url": "A URL that can be EMBEDDED \u2014 Sendr's calendar element puts its value in an <iframe src>, which is why this is deliberately separate from `cta` (an ordinary link on a button). EMPTY ON PURPOSE, and a contact page is NOT a substitute: both www.visioneerit.com/contact and www.oryoniq.com/contact were re-tested 2026-08-17 and send `X-Frame-Options: SAMEORIGIN` + `frame-ancestors 'self'`, so the browser refuses to render them and the page shows a grey broken-content box (seen live 2026-08-16 on both templates). Contact pages therefore belong in `cta`, on a link button \u2014 putting one here re-creates the exact bug. Until a real embeddable booking URL exists (Calendly, HubSpot Meetings, Cal.com \u2014 all designed to be framed), leave this empty and keep the calendar element REMOVED from the Sendr template. Filling it later also makes Sendr's `engagement:meeting_booked` event reachable, which VIO-sendr-events already routes to Slack as the goal state.",
+  "personalization_prompt": "Write ONE specific opening line (max 2 sentences) for a cold email to {first_name}, {title} at {company} — a federal or SLED organization. Tie the current signal to their security/modernization mandate. Do NOT invent specific facts about {company}.",
+  "_comment_booking_url": "A URL that can be EMBEDDED — Sendr's calendar element puts its value in an <iframe src>, which is why this is deliberately separate from `cta` (an ordinary link on a button). EMPTY ON PURPOSE, and a contact page is NOT a substitute: both www.visioneerit.com/contact and www.oryoniq.com/contact were re-tested 2026-08-17 and send `X-Frame-Options: SAMEORIGIN` + `frame-ancestors 'self'`, so the browser refuses to render them and the page shows a grey broken-content box (seen live 2026-08-16 on both templates). Contact pages therefore belong in `cta`, on a link button — putting one here re-creates the exact bug. Until a real embeddable booking URL exists (Calendly, HubSpot Meetings, Cal.com — all designed to be framed), leave this empty and keep the calendar element REMOVED from the Sendr template. Filling it later also makes Sendr's `engagement:meeting_booked` event reachable, which VIO-sendr-events already routes to Slack as the goal state.",
   "booking_url": "",
   "sendr": {
     "page_template_id": 8464,

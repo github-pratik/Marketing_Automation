@@ -325,6 +325,33 @@ for (const [label, res] of [
 
 console.log('--- workflow structure ---');
 
+// --- product routing (added 2026-08-22) ---
+// This node held ONE hardcoded OryonIQ config, so a VisioneerIT-sourced lead was drafted with
+// OryonIQ's offer and sign-off. Caught live: a county-government CIO received GovCon
+// capture-intelligence copy signed "OryonIQ".
+const cfgCode = WF.nodes.find((n) => n.name === 'validate_config').parameters.jsCode;
+const runCfg = (lead) => new Function('$input', cfgCode)({ first: () => ({ json: lead }) })[0].json;
+
+const vio = runCfg({ source_config: 'visioneerit', first_name: 'James', title: 'CIO', company: 'Columbus' });
+ok('a VisioneerIT lead gets VisioneerIT copy', /VisioneerIT/.test(vio.offer) && !/OryonIQ/.test(vio.offer), vio.offer);
+ok('a VisioneerIT lead gets the VisioneerIT sign-off', !/OryonIQ/.test(vio.sender), vio.sender);
+ok('a VisioneerIT lead gets the zero-trust signal', /zero-trust/.test(vio.signal), vio.signal.slice(0, 60));
+
+const ory = runCfg({ source_config: 'oryoniq', first_name: 'Kiara' });
+ok('an OryonIQ lead still gets OryonIQ copy', /OryonIQ/.test(ory.offer));
+ok('the two products get different offers', vio.offer !== ory.offer);
+
+const dflt = runCfg({ first_name: 'Kiara' });
+ok('no product still defaults to OryonIQ (webhook path unchanged)', dflt.config_used === 'oryoniq');
+ok('a defaulted config says so', dflt.config_defaulted === true);
+ok('an explicit config does not claim to be defaulted', ory.config_defaulted === false);
+
+let threw = null;
+try { runCfg({ source_config: 'acme', first_name: 'X' }); } catch (e) { threw = e.message; }
+ok('an unknown product REFUSES rather than falling back', threw !== null && /REFUSED/.test(threw), threw || 'did not throw');
+
+ok('every config still validates', vio.valid === true && ory.valid === true && dflt.valid === true);
+
 // 16. Import must update in place, and the two gates must still be wired exactly as before.
 ok('workflow id unchanged', WF.id === 'VIOwf4agent0001', WF.id);
 // The point of this assertion is that no EXISTING id was renamed or dropped — that is what makes
