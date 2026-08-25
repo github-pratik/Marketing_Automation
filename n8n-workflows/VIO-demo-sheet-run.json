@@ -1,0 +1,362 @@
+{
+  "id": "VIOwfDsheetdemo1",
+  "name": "VIO-demo-sheet-run",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "vio-wfd-cron",
+      "name": "Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -900,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Demo",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-wfd-read",
+      "name": "Read Demo tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -680,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Pick up rows a human typed into the Demo tab and has not been processed yet.\n//\n// A dedicated Demo tab, NOT the Leads tab. The Leads tab is written by the live intake pipeline,\n// so polling it would re-trigger on rows this system itself just appended \u2014 a feedback loop\n// against real spend. A separate input surface cannot loop.\n//\n// `status` is the claim marker: blank means unprocessed. Anything else (queued/done/skipped/an\n// error string) means leave it alone. That makes a re-poll idempotent without needing a lock \u2014\n// the row's own state is the lock.\nconst rows = $input.all().map((i) => i.json || {});\nconst clean = (v, cap = 160) => (typeof v === 'string'\n  ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, cap) : '');\n\nconst PRODUCTS = ['oryoniq', 'visioneerit', 'demo'];\nconst out = [];\n\nfor (const r of rows) {\n  if (clean(r.status)) continue;                       // already claimed\n  const first_name = clean(r.first_name, 80);\n  const company    = clean(r.company, 160);\n  const email      = clean(r.contact_email, 160).toLowerCase();\n  if (!first_name && !company && !email) continue;     // blank spacer row\n\n  const rowNum = r.row_number ?? r.__rowNum ?? null;\n  const problems = [];\n  if (!first_name) problems.push('first_name is blank');\n  if (!company)    problems.push('company is blank');\n  // Strict on purpose: a comma or bracket smuggled in here turns one row into two recipients.\n  if (!/^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/.test(email)) {\n    problems.push(email ? `'${email}' is not a single valid address` : 'contact_email is blank');\n  }\n  let product = clean(r.product, 40).toLowerCase() || 'demo';\n  if (!PRODUCTS.includes(product)) {\n    problems.push(`product '${product}' is not one of ${PRODUCTS.join('/')}`);\n  }\n\n  out.push({ json: {\n    row_number: rowNum,\n    first_name, company, email,\n    title: clean(r.title, 120) || '(role)',\n    product,\n    // A bad row is REPORTED back into the sheet, never silently skipped \u2014 the person who typed it\n    // is standing right there, and a row that vanishes looks like the system is broken.\n    invalid: problems.length > 0,\n    problems: problems.join('; '),\n  }});\n}\n\nreturn out;\n"
+      },
+      "id": "vio-wfd-pick",
+      "name": "Pick unprocessed rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wfd-valid",
+              "leftValue": "={{ $json.invalid === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-wfd-if",
+      "name": "Row usable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Hand the drafting sub-workflow exactly the fields it reads, and carry the row identity so the\n// result can be written back to the row the human is watching.\nconst r = $input.item.json;\nreturn { json: {\n  first_name: r.first_name,\n  title: r.title,\n  company: r.company,\n  // The drafting workflow selects OryonIQ vs VisioneerIT copy from this. 'demo' is the demo\n  // campaign, whose copy is OryonIQ's step 1 verbatim, so it drafts with the OryonIQ config.\n  source_config: r.product === 'demo' ? 'oryoniq' : r.product,\n  _row: r.row_number, _email: r.email, _product: r.product, _company: r.company,\n  _first_name: r.first_name, _title: r.title,\n} };\n"
+      },
+      "id": "vio-wfd-shape",
+      "name": "Shape for drafting",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "VIOwf4agent0001",
+          "mode": "id"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "mode": "each"
+      },
+      "id": "vio-wfd-draft",
+      "name": "Draft (operator agent)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        200,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Fold the drafted opener back onto the row, ready for the page + enrolment stages.\nconst d = $input.item.json;\nconst opener = typeof d.opener === 'string' ? d.opener.trim() : '';\nreturn { json: {\n  row_number: d._row, first_name: d._first_name, title: d._title, company: d._company,\n  product: d._product, contact_email: d._email,\n  opener,\n  email_draft: typeof d.email === 'string' ? d.email : '',\n  drafted: opener.length > 0,\n} };\n"
+      },
+      "id": "vio-wfd-merge",
+      "name": "Merge draft onto row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Report the problem into the sheet rather than dropping the row silently.\nconst r = $input.item.json;\nreturn { json: { row_number: r.row_number, status: 'skipped',\n                 notes: `Not processed \u2014 ${r.problems}`, opener: '', email_draft: '',\n                 sendr_page_url: '' } };"
+      },
+      "id": "vio-wfd-bad",
+      "name": "Explain the bad row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Drafted, not yet sent. The enrolment step is gated and runs separately, so this row\n// deliberately does NOT claim an email went out.\nconst r = $input.item.json;\nreturn { json: { ...r, status: r.drafted ? 'drafted' : 'error',\n  notes: r.drafted ? 'Drafted online. Enrolment is a separate approved step.'\n                   : 'Drafting returned no opener.' } };"
+      },
+      "id": "vio-wfd-ok",
+      "name": "Mark drafted",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Build the row update the human sees appear beside what they typed.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nreturn { json: {\n  row_number: r.row_number,\n  status: r.status,\n  opener: scrub(r.opener || ''),\n  email_draft: scrub(r.email_draft || ''),\n  sendr_page_url: r.sendr_page_url || '',\n  notes: scrub(r.notes || ''),\n  updated_at: new Date().toISOString(),\n} };\n"
+      },
+      "id": "vio-wfd-write",
+      "name": "Shape row update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Demo",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [
+            "row_number"
+          ],
+          "value": {}
+        }
+      },
+      "id": "vio-wfd-update",
+      "name": "Write result back",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1080,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every minute": {
+      "main": [
+        [
+          {
+            "node": "Read Demo tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Demo tab": {
+      "main": [
+        [
+          {
+            "node": "Pick unprocessed rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick unprocessed rows": {
+      "main": [
+        [
+          {
+            "node": "Row usable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Row usable?": {
+      "main": [
+        [
+          {
+            "node": "Explain the bad row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape for drafting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape for drafting": {
+      "main": [
+        [
+          {
+            "node": "Draft (operator agent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft (operator agent)": {
+      "main": [
+        [
+          {
+            "node": "Merge draft onto row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge draft onto row": {
+      "main": [
+        [
+          {
+            "node": "Mark drafted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark drafted": {
+      "main": [
+        [
+          {
+            "node": "Shape row update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explain the bad row": {
+      "main": [
+        [
+          {
+            "node": "Shape row update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape row update": {
+      "main": [
+        [
+          {
+            "node": "Write result back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

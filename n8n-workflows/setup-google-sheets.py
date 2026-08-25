@@ -47,6 +47,15 @@ TABS = {
         "reply_sentiment", "reply_out_of_office", "call_state", "meeting_booked",
         "created_at", "updated_at",
     ],
+    # Input surface for the live demo: a human types a lead here and VIO-demo-sheet-run picks it
+    # up on a one-minute schedule, writing the drafted email back beside it. Deliberately NOT the
+    # Leads tab — the intake pipeline writes there, so polling it would re-trigger on this
+    # system's own rows, a feedback loop against real Reoon and OpenAI spend.
+    # `status` is the claim marker: blank = unprocessed, anything else = leave alone.
+    "Demo": [
+        "first_name", "title", "company", "contact_email", "product",
+        "status", "opener", "email_draft", "sendr_page_url", "notes", "updated_at",
+    ],
     "Suppression": ["identifier_type", "identifier_value", "reason", "added_at", "added_by"],
     # Per-action audit log. Kept alongside Costs on purpose: Events answers "what happened to this
     # lead", Costs answers "what did this tool consume" — and not every cost is lead-attributable
