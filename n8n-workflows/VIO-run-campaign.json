@@ -101,8 +101,8 @@
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [
-        420,
-        0
+        520,
+        120
       ]
     },
     {
@@ -116,7 +116,39 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        640,
+        740,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wfc-noleads-cond",
+              "leftValue": "={{ $json._no_leads === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-wfc-anyleads",
+      "name": "Any leads?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        310,
         0
       ]
     }
@@ -170,7 +202,7 @@
       "main": [
         [
           {
-            "node": "Draft Email (per lead)",
+            "node": "Any leads?",
             "type": "main",
             "index": 0
           }
@@ -182,6 +214,24 @@
         [
           {
             "node": "Run Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any leads?": {
+      "main": [
+        [
+          {
+            "node": "Run Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Draft Email (per lead)",
             "type": "main",
             "index": 0
           }

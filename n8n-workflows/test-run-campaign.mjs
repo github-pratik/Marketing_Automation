@@ -129,6 +129,20 @@ const repSrc = jsOf('Run Report');
 ok('report carries the source stage counts', /emailable/.test(repSrc) && /returned_by_apollo/.test(repSrc));
 ok('report flags an emailable/drafted mismatch', /all_emailable_drafted/.test(repSrc));
 
+// A zero-result run must NOT reach the drafting stage. VIO-operator-agent fills missing lead
+// fields from hardcoded defaults, so the _no_leads sentinel arriving there produced a fully
+// drafted email for "Kiara · Capture Manager · Modernized Mobile LLC" — a prospect Apollo never
+// returned. Caught live 2026-08-22 on a VisioneerIT run that sourced nothing.
+const fanTargets = wf.connections['Fan Out Leads'].main[0].map(c => c.node);
+ok('Fan Out does not feed drafting directly', !fanTargets.includes('Draft Email (per lead)'),
+   `Fan Out -> ${fanTargets.join(', ')}`);
+ok('an emptiness check sits between them', fanTargets.includes('Any leads?'));
+const gate = wf.connections['Any leads?'].main;
+ok('the no-leads branch goes straight to the report', gate[0].some(c => c.node === 'Run Report'));
+ok('the has-leads branch goes to drafting', gate[1].some(c => c.node === 'Draft Email (per lead)'));
+ok('the emptiness check is strict-typed',
+   wf.nodes.find(n => n.name === 'Any leads?')?.parameters?.conditions?.options?.typeValidation === 'strict');
+
 const names = new Set(wf.nodes.map(n => n.name));
 for (const [src, v] of Object.entries(wf.connections))
   for (const g of v.main) for (const c of g)
