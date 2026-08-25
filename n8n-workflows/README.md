@@ -122,6 +122,28 @@ all three share `env_file`). Routes take ~30-60s after the "n8n ready on" log li
 than probing once. n8n also **caches decrypted credentials in memory**, so a re-imported credential
 needs the same restart to take effect.
 
+### ⚠️ An `Execute Workflow` TARGET must be ACTIVE (found live 2026-08-22)
+
+On n8n 2.22.6, calling an inactive sub-workflow fails with `Workflow is not active and cannot be
+executed.`, thrown inside `getPublishedWorkflowData`. The **caller** dies with a stack trace; the
+target does not merely no-op. Intuition says a workflow invoked directly does not need its own
+trigger armed — on this build it does.
+
+This bit during the first live gated enrolment: `VIO-agent-tool-push-instantly` was active but
+`VIO-agent-tool-ask-human` was not, so the approval call blew up instead of blocking. The webhook
+returned a bare `{"message":"Error in workflow"}`, and `execution_data` stores the reason
+index-encoded, so **`docker logs n8n-stack-n8n-1` is where the real message lives** — not the
+execution record, and not the HTTP response.
+
+Must be ACTIVE to be callable as sub-workflows: `VIOwf8askhuman1` (ask-human),
+`VIOwfArevealcon1` (reveal), `VIOwfBpushinst1` (push-instantly), `VIOwf9source0001`
+(source-leads), `VIOwf4agent0001` (operator-agent), `VIOwf6sendrgen01` (sendr-generate-page).
+`VIOwf1intake0001` (intake) is still deactivated by design — **activate it before wiring it into
+any orchestrator**, or the orchestrator fails at that step.
+
+A healthy blocked approval shows `status: waiting` in `execution_entity` for BOTH the caller and
+`ask-human`. That is the gate armed and a human being asked — not a hang.
+
 ## Workflows
 
 ### `VIO-intake-verify-curate.json` — WF-1 (id `VIOwf1intake0001`)
