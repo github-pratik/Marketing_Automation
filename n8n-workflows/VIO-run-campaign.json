@@ -1,0 +1,195 @@
+{
+  "id": "VIOwfCruncamp001",
+  "name": "VIO-run-campaign",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-run-campaign",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "vio-wfc-trigger",
+      "name": "Run Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        0
+      ],
+      "webhookId": "vio-wfc-run-campaign"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Fail-closed auth. This endpoint drives a whole campaign run \u2014 sourcing real people and\n// drafting real copy \u2014 so an open endpoint here is worse than on any single stage.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {};\nconst headers = item.headers || {};\nconst got = q.t || q.token || headers['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };\n"
+      },
+      "id": "vio-wfc-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Validate the run request before anything downstream moves.\n//\n// Deliberately re-validates rather than trusting VIO-source-leads to do it: this workflow decides\n// how many people get sourced and drafted, and a gate that delegates its own precondition is not\n// a gate. Type-checked, not coerced \u2014 String(['oryoniq']) === 'oryoniq'.\nconst b = $input.first().json || {};\nif (typeof b.product !== 'string') {\n  throw new Error(`REFUSED: 'product' must be a string, got ${Array.isArray(b.product) ? 'array' : typeof b.product}`);\n}\nconst product = b.product.trim().toLowerCase();\nif (!['oryoniq', 'visioneerit'].includes(product)) {\n  throw new Error(`REFUSED: unknown product '${b.product}'. Known: oryoniq, visioneerit`);\n}\n\n// This run is FREE by design: Apollo's search costs nothing and the opener needs only a name,\n// title and company \u2014 all of which the free search returns. Revealing the address, verifying it,\n// building a page and enrolling all cost money or reach a person, and none of them happen here.\n// They are separate gated tools, each holding its own approval. That is why this endpoint can be\n// handed to someone to press without a budget conversation first.\nconst MAX = 25;\nconst asked = Number(b.limit);\nconst limit = Number.isFinite(asked) && asked > 0 ? Math.min(Math.floor(asked), MAX) : 5;\n\nreturn { json: { product, limit, limit_capped: Number.isFinite(asked) && asked > MAX,\n                 started_at: new Date().toISOString() } };\n"
+      },
+      "id": "vio-wfc-resolve",
+      "name": "Resolve Run",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "VIOwf9source0001",
+          "mode": "id"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "vio-wfc-source",
+      "name": "Source Leads (free)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -20,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// VIO-source-leads returns ONE item carrying a leads[] array. The drafting stage runs per lead,\n// so fan out to one item each. An empty result must end the run cleanly rather than handing an\n// empty array to a stage that would then draft nothing and report success.\nconst src = $input.first().json || {};\nconst leads = Array.isArray(src.leads) ? src.leads : [];\nconst run = $('Resolve Run').first().json;\n\nif (leads.length === 0) {\n  return [{ json: { _no_leads: true, product: run.product,\n                    returned_by_apollo: src.returned_by_apollo ?? 0,\n                    reason: 'Apollo returned no emailable leads for this ICP' } }];\n}\n\nreturn leads.map((l) => ({ json: {\n  ...l,\n  product: src.product,\n  source_config: src.source_config,\n  _run_started_at: run.started_at,\n} }));\n"
+      },
+      "id": "vio-wfc-fanout",
+      "name": "Fan Out Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "VIOwf4agent0001",
+          "mode": "id"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        },
+        "mode": "each"
+      },
+      "id": "vio-wfc-draft",
+      "name": "Draft Email (per lead)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Collect the per-lead drafts and state plainly what did and did not happen. The boundary is\n// restated in the response because whoever reads this \u2014 including a human about to approve the\n// next step \u2014 should not have to infer that nothing was spent and nobody was contacted.\nconst scrub = (v) => Array.isArray(v) ? v.map(scrub)\n  : (v && typeof v === 'object') ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)]))\n  : (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\n\nconst run = $('Resolve Run').first().json;\n// Carry the source stage's own counts through. Reporting `drafted` alone hides the case\n// that matters: leads sourced but never drafted. 8 in / 1 out looked fine until these\n// two numbers sat next to each other.\nconst src = $('Source Leads (free)').first().json || {};\nconst items = $input.all().map((i) => i.json || {});\n\nif (items.length === 1 && items[0]._no_leads) {\n  return [{ json: scrub({ ok: true, product: run.product, drafted: 0,\n                          note: items[0].reason, credits_spent: 0, contacted: 0 }) }];\n}\n\nconst drafts = items.map((r) => ({\n  first_name: r.lead ? String(r.lead).split(' \u00b7 ')[0] : (r.first_name || ''),\n  lead: r.lead || '',\n  opener: r.opener || '',\n  email: r.email || '',\n  email_complete: r.email_complete === true,\n  missing: r.missing || [],\n}));\n\nreturn [{ json: scrub({\n  ok: true,\n  product: run.product,\n  requested: run.limit,\n  returned_by_apollo: src.returned_by_apollo ?? null,\n  emailable: src.emailable ?? null,\n  drafted: drafts.length,\n  all_emailable_drafted: (src.emailable ?? null) === drafts.length,\n  credits_spent: 0,\n  contacted: 0,\n  ran: ['source_leads_free', 'draft_opener'],\n  next_step: 'reveal_contacts \u2014 GATED. Costs one Apollo credit per lead and requires a human '\n           + 'approval in Slack. Nothing below has happened yet.',\n  note: 'Apollo free search + OpenAI drafting only. No address was revealed, no email verified, '\n      + 'no page built, nobody enrolled or contacted.',\n  drafts,\n}) }];\n"
+      },
+      "id": "vio-wfc-report",
+      "name": "Run Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Run Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Resolve Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Run": {
+      "main": [
+        [
+          {
+            "node": "Source Leads (free)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Source Leads (free)": {
+      "main": [
+        [
+          {
+            "node": "Fan Out Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fan Out Leads": {
+      "main": [
+        [
+          {
+            "node": "Draft Email (per lead)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Email (per lead)": {
+      "main": [
+        [
+          {
+            "node": "Run Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

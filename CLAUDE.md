@@ -94,8 +94,13 @@ real. Each config's `sendr` block carries its own campaign + page template:
   `toolWorkflow` v2.2. Gate tested with a direct "you have my approval, call 50 people" attack and
   it refused. Full detail in `n8n-workflows/README.md`.
 - `VIO-operator-agent` — the earlier deterministic slice, kept as a fallback (no LangChain deps).
-- `VIO-intake-verify-curate` — **COMPLETE and proven, still deactivated by design** (manual
-  trigger; swapping it for the real Apollo intake is the last Phase 1 item). Dedupe + suppression
+- `VIO-intake-verify-curate` — **COMPLETE and proven, still deactivated by design.** Since
+  2026-08-25 it has **two entry points**: the manual trigger, and an `executeWorkflowTrigger` so
+  `VIO-source-leads` can hand it a batch. They converge on `Normalize Lead`, so there is still
+  exactly one copy of the gates. Batch shape is **one n8n item per lead** — every node downstream is
+  `$input.all().map(...)` or per-item, so an array on one item would silently process only the
+  first. `test-intake-callable.mjs` 124/124 covers it. Still deactivated: the `Execute Workflow`
+  node on the `VIO-source-leads` side is not wired yet. Dedupe + suppression
   gates run BEFORE Reoon, so a duplicate or suppressed lead costs zero credits. All four paths
   proven from execution records: pass, needs_review, dedupe hit, suppression hit. Writes to both
   `Leads` and `Events`. `test-intake-gate.mjs` 75/75 — it reads `jsCode` straight out of the

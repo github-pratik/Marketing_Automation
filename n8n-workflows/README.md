@@ -57,6 +57,7 @@ Because secrets are by-name (credentials) or by-env (tokens), nothing here is ti
 | `setup-google-sheets.py` | One-command Sheets setup: verify access → create tabs → write headers → install the n8n credential → shred the key file. |
 | `register-webhooks.sh` | Register the external (Instantly / Sendr) webhook subscriptions. |
 | `test-intake-gate.mjs` | 75/75. Reads `jsCode` out of the workflow JSON, so tests cannot drift from deployed logic. |
+| `test-intake-callable.mjs` | 124/124. WF-1's second entry point: batch shape, both triggers converging on one gate, batch-level rejects and failures. Same read-the-JSON discipline. |
 | `test-sendr-events.mjs` | 32/32. Heat classification, incl. `asset_warning` vs `error`. |
 | `test-reply-brain.mjs` | 10/10. Reply classification + dedup/TCPA gate. |
 | `test-live-webhook.sh` | Live probe helper. |
@@ -140,9 +141,56 @@ timeout, retry x3) → `Classify (pass / drop / needs_review)` (Code) → **two 
 `Shape Reoon Event` → `Log Reoon Call (Events)` and `Shape Lead Row` → `Write Lead Row (Leads)` ·
 false: `Skipped (duplicate / suppressed / no id)` (NoOp, terminal).
 
-**Order matters: both gates run BEFORE Reoon**, so a duplicate or a suppressed lead costs zero
+Second entry point, added 2026-08-25: `Leads In (from parent workflow)`
+(`executeWorkflowTrigger`, `inputSource: passthrough`) → `Batch In (one item per lead)` (Code) →
+**the same `Normalize Lead`**. See "Two entry points, one gate" below.
+
+**Order matters: all three gates run BEFORE Reoon**, so a duplicate or a suppressed lead costs zero
 credits. That is the entire reason the reads sit in front rather than the writes sorting it out
-afterwards.
+afterwards. This holds identically for a lead that arrives in a batch, because both entry points
+join *upstream* of the gate — there is one copy of the gate logic, not one per trigger.
+
+#### Two entry points, one gate (2026-08-25)
+
+WF-1 is now callable from another workflow (an `Execute Workflow` node in `VIO-source-leads`, say)
+without losing the manual path. The manual trigger still runs the Set-node fixture; the new
+`executeWorkflowTrigger` accepts a batch. They converge on `Normalize Lead`, so nothing downstream
+is duplicated.
+
+**Batch shape: one n8n item per lead, never an array riding on one item.** This is forced by the
+nodes that already exist. `Normalize Lead`, `Gate`, `Classify` and both `Shape *` nodes are all
+`$input.all().map(...)` — they map ITEMS. `Reoon Verify` interpolates `{{ $json.email }}`, so one
+item is one HTTP call. The IF node routes per item. Feed the array shape in and you get **one**
+normalized lead built from the envelope's own absent fields: `lead_id: ''`, gate skip
+`no_identifier`, and the other 24 people gone with no error anywhere. `test-intake-callable.mjs`
+demonstrates that failure rather than merely asserting against it.
+
+`VIO-source-leads` emits the opposite shape — ONE item, `{ ok, source_config, ..., leads: [...] }` —
+so `Batch In (one item per lead)` un-nests it, once, at the boundary. It accepts an envelope, N bare
+lead items, a mix, a `body`-wrapped envelope, or a JSON-stringified list, and it does nothing else:
+no normalising, no dedupe, no suppression, no HTTP (the test asserts all four absences). Envelope
+`source_config`/`signal` are inherited by leads that lack their own; a lead's own value wins.
+
+Three things the batch changed that are worth knowing:
+- **`inputSource` must be `passthrough`.** Declaring a `workflowInputs` schema makes n8n DROP every
+  field not listed, so `company_domain` / `linkedin_url` / `signal` would vanish on the way in and
+  the Sendr page would quietly lose its inputs.
+- **The gate gained an in-batch dedupe** (`gate_reason: duplicate_in_batch`), third in the order
+  after suppression and the Leads-tab check. Apollo can return the same person twice in one page,
+  and neither copy is on the Leads tab yet, so the existing check cannot catch it — two Reoon
+  credits for one person. The first occurrence verifies; later ones skip.
+- **`Reoon Verify` now has `onError: continueErrorOutput`.** When N was always 1, a failed
+  verification aborting the run lost nothing extra. In a batch it would discard every lead that
+  already succeeded. Errors leave on output 1 to `Reoon Call Failed (lead left unprocessed)`
+  (terminal, writes nothing — a call that failed is not a metered verify).
+
+The two Sheets reads are `executeOnce: true`, so a batch of 25 still costs exactly one read of
+`Leads` and one of `Suppression`.
+
+**The sub-workflow returns no summary.** Its contract is side effects — rows on `Leads`/`Events`
+plus the execution record. Joining the two terminal branches to build one summary item would mean
+merging streams of different lengths, which is exactly the shape mismatch this change exists to
+avoid. A parent should read results from the Sheet, not from the Execute Workflow node's output.
 
 **Classify mapping — unchanged, and deliberately so.** Gates on `status`, per INTEGRATIONS.md's
 live-tested Reoon behaviour: `safe/valid → pass` · `invalid/spamtrap → drop` ·
@@ -207,9 +255,10 @@ wrote one execution earlier**, not a fixture.
    version indexed into `$('Test Lead (edit me)')`, which was only ever correct because nothing
    filtered items before it.
 
-**Still TODO on WF-1:** swap the manual trigger for the real intake (Apollo source step) — that is
-Phase 1 work and is the only reason this stays manual. A skipped lead currently leaves its trace in
-the execution record and nowhere else; if suppression/dedupe decisions need to be auditable from
+**Still TODO on WF-1:** it is now *callable* from `VIO-source-leads` (above), but the two are not
+yet wired together — that needs an `Execute Workflow` node added to `VIO-source-leads`, and WF-1
+activated. Until then WF-1 stays deactivated and the manual path is the only one that runs. A
+skipped lead currently leaves its trace in the execution record and nowhere else; if suppression/dedupe decisions need to be auditable from
 the Sheet itself, add an Events row on the false branch too (the shape node pattern is already
 there to copy).
 

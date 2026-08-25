@@ -105,7 +105,7 @@
           "messages": [
             {
               "role": "system",
-              "content": "=You write sharp B2B GovCon cold-email opening lines. One or two sentences, no fluff, no em-dashes, no 'leverage/unlock/streamline'. Never invent specific facts about the company. Ground it in the SIGNAL below.\n\nSIGNAL: {{ $json.signal }}"
+              "content": "=You write sharp B2B GovCon cold-email opening lines. One or two sentences, no fluff, no em-dashes, no 'leverage/unlock/streamline'. Never invent specific facts about the company. Do NOT begin with the person's name or any greeting \u2014 the email template already opens with \"Hi <first name>,\" and a name here reads as \"Hi Kiara, Kiara, ...\". Ground it in the SIGNAL below.\n\nSIGNAL: {{ $json.signal }}"
             },
             {
               "role": "user",
@@ -164,6 +164,19 @@
       "position": [
         420,
         80
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "vio-wf4-subtrigger",
+      "name": "Called by Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        180
       ]
     }
   ],
@@ -231,6 +244,17 @@
       ]
     },
     "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Test Lead (edit me)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called by Workflow": {
       "main": [
         [
           {

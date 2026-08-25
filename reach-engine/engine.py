@@ -172,7 +172,9 @@ def openai_opener(lead, cfg, secrets, model):
         company=org_name(lead))
     system = ("You write sharp B2B GovCon cold-email opening lines. One or two sentences, "
               "no fluff, no em-dashes, no 'leverage/unlock/streamline'. Never invent specific "
-              "facts about the company. Ground it in the SIGNAL below.\n\nSIGNAL: " + cfg.get("signal", ""))
+              "facts about the company. Do NOT begin with the person's name or any greeting — "
+              "assemble_email() already opens with \"Hi <first name>,\" and a name here reads as "
+              "\"Hi Kiara, Kiara, ...\". Ground it in the SIGNAL below.\n\nSIGNAL: " + cfg.get("signal", ""))
     body = {"model": model, "temperature": 0.7,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": task}]}
