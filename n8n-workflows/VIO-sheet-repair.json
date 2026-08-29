@@ -1,82 +1,38 @@
 {
-  "id": "VIOwfIprovision",
-  "name": "VIO-sheet-provision",
+  "id": "VIOwfJrepairsht",
+  "name": "VIO-sheet-repair",
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "VIOwfEerroralert"
+  },
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "vio-sheet-provision",
+        "path": "vio-sheet-repair",
         "responseMode": "lastNode",
         "options": {}
       },
-      "id": "vio-pv-trigger",
-      "name": "Provision Webhook",
+      "id": "vio-rp-hook",
+      "name": "Repair Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -620,
+        -600,
         0
       ],
-      "webhookId": "vio-pv-sheet-provision"
+      "webhookId": "vio-rp-sheet-repair"
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "language": "javaScript",
-        "jsCode": "const expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };\n"
+        "jsCode": "// Same fail-closed gate every VIO webhook uses. This one writes into a tab staff type into.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nconst b = item.body || {};\n// A caller may seed a test lead. Defaults are a clearly-fake lead at a domain nobody owns, so an\n// accidental run cannot mail a real person.\nreturn { json: {\n  status: '', notes: '', mapped_lead_id: '',\n  Product: b.Product || 'OryonIQ',\n  'First name': b.first_name || 'Wiring',\n  'Last name': b.last_name || 'Test',\n  'Company name': b.company || 'Wiring Test Co',\n  'Email address': b.email || 'wiring-test@example.invalid',\n  'Website': b.website || 'example.invalid',\n} };"
       },
-      "id": "vio-pv-auth",
+      "id": "vio-rp-auth",
       "name": "Authenticate (fail-closed)",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -420,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "resource": "sheet",
-        "operation": "create",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "title": "Inbox",
-        "options": {}
-      },
-      "id": "vio-pv-create",
-      "name": "Create Inbox tab",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        -220,
-        0
-      ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
-      "onError": "continueRegularOutput",
-      "notes": "Fails with a 400 when the tab already exists — the NORMAL case on every run after the first. onError:continueRegularOutput alone was not enough: the failed node emitted ZERO items, so the chain stopped here and the header row was never written while the execution still reported success. alwaysOutputData makes it emit an empty item so the header write always runs. Found live 2026-08-29.",
-      "alwaysOutputData": true
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "// The header row for the Inbox tab.\n//\n// FOUR control columns since 2026-08-29, and they sit first so staff can paste an export straight\n// to their right without touching them. Everything further right is whatever the source gave them\n// — the mapper reads those headers and works out what they mean.\n//\n// `status` is the claim marker: blank means unprocessed. That is the same convention every other\n// polling workflow here uses, so a row is claimed by its own state rather than a separate lock.\n//\n// `Product` is the one column staff MUST fill themselves, and it is capital-P to match the live\n// Leads tab. Nothing can infer it: `source_config` records how a lead arrived (Apollo /\n// Warmly-Intent / Referral / Manual), which says nothing about whether this person should hear\n// from OryonIQ or from VisioneerIT. A blank refuses the row rather than guessing, because a wrong\n// guess sends the wrong company's pitch to a real person. Put a data-validation dropdown on this\n// column offering exactly: OryonIQ, VisioneerIT.\nreturn [{ json: { status: '', notes: '', mapped_lead_id: '', Product: '',\n                  'First name': '', 'Last name': '', 'Company name': '',\n                  'Email address': '', 'Website': '' } }];"
-      },
-      "id": "vio-pv-hdr",
-      "name": "Header row",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -20,
+        -400,
         0
       ]
     },
@@ -97,6 +53,7 @@
         "columns": {
           "mappingMode": "autoMapInputData",
           "value": {},
+          "matchingColumns": [],
           "schema": [
             {
               "id": "status",
@@ -119,6 +76,15 @@
             {
               "id": "mapped_lead_id",
               "displayName": "mapped_lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Product",
+              "displayName": "Product",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -176,12 +142,12 @@
           "handlingExtraData": "insertInNewColumn"
         }
       },
-      "id": "vio-pv-write",
-      "name": "Write header row",
+      "id": "vio-rp-write",
+      "name": "Seed Inbox row",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        180,
+        -200,
         0
       ],
       "credentials": {
@@ -190,10 +156,54 @@
           "name": "VIO Google Sheets"
         }
       }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Inbox",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-rp-read",
+      "name": "Read Inbox back",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Report what the tab ACTUALLY holds. The sheet audit derives its header list from the data\n// rows, so an empty tab reports zero headers whether or not a header row exists — which is how a\n// completely unprovisioned Inbox went unnoticed. Reading back a row we just wrote is the only\n// honest proof that the header row is there and correctly named.\nconst WANT = ['status','notes','mapped_lead_id','Product','First name','Last name','Company name','Email address','Website'];\nconst rows = $input.all().map((i) => i.json || {});\nconst headers = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => k !== 'row_number');\nconst missing = WANT.filter((h) => !headers.includes(h));\nreturn [{ json: {\n  ok: missing.length === 0 && rows.length > 0,\n  rows_in_inbox: rows.length,\n  headers_present: headers,\n  headers_missing: missing,\n  product_column_exists: headers.includes('Product'),\n  newest_row: rows.length ? rows[rows.length - 1] : null,\n  at: new Date().toISOString(),\n} }];"
+      },
+      "id": "vio-rp-done",
+      "name": "Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ]
     }
   ],
   "connections": {
-    "Provision Webhook": {
+    "Repair Webhook": {
       "main": [
         [
           {
@@ -208,38 +218,34 @@
       "main": [
         [
           {
-            "node": "Create Inbox tab",
+            "node": "Seed Inbox row",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Create Inbox tab": {
+    "Seed Inbox row": {
       "main": [
         [
           {
-            "node": "Header row",
+            "node": "Read Inbox back",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Header row": {
+    "Read Inbox back": {
       "main": [
         [
           {
-            "node": "Write header row",
+            "node": "Report",
             "type": "main",
             "index": 0
           }
         ]
       ]
     }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "errorWorkflow": "VIOwfEerroralert"
   }
 }

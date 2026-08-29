@@ -233,7 +233,44 @@ console.log('\n== Sheets row shapes (autoMapInputData matches on header text) ==
 
   eq('call_state starts at not_eligible', leadRow.call_state, 'not_eligible');
   ok('call_state is the 4-value enum, not a boolean', typeof leadRow.call_state === 'string');
-  eq('channel_state_email starts not_sent', leadRow.channel_state_email, 'not_sent');
+  eq('a PASSING lead starts not_sent — the state the runner treats as ready',
+     leadRow.channel_state_email, 'not_sent');
+
+  // THE STATE MUST FOLLOW THE VERDICT. This was hardcoded 'not_sent', which was harmless only
+  // while nothing read it. Since 2026-08-29 'not_sent' is exactly what VIO-demo-sheet-run treats
+  // as READY, so an address Reoon had just rejected was written into Leads marked ready to send.
+  // Caught on the first real end-to-end run, by a deliberately invalid test address.
+  {
+    const rowFor = (reoon) => runNode('Shape Lead Row', {
+      input: [classify({ email: 'jane.doe@acme-fed.com', ...reoon }, gate(LEAD))] })[0];
+    const dropped = rowFor({ status: 'invalid', overall_score: 0 });
+    eq('an address verification REJECTED is never marked ready',
+       dropped.channel_state_email, 'dropped');
+    eq('  and the row records why', dropped.verify_action, 'drop');
+    const unsure = rowFor({ status: 'catch_all', overall_score: 50, is_catch_all: true });
+    ok('an inconclusive address is not marked ready either',
+       unsure.channel_state_email !== 'not_sent', unsure.channel_state_email);
+    // The runner's definition of ready and this writer's vocabulary have to agree, or leads
+    // silently pile up in Leads exactly as they did before the handoff was fixed.
+    const runner = JSON.parse(readFileSync(new URL('./VIO-demo-sheet-run.json', import.meta.url)))
+      .nodes.find((n) => n.name === 'Pick demo rows').parameters.jsCode;
+    ok('the runner treats not_sent as ready', /'not_sent'/.test(runner));
+    for (const st of ['dropped', 'needs_review'])
+      ok(`the runner does NOT treat ${st} as ready`, !new RegExp(`!== '${st}'`).test(runner));
+  }
+
+  // Product must survive Normalize Lead. That node builds an explicit object, so anything not
+  // named there is dropped — which is how the product a human chose in the Inbox reached intake
+  // and vanished before the Leads row was written. Found live 2026-08-29.
+  {
+    const norm = runNode('Normalize Lead', { input: [{ ...LEAD, Product: 'VisioneerIT' }] })[0];
+    eq('Product survives normalisation', norm.Product, 'VisioneerIT');
+    const row = runNode('Shape Lead Row', {
+      input: [classify({ email: 'jane.doe@acme-fed.com', status: 'safe', overall_score: 95 },
+                       gate({ ...LEAD, Product: 'VisioneerIT' }))] })[0];
+    eq('  and reaches the Leads row', row.Product, 'VisioneerIT');
+    ok('  under the capital-P name the live sheet uses', 'Product' in row);
+  }
   eq('verify_action carries the decision', leadRow.verify_action, 'pass');
   eq('contact_email is the normalised address', leadRow.contact_email, 'jane.doe@acme-fed.com');
   eq('lead_id on the row matches the gate', leadRow.lead_id, g.lead_id);

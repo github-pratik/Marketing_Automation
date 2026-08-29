@@ -234,9 +234,38 @@ Adding `cta` to 8462 is a manual Sendr UI action — the template API is read-on
    pitch in front of a real person and cannot be recalled. `source_config` is deliberately NOT a
    fallback: on the live sheet it means how the lead ARRIVED, not who pitches it.
 
-**⚠️ Still manual:** the `Product` header cell and its dropdown must be added to the live `Inbox`
-tab by hand — the Sheets node cannot create data validation, and re-running `VIO-sheet-provision`
-appends rather than repairing a header.
+**The Inbox tab is now provisioned and the whole path is proven live (2026-08-29).** All nine
+headers exist including `Product`. Four verdict paths were exercised end to end against the real
+sheet and real Reoon: **rejected** (`example.invalid` → `dropped`, never sent), **inconclusive**
+(`visioneerit.com` is a catch-all → held at `needs_review`, not marked ready), **duplicate**
+(`p.pshpatil@outlook.com` → skipped with **zero Reoon credits and no duplicate row**), and **pass**
+(covered by the suites).
+
+**Two bugs the first live run exposed, both now fixed:**
+- `Normalize Lead` builds an EXPLICIT object, so `Product` reached intake and vanished before the
+  Leads row was written. Anything not named in that node is silently dropped — the same class of
+  bug as identity not surviving an Execute Workflow call.
+- `Shape Lead Row` hardcoded `channel_state_email: 'not_sent'`, which was harmless until
+  `not_sent` became the runner's READY state — so an address Reoon had just rejected was written
+  as ready to send. The state now follows the verdict: `pass`→`not_sent`, `needs_review`→
+  `needs_review`, `drop`→`dropped`.
+
+**⚠️ `VIO-sheet-provision` silently did nothing for two runs.** `Create Inbox tab` 400s when the tab
+exists (the normal case); `onError: continueRegularOutput` was not enough because the failed node
+emitted ZERO items, so the chain stopped there **and the execution still reported success**.
+`alwaysOutputData: true` is the fix. Separately, **a Sheets `append` cannot bootstrap a header row**
+— it reads the existing header to decide where values go, so on a tab with no header row it matches
+nothing, writes nothing, and returns 200.
+
+**⚠️ The sheet audit derives headers from DATA ROWS**, so an empty tab reports `header_count: 0`
+whether or not a header row exists. That is how a completely unprovisioned `Inbox` went unnoticed —
+do not read a zero there as "no headers".
+
+**⚠️ The `googleApi` (service-account) credential does NOT work on a generic HTTP Request node** —
+`nodeCredentialType: googleApi` sends no auth and Google returns 401. Only nodes with built-in
+Google support can use it. This is why the `Product` **dropdown** is still manual: data validation
+is a `setDataValidation` batchUpdate with no Sheets-node equivalent. The column itself exists and
+works; the dropdown is a typo-guard only, and the mapper already refuses bad values by name.
 
 **Next:** rewrite the email copy — the user read a real send and said it did not communicate the
 offer (market commentary first, the point buried third, no clear ask); this is the highest-value

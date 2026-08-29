@@ -222,6 +222,16 @@ for (const [outcome, want] of [['pass', true], ['needs_review', true],
   const m = merge([{ inbox_row: 4, outcome, reason: 'r', reoon_status: 'safe' }], SENT)[0];
   ok(`verification "${outcome}" -> imported=${want}`, m._ok === want, `got ${m._ok}`);
 }
+// The note a human reads must not stutter. Shape Inbox status already prefixes "Not imported — ",
+// so a reason that repeats it produced "Not imported — not imported — duplicate" on the live
+// sheet (2026-08-29).
+for (const [reason, want] of [['duplicate', /already hold/], ['suppressed', /suppression list/]]) {
+  const note = status({ row_number: 4, _ok: false, _verify_outcome: 'skipped',
+    _problems: merge([{ inbox_row: 4, outcome: 'skipped', reason }], SENT)[0]._problems }).notes;
+  ok(`a ${reason} reads as plain English`, want.test(note), note);
+  ok(`  and does not stutter`, !/not imported .{0,3} not imported/i.test(note), note);
+}
+
 ok('a lead intake never answered for is NOT reported as imported',
    merge([], SENT)[0]._ok === false);
 ok('  and says so rather than inventing a reason',
