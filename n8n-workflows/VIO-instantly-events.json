@@ -1,0 +1,539 @@
+{
+  "id": "VIOwfGinstevents",
+  "name": "VIO-instantly-events",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-instantly-events",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "vio-ie-trigger",
+      "name": "Instantly Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        0
+      ],
+      "webhookId": "vio-ie-instantly-events"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Fail-closed auth. Instantly is told this URL with ?t=<VIO_WEBHOOK_TOKEN>; an open endpoint here\n// would let anyone mark a prospect bounced or unsubscribed, i.e. suppress them permanently.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };\n"
+      },
+      "id": "vio-ie-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Turn an Instantly event into the two things the sheet actually needs: an Events row (what\n// happened, when) and \u2014 only sometimes \u2014 a channel_state_email transition.\n//\n// A SEND IS NOT A STAGE CHANGE. The live sheet's channel_state_email dropdown is an engagement\n// ladder: needs_review > pending_approval > approved > enrolled > replied > positive > booked,\n// plus terminal rejected/dropped/unsubscribed/bounced. There is no 'sent' in it, and inventing one\n// would put an off-vocabulary value into a column staff filter on. Delivery is a FACT with a\n// timestamp, so it goes to Events and the stage stays 'enrolled' until the prospect does something.\n//\n// Replies are deliberately NOT handled here \u2014 VIO-inbound-reply-to-call already owns them,\n// including the OpenAI sentiment pass. Two workflows writing reply state would race.\nconst b = $input.first().json || {};\nconst clean = (v, n = 200) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, n) : '');\nconst ev = clean(b.event_type || b.event || b.type, 60).toLowerCase();\nconst email = clean(b.lead_email || b.email || b.contact_email || b.to_email, 160).toLowerCase();\nconst campaign = clean(b.campaign_id || b.campaign, 80);\nconst when = clean(b.timestamp || b.event_timestamp, 40) || new Date().toISOString();\n\nif (!/^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/.test(email)) {\n  throw new Error(`REFUSED: no usable lead email on this event (${ev || 'unknown type'}) \u2014 refusing to guess which row to change.`);\n}\n\n// stage: null means \"record the event, do not touch the ladder\".\nlet action = null, stage = null, suppress = null;\nif (/bounce/.test(ev))            { action = 'bounced';      stage = 'bounced';      suppress = 'bounced'; }\nelse if (/unsub|opt.?out/.test(ev)){ action = 'unsubscribed'; stage = 'unsubscribed'; suppress = 'opt_out'; }\nelse if (/sent|delivered/.test(ev)){ action = 'send'; }\nelse if (/open/.test(ev))          { action = 'open'; }\nelse if (/click|link/.test(ev))    { action = 'click'; }\nelse if (/repl/.test(ev))          { action = 'reply_seen'; }   // recorded only; the reply brain owns the stage\nelse                               { action = `other:${ev || 'unknown'}`; }\n\nreturn [{ json: { email, campaign, when, event_type: ev, action, stage, suppress } }];\n"
+      },
+      "id": "vio-ie-class",
+      "name": "Classify Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Fan out into the rows each tab needs. Only what actually happened is written.\nconst e = $input.first().json;\nconst out = [{ json: {\n  _kind: 'event',\n  timestamp: e.when, lead_email: e.email, tool: 'instantly', action: e.action, units: 1,\n  est_cost_usd: '',                       // measure, don't estimate \u2014 the webhook itself bills nothing\n  result: `instantly ${e.event_type || e.action}${e.campaign ? ' on ' + e.campaign : ''}`,\n  workflow: 'VIO-instantly-events',\n} }];\nif (e.stage) {\n  out.push({ json: { _kind: 'lead', contact_email: e.email,\n                     channel_state_email: e.stage, updated_at: e.when } });\n}\nif (e.suppress) {\n  // A bounce or an opt-out must reach Suppression, or the same person is contacted again on\n  // another channel. Append-only, matched later on ANY identifier.\n  out.push({ json: { _kind: 'suppress', identifier_type: 'email', identifier_value: e.email,\n                     reason: e.suppress, added_at: e.when, added_by: 'VIO-instantly-events' } });\n}\nreturn out;\n"
+      },
+      "id": "vio-ie-rows",
+      "name": "Build Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-ie-fec",
+              "leftValue": "={{ $json._kind }}",
+              "rightValue": "event",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-ie-fe",
+      "name": "Events rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        200,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-ie-flc",
+              "leftValue": "={{ $json._kind }}",
+              "rightValue": "lead",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-ie-fl",
+      "name": "Leads rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-ie-fsc",
+              "leftValue": "={{ $json._kind }}",
+              "rightValue": "suppress",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-ie-fs",
+      "name": "Suppression rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        200,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Events",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_email",
+              "displayName": "lead_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tool",
+              "displayName": "tool",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "units",
+              "displayName": "units",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "est_cost_usd",
+              "displayName": "est_cost_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "result",
+              "displayName": "result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_config",
+              "displayName": "source_config",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "id": "vio-ie-se",
+      "name": "Log Event (Events)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        420,
+        -180
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_email",
+              "displayName": "channel_state_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "matchingColumns": [
+            "contact_email"
+          ]
+        }
+      },
+      "id": "vio-ie-sl",
+      "name": "Update Lead Stage (Leads)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        420,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Suppression",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "identifier_type",
+              "displayName": "identifier_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "identifier_value",
+              "displayName": "identifier_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "added_at",
+              "displayName": "added_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "added_by",
+              "displayName": "added_by",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "id": "vio-ie-ss",
+      "name": "Append Suppression",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        420,
+        180
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Instantly Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Classify Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Event": {
+      "main": [
+        [
+          {
+            "node": "Build Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rows": {
+      "main": [
+        [
+          {
+            "node": "Events rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Leads rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Suppression rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Events rows": {
+      "main": [
+        [
+          {
+            "node": "Log Event (Events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leads rows": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Stage (Leads)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Suppression rows": {
+      "main": [
+        [
+          {
+            "node": "Append Suppression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "VIOwfEerroralert"
+  }
+}
