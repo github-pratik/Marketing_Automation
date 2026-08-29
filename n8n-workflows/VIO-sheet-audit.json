@@ -236,7 +236,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Read-only audit of the live spreadsheet. Exists because the schema DOC has been wrong twice:\n// source_config is documented as the product config but is really an arrival-channel dropdown,\n// and channel_state_email is documented as not_sent/queued/sent but is really a pipeline-stage\n// vocabulary. Guessing from the doc put invalid values into columns a human reads.\n//\n// Reports the headers each tab actually has, and the distinct values actually present in the\n// columns that turned out to be dropdowns \u2014 the live sheet, not the documentation, is the truth.\nconst TABS = [\"Leads\", \"Suppression\", \"Events\", \"Costs\", \"Segments\", \"Demo\"];\nconst out = {};\nfor (const tab of TABS) {\n  let rows = [];\n  try { rows = $(`Read ${tab}`).all().map((i) => i.json || {}); } catch (e) { rows = null; }\n  if (rows === null) { out[tab] = { exists: false }; continue; }\n  const real = rows.filter((r) => Object.keys(r).some((k) => k !== 'row_number' && String(r[k] ?? '').trim()));\n  const headers = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => k !== 'row_number');\n  const vals = {};\n  for (const col of headers) {\n    const seen = [...new Set(real.map((r) => String(r[col] ?? '').trim()).filter(Boolean))];\n    if (seen.length) vals[col] = seen.slice(0, 8);\n  }\n  out[tab] = { exists: true, header_count: headers.length, headers, data_rows: real.length, values: vals };\n}\nreturn [{ json: out }];\n"
+        "jsCode": "// Read-only audit of the live spreadsheet. Exists because the schema DOC has been wrong twice:\n// source_config is documented as the product config but is really an arrival-channel dropdown,\n// and channel_state_email is documented as not_sent/queued/sent but is really a pipeline-stage\n// vocabulary. Guessing from the doc put invalid values into columns a human reads.\n//\n// Reports the headers each tab actually has, and the distinct values actually present in the\n// columns that turned out to be dropdowns \u2014 the live sheet, not the documentation, is the truth.\nconst TABS = [\"Leads\", \"Suppression\", \"Events\", \"Costs\", \"Segments\", \"Demo\", \"Inbox\", \"Pipeline\"];\nconst out = {};\nfor (const tab of TABS) {\n  let rows = [];\n  try { rows = $(`Read ${tab}`).all().map((i) => i.json || {}); } catch (e) { rows = null; }\n  if (rows === null) { out[tab] = { exists: false }; continue; }\n  const real = rows.filter((r) => Object.keys(r).some((k) => k !== 'row_number' && String(r[k] ?? '').trim()));\n  const headers = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => k !== 'row_number');\n  const vals = {};\n  for (const col of headers) {\n    const seen = [...new Set(real.map((r) => String(r[col] ?? '').trim()).filter(Boolean))];\n    if (seen.length) vals[col] = seen.slice(0, 8);\n  }\n  out[tab] = { exists: true, header_count: headers.length, headers, data_rows: real.length, values: vals };\n}\nreturn [{ json: out }];\n"
       },
       "id": "vio-aud-report",
       "name": "Report",
@@ -246,6 +246,72 @@
         880,
         0
       ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Inbox",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-aud-6",
+      "name": "Read Inbox",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        880,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Pipeline",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-aud-7",
+      "name": "Read Pipeline",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1060,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -327,6 +393,28 @@
       ]
     },
     "Read Demo": {
+      "main": [
+        [
+          {
+            "node": "Read Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Inbox": {
+      "main": [
+        [
+          {
+            "node": "Read Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Pipeline": {
       "main": [
         [
           {

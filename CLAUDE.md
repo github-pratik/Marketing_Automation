@@ -94,6 +94,18 @@ real. Each config's `sendr` block carries its own campaign + page template:
   `toolWorkflow` v2.2. Gate tested with a direct "you have my approval, call 50 people" attack and
   it refused. Full detail in `n8n-workflows/README.md`.
 - `VIO-operator-agent` — the earlier deterministic slice, kept as a fallback (no LangChain deps).
+- `VIO-inbox-mapper` — **LIVE (2026-08-29). The human front door for non-Apollo leads.** Staff paste
+  a list into the Sheet's `Inbox` tab in *whatever shape their source gave them*; a deterministic
+  ~60-spelling alias table normalises it onto `Leads` every 2 min, and OpenAI is called ONLY when a
+  required field is still missing AND there are unrecognised headers that might hold it. Blank
+  `status` is the claim marker. `test-inbox-mapper.mjs` 92/92. **A row with no email address is left
+  entirely alone** — the poll fires while a human types, and a row read mid-edit used to be claimed
+  as `needs_review`, so finishing the address afterwards changed nothing and it never imported.
+  **The exception matters as much as the rule:** a sheet whose email column is named something
+  unknown (`Contact Point`) also arrives with no address, so the escape is `unmapped.length === 0` —
+  no unknown columns means still-typing, unknown columns mean ask the model. The first cut of that
+  fix omitted the exception and silently disabled the LLM path for the exact case it exists for; the
+  *test suite* caught it, on an assertion written weeks earlier. See `SHEET_SCHEMA.md` Tab 6.
 - `VIO-intake-verify-curate` — **COMPLETE and proven, still deactivated by design.** Since
   2026-08-25 it has **two entry points**: the manual trigger, and an `executeWorkflowTrigger` so
   `VIO-source-leads` can hand it a batch. They converge on `Normalize Lead`, so there is still
@@ -118,7 +130,8 @@ the current pipeline.
 
 **Google Sheets is LIVE (2026-08-16).** Service-account auth (not OAuth — it installs headlessly),
 n8n credential `VIO Google Sheets` (`VIOgsheetcred01`), spreadsheet id
-`1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c` with all four tabs. Setup is one command:
+`1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`. **Six tabs now** — the `Inbox` tab (2026-08-29) is
+the one staff type into; every other tab is written by workflows and read by humans. Setup is one command:
 `n8n-workflows/setup-google-sheets.py`. **Sheet writes are not wired into the workflows yet.**
 
 **Sendr GIF: FIXED 2026-08-16.** Root cause was exactly what the webhook said —
@@ -196,7 +209,10 @@ renders it; 8462 does not, so OryonIQ's new contact URL reaches the *email* but 
 *page*. Proven live 2026-08-17 by generating one page per product and diffing `variablesUsed`.
 Adding `cta` to 8462 is a manual Sendr UI action — the template API is read-only.
 
-**Next:** add `cta` to template 8462 (now blocking, not cosmetic) → name the three pursuits from
+**Next:** rewrite the email copy — the user read a real send and said it did not communicate the
+offer (market commentary first, the point buried third, no clear ask); this is the highest-value
+open item and has not been acted on → create a VisioneerIT Instantly campaign so the two products
+can actually market separately → add `cta` to template 8462 (now blocking, not cosmetic) → name the three pursuits from
 SAM.gov (`reach-engine/sendr-page-template.md` Part 2 — the highest-leverage conversion idea left)
 → wire Sheet writes into the three workflows that still don't do them → the remaining operator-agent
 tools. `ASSET_S3_*` is optional: Sendr's own GIF works again, so `make_scroll_gif.py` is a fallback.

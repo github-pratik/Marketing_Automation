@@ -68,7 +68,6 @@ for (const [given, want] of [
 
 // ---------- required fields: a row that cannot be mailed must NOT be imported ----------
 for (const [label, r, problem] of [
-  ['no email', { 'First name': 'A', 'Company name': 'C' }, 'email'],
   ['malformed email', { 'Email address': 'nope', 'First name': 'A', 'Company name': 'C' }, 'valid address'],
   ['two emails in one cell', { 'Email address': 'a@b.com,c@d.com', 'First name': 'A', 'Company name': 'C' }, 'valid address'],
   ['no first name', { 'Email address': 'a@b.com', 'Company name': 'C' }, 'first name'],
@@ -78,6 +77,27 @@ for (const [label, r, problem] of [
   ok(`${label} is NOT importable`, o._ok === false);
   ok(`  ${label} says why`, (o._problems || []).join(' ').toLowerCase().includes(problem));
 }
+
+// ---------- half-typed rows must be left alone ----------
+// This polls every two minutes while a human types a row cell by cell. A row read mid-edit used to
+// be marked needs_review and CLAIMED, so finishing the address afterwards changed nothing and the
+// row silently never imported. No address now means "not ready", not "invalid".
+for (const [label, r] of [
+  ['first name only', { 'First name': 'Pratik' }],
+  ['name and company, no address yet', { 'First name': 'Pratik', 'Company name': 'VisioneerIT' }],
+  ['company only', { 'Company name': 'VisioneerIT' }],
+  ['everything except the address', { 'First name': 'P', 'Last name': 'P', 'Company name': 'V', 'Website': 'v.com' }],
+]) ok(`${label} is left untouched, not claimed`, map([{ row_number: 2, status: '', ...r }]).length === 0);
+
+// But a row that HAS an address and is still wrong is genuinely incomplete and must be flagged —
+// otherwise "leave it alone" would swallow real errors.
+ok('an address with no company IS flagged',
+   one({ 'Email address': 'a@b.com', 'First name': 'A' })._ok === false);
+ok('an address with no first name IS flagged',
+   one({ 'Email address': 'a@b.com', 'Company name': 'C' })._ok === false);
+ok('a malformed address IS flagged',
+   one({ 'Email address': 'nope', 'First name': 'A', 'Company name': 'C' })._ok === false);
+ok('the leave-alone rule is documented', /STILL BEING TYPED/.test(mapCode));
 
 // ---------- dedupe within one upload ----------
 const dup = map([

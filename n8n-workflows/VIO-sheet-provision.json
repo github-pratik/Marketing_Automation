@@ -1,0 +1,242 @@
+{
+  "id": "VIOwfIprovision",
+  "name": "VIO-sheet-provision",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-sheet-provision",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "vio-pv-trigger",
+      "name": "Provision Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        0
+      ],
+      "webhookId": "vio-pv-sheet-provision"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };\n"
+      },
+      "id": "vio-pv-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "create",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "title": "Inbox",
+        "options": {}
+      },
+      "id": "vio-pv-create",
+      "name": "Create Inbox tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -220,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The header row for the Inbox tab.\n//\n// Only THREE control columns, and they sit first so staff can paste an export straight into\n// column D without touching them. Everything to the right of these is whatever the source gave\n// them \u2014 the mapper reads the headers and works out what they mean.\n//\n// `status` is the claim marker: blank means unprocessed. That is the same convention every other\n// polling workflow here uses, so a row is claimed by its own state rather than a separate lock.\nreturn [{ json: { status: '', notes: '', mapped_lead_id: '',\n                  'First name': '', 'Last name': '', 'Company name': '',\n                  'Email address': '', 'Website': '' } }];\n"
+      },
+      "id": "vio-pv-hdr",
+      "name": "Header row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Inbox",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mapped_lead_id",
+              "displayName": "mapped_lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "First name",
+              "displayName": "First name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Last name",
+              "displayName": "Last name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Company name",
+              "displayName": "Company name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email address",
+              "displayName": "Email address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Website",
+              "displayName": "Website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "insertInNewColumn"
+        }
+      },
+      "id": "vio-pv-write",
+      "name": "Write header row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        180,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Provision Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Create Inbox tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Inbox tab": {
+      "main": [
+        [
+          {
+            "node": "Header row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Header row": {
+      "main": [
+        [
+          {
+            "node": "Write header row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "VIOwfEerroralert"
+  }
+}

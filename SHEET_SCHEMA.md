@@ -1,8 +1,8 @@
 # VisioneerIT Outbound — Google Sheet schema
 
 The Sheet is the data bus (every `VIO-` workflow reads/writes it), the dashboard, the pilot's
-cost meter, and — since 2026-08-21 — its targeting memory. **Five tabs** — `Leads`, `Suppression`,
-`Events`, `Costs`, `Segments`. Header = row 1. Workflows key on exact column names — don't rename a
+cost meter, and — since 2026-08-21 — its targeting memory. **Six tabs** — `Inbox`, `Leads`,
+`Suppression`, `Events`, `Costs`, `Segments`. Header = row 1. Workflows key on exact column names — don't rename a
 column without updating every workflow that reads/writes it.
 
 **LIVE since 2026-08-16.** Spreadsheet `VisioneerIT Outbound`, id `1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`, four tabs built
@@ -219,3 +219,51 @@ not per-lead at all, and is the only tab that is *derived* — it can be recompu
 `Events` if it is ever corrupted, which none of the other four can. Keeping them separate means a
 bug in the pipeline tab can't accidentally corrupt suppression history, cost data, or the targeting
 memory.
+
+---
+
+## Tab 6 — `Inbox` (the human front door) — LIVE since 2026-08-29
+
+**The only tab staff are meant to type into.** Every other tab is written by workflows and read by
+humans; this one is the reverse. Leads that do not come from Apollo — a Warmly export, a purchased
+list, a conference scan, a colleague's spreadsheet — get pasted here in whatever shape their source
+gave them, and `VIO-inbox-mapper` (WF-8, `VIOwfHinboxmap`) normalises them onto `Leads` every two
+minutes.
+
+**There is no fixed header row.** That is the point: an uploaded sheet's columns will not match
+ours, and telling staff to rename 12 columns by hand before pasting is how a lead list stops
+getting used. Paste the source's own headers. The mapper knows ~60 spellings (`Email`, `E-mail
+Address`, `Work Email`, `Company`, `Organisation`, `Full Name`, `Website`, `Job Title`, …) and
+falls back to OpenAI for headers it has never seen.
+
+**Four columns are OURS and are never treated as lead data.** Leave them blank when pasting:
+
+| column | who writes it | meaning |
+|---|---|---|
+| `status` | the mapper | **Blank = unclaimed.** Becomes `mapped` or `needs_review`. |
+| `notes` | the mapper | Why a row was not imported, plus any unrecognised column names. |
+| `mapped_lead_id` | the mapper | The `contact_email` the row became in `Leads`. |
+| `source_config` | you (optional) | Defaults to `Manual`. |
+
+**Blank `status` is the claim marker, so never pre-fill it.** Typing anything into `status` on a
+fresh row makes the mapper skip that row forever.
+
+**A row needs an email, a first name, and a company to import.** Less than that produces an email
+addressed to nobody about nothing, so it is written back `needs_review` with the reason — it is
+never silently dropped.
+
+**You can type at your own pace.** The poll fires every two minutes, including mid-edit. A row with
+**no email address yet** is left completely alone — not claimed, not flagged — because no address
+almost always means "still typing" rather than "broken". Fill the address last if you like. (A row
+that *has* an address and is still missing something is genuinely incomplete and does get flagged.)
+
+**Large uploads drain in batches of 50 per cycle.** A 49,000-row paste is normal and will not
+break; it simply imports over successive polls rather than all at once.
+
+**Two things the mapper fixes or flags that are worth knowing about:** ALL-CAPS values are
+title-cased (a real list gave `ROBERT` / `TRUSTED SOLUTIONS LLC`, and `Hi ROBERT,` reads as
+shouting at a stranger — `LLC`, `INC`, `GSA`, `DOD`, `AI`, `IT` stay upper). And a first name that
+does not appear anywhere in the email address is **flagged, not corrected** — seen live as `ANGELA
+SPEASE` against `Kevin.Spease@`, which is one person's name pasted next to another's address. The
+mapper will not guess which one is right; the `notes` column asks you to check.
+

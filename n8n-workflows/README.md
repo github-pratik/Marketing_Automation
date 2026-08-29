@@ -570,6 +570,56 @@ diagnose it — do not "simplify" it by re-fetching the page, because the REST A
 answer.
 
 
+### `VIO-inbox-mapper.json` — WF-8 (id `VIOwfHinboxmap`) — **LIVE**
+
+**The front door for leads that do not come from Apollo.** Staff paste a list into the `Inbox` tab
+in whatever shape their source gave them; this normalises it onto the `Leads` schema. Every two
+minutes: `Read Inbox` → `Map headers (alias table)` → (`Shape AI prompt` → OpenAI → `Apply AI
+mapping`, only when needed) → `Usable row?` → `Shape Lead row` → `Add to Leads` → `Mark Inbox row`.
+`errorWorkflow` is `VIOwfEerroralert`. Test: `test-inbox-mapper.mjs`, 92 assertions, all read
+`jsCode` straight out of this JSON.
+
+**A deterministic alias table runs first; the model is the fallback, not the first move.** ~60
+header spellings collapse to canonical fields after stripping non-alphanumerics, so `E-mail
+Address`, `email_address` and `Email Address` are one key. The alias table is instant, free,
+auditable and cannot hallucinate a mapping. OpenAI is called ONLY when a required field is still
+missing AND there are unrecognised headers that might contain it — no unknown headers means the
+model cannot help, so no call is made.
+
+**The claim marker is the `status` column, and blank means unclaimed.** A row is picked up only
+when `status` is empty; on completion it is written back as `mapped` or `needs_review` with a
+`notes` string saying exactly why, plus any unrecognised column names. **No row is ever silently
+dropped** — if it did not import, the row it came from says so.
+
+**⚠️ A row with no email address is LEFT ALONE, not claimed (found live 2026-08-29).** The poll
+fires every two minutes while a human is typing a row cell by cell. A row read mid-edit used to be
+marked `needs_review` and *claimed* — so finishing the address afterwards changed nothing and the
+row silently never imported. No address now means "not ready", not "invalid". Staff can type at
+their own pace.
+
+**⚠️ …with one exception, and the fallback dies without it.** A sheet whose email column is named
+something the alias table has never seen (`Contact Point`, `Reach`) ALSO arrives with no address —
+that is not a half-typed row, it is an address sitting in a column nobody recognised. Unmapped
+headers tell the two apart:
+
+| no address | unknown columns | verdict |
+|---|---|---|
+| yes | none | still being typed → skip, do not claim |
+| yes | some | address may be in one → ask the model |
+
+The first version of this fix had no exception and silently disabled the LLM path for exactly the
+case it exists for. `test-inbox-mapper.mjs` caught it, not a live run — the assertion that saved it
+was an unrelated `'Contact Point'` case that had been in the suite since the workflow was written.
+
+**Other real-upload behaviour, all proven in the suite:** `MAX_PER_CYCLE = 50` (a real upload is
+49,000 rows; the next batch drains two minutes later rather than blowing memory or handing 49,000
+rows to one sheet write); ALL-CAPS values are title-cased so a greeting is not `Hi ROBERT,`, but
+only when there is no lowercase at all, and `LLC/INC/GSA/DOD/AI/IT` stay upper; a single `Full
+Name` column is split; domains are stripped to bare host; duplicates within one upload are caught;
+and a first name that does not appear in the address at all is **warned about, not fixed** — seen
+in a real upload as `ANGELA SPEASE` against `Kevin.Spease@`, which is one person's name paired with
+another's address.
+
 ### `VIO-operator-agent-v2.json` — WF-7 (id `VIOwf7agentv201`)
 Status: **LIVE 2026-08-16. The true autonomous Agent node finally works.**
 Webhook: `POST /webhook/vio-operator-agent?t=<VIO_WEBHOOK_TOKEN>`, body `{"instruction": "..."}`.
