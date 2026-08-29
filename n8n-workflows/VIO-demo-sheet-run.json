@@ -157,7 +157,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Shape for VIO-sendr-generate-page.\n//\n// The identity fields (_row, _email, ...) are read back from 'Shape for drafting', NOT from the\n// item in front of us. An Execute Workflow call returns only what the SUB-workflow's own output\n// node emits \u2014 anything the caller attached to the input is gone. Carrying them on the input and\n// expecting them back produced an enrolment with a blank address and \"(unnamed lead)\", which the\n// gate correctly refused. Each execution here handles one row (mode: 'each'), so first() is that\n// row's context.\nconst drafted = $input.item.json;\nconst src = $('Shape for drafting').first().json;\nreturn { json: {\n  product: 'oryoniq',\n  first_name: src._first_name, title: src._title,\n  company: src._company, company_domain: src._domain || '',\n  _row: src._row, _email: src._email, _first_name: src._first_name,\n  _title: src._title, _company: src._company,\n  _opener: typeof drafted.opener === 'string' ? drafted.opener.trim() : '',\n  _email_draft: typeof drafted.email === 'string' ? drafted.email : '',\n} };\n"
+        "jsCode": "// Shape for VIO-sendr-generate-page.\n//\n// The identity fields (_row, _email, ...) are read back from 'Shape for drafting', NOT from the\n// item in front of us. An Execute Workflow call returns only what the SUB-workflow's own output\n// node emits \u2014 anything the caller attached to the input is gone. Carrying them on the input and\n// expecting them back produced an enrolment with a blank address and \"(unnamed lead)\", which the\n// gate correctly refused. Each execution here handles one row (mode: 'each'), so first() is that\n// row's context.\nconst drafted = $input.item.json;\nconst src = $('Shape for drafting').first().json;\nreturn { json: {\n  product: 'oryoniq',\n  first_name: src._first_name, title: src._title,\n  company: src._company, company_domain: src._domain || '',\n  _row: src._row, _email: src._email, _first_name: src._first_name,\n  _title: src._title, _company: src._company,\n  _opener: typeof drafted.opener === 'string' ? drafted.opener.trim() : '',\n  _email_draft: typeof drafted.email === 'string' ? drafted.email : '',\n  _product: drafted.config_used || drafted.product || src.source_config || '',\n  _signal: typeof drafted.signal === 'string' ? drafted.signal : '',\n} };\n"
       },
       "id": "vio-wfd-page",
       "name": "Shape for page",
@@ -193,7 +193,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Hand the gated enrolment tool one lead. It posts a Slack approval and BLOCKS until a human\n// answers \u2014 that pause is the design, not a stall.\n//\n// Same rule as the node above: the page URL comes from the item in front of us (the sub-workflow's\n// own output), everything else is read back from 'Shape for page'.\nconst page = $input.item.json.pageUrl || $input.item.json.sendr_page_url || '';\nconst src = $('Shape for page').first().json;\nif (!src._email) {\n  throw new Error(`REFUSED: row ${src._row} lost its contact_email between stages \u2014 refusing to propose an enrolment the human could not act on.`);\n}\nreturn { json: {\n  product: 'demo',\n  allow_recontact: true,\n  leads: [{\n    first_name: src._first_name, title: src._title, company: src._company,\n    contact_email: src._email, sendr_page_url: page,\n    opener: src._opener, verify_action: 'pass',\n  }],\n  _row: src._row, _page: page, _opener: src._opener, _email_draft: src._email_draft,\n} };\n"
+        "jsCode": "// Hand the gated enrolment tool one lead. It posts a Slack approval and BLOCKS until a human\n// answers \u2014 that pause is the design, not a stall.\n//\n// Same rule as the node above: the page URL comes from the item in front of us (the sub-workflow's\n// own output), everything else is read back from 'Shape for page'.\nconst page = $input.item.json.pageUrl || $input.item.json.sendr_page_url || '';\nconst src = $('Shape for page').first().json;\nif (!src._email) {\n  throw new Error(`REFUSED: row ${src._row} lost its contact_email between stages \u2014 refusing to propose an enrolment the human could not act on.`);\n}\nreturn { json: {\n  product: 'demo',\n  allow_recontact: true,\n  leads: [{\n    first_name: src._first_name, title: src._title, company: src._company,\n    contact_email: src._email, sendr_page_url: page,\n    opener: src._opener, verify_action: 'pass',\n  }],\n  _row: src._row, _page: page, _opener: src._opener, _email_draft: src._email_draft,\n  _product: src._product, _signal: src._signal,\n} };\n"
       },
       "id": "vio-wfd-enrol",
       "name": "Shape for enrolment",
@@ -229,7 +229,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Write the outcome back onto the row the human is watching. Uses Leads' own columns \u2014 there is\n// no invented schema here.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nconst src = $('Shape for enrolment').first().json;\nconst enrolled = Array.isArray(r.leads) && r.leads.some((l) => l.status === 'enrolled');\nreturn { json: {\n  row_number: src._row,\n  // 'queued' not 'sent': enrolment adds someone to a campaign; the send is a separate act.\n  channel_state_email: enrolled ? 'queued' : 'not_sent',\n  opener: scrub(src._opener || ''),\n  email_draft: scrub(src._email_draft || ''),\n  sendr_page_url: src._page || '',\n  updated_at: new Date().toISOString(),\n} };\n"
+        "jsCode": "// Write the outcome back onto the row the human is watching. Uses Leads' own columns \u2014 there is\n// no invented schema here.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nconst src = $('Shape for enrolment').first().json;\nconst enrolled = Array.isArray(r.leads) && r.leads.some((l) => l.status === 'enrolled');\nreturn { json: {\n  row_number: src._row,\n  // 'queued' not 'sent': enrolment adds someone to a campaign; the send is a separate act.\n  channel_state_email: enrolled ? 'queued' : 'not_sent',\n  opener: scrub(src._opener || ''),\n  email_draft: scrub(src._email_draft || ''),\n  sendr_page_url: src._page || '',\n  // Which product pitched this person, and the claim they were told. source_config cannot carry\n  // this: the live sheet repurposed that column to mean HOW the lead arrived (Apollo / Referral /\n  // Manual), which is a different question from WHO pitched them.\n  product: src._product || '',\n  signal: src._signal || '',\n  updated_at: new Date().toISOString(),\n} };\n"
       },
       "id": "vio-wfd-write",
       "name": "Shape row update",
@@ -321,6 +321,24 @@
             {
               "id": "updated_at",
               "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "product",
+              "displayName": "product",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "signal",
+              "displayName": "signal",
               "required": false,
               "defaultMatch": false,
               "display": true,

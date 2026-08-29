@@ -39,7 +39,13 @@ SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 # here without changing every workflow that reads it is how a pipeline silently stops matching.
 TABS = {
     "Leads": [
-        "lead_id", "source_config", "apollo_id", "first_name", "last_name", "title", "company",
+        "lead_id", "source_config",
+        # WHO pitched this person (oryoniq / visioneerit). Deliberately separate from
+        # source_config: the live sheet repurposed that column to mean HOW the lead arrived
+        # (Apollo / Warmly-Intent / Referral / Manual), which is a different question, and
+        # a row that cannot say which product contacted someone cannot be filtered by brand.
+        "product",
+        "apollo_id", "first_name", "last_name", "title", "company",
         "company_domain", "has_email", "has_phone", "contact_email", "phone", "linkedin_url",
         "timezone", "signal", "opener", "email_draft", "reoon_status", "verify_action",
         "verify_reason", "sendr_page_id", "sendr_page_url", "gif_url",
