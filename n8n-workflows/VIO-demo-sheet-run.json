@@ -106,7 +106,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "const r = $input.item.json;\nreturn { json: { row_number: r.row_number, channel_state_email: 'not_sent',\n                 verify_reason: `demo row not processed \u2014 ${r.problems}`,\n                 updated_at: new Date().toISOString() } };\n"
+        "jsCode": "const r = $input.item.json;\nreturn { json: { row_number: r.row_number, channel_state_email: 'needs_review',\n                 verify_reason: `demo row not processed \u2014 ${r.problems}`,\n                 updated_at: new Date().toISOString() } };\n"
       },
       "id": "vio-wfd-bad",
       "name": "Explain the bad row",
@@ -229,7 +229,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Write the outcome back onto the row the human is watching. Uses Leads' own columns \u2014 there is\n// no invented schema here.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nconst src = $('Shape for enrolment').first().json;\nconst enrolled = Array.isArray(r.leads) && r.leads.some((l) => l.status === 'enrolled');\nreturn { json: {\n  row_number: src._row,\n  // 'queued' not 'sent': enrolment adds someone to a campaign; the send is a separate act.\n  channel_state_email: enrolled ? 'queued' : 'not_sent',\n  opener: scrub(src._opener || ''),\n  email_draft: scrub(src._email_draft || ''),\n  sendr_page_url: src._page || '',\n  // Which product pitched this person, and the claim they were told. source_config cannot carry\n  // this: the live sheet repurposed that column to mean HOW the lead arrived (Apollo / Referral /\n  // Manual), which is a different question from WHO pitched them.\n  product: src._product || '',\n  signal: src._signal || '',\n  updated_at: new Date().toISOString(),\n} };\n"
+        "jsCode": "// Write the outcome back onto the row the human is watching. Uses Leads' own columns \u2014 there is\n// no invented schema here.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nconst src = $('Shape for enrolment').first().json;\nconst enrolled = Array.isArray(r.leads) && r.leads.some((l) => l.status === 'enrolled');\nreturn { json: {\n  row_number: src._row,\n  // The sheet's own dropdown vocabulary \u2014 not the docs'. `not_sent` and `queued` are not valid\n  // values in the live column; writing them through the API bypassed data validation and put\n  // off-vocabulary strings in a column a human reads and filters on.\n  //   enrolled  \u2014 the lead is on the campaign and will be mailed when it runs\n  //   dropped   \u2014 approved path completed but nothing landed (already in another campaign, etc.)\n  channel_state_email: enrolled ? 'enrolled' : 'dropped',\n  opener: scrub(src._opener || ''),\n  email_draft: scrub(src._email_draft || ''),\n  sendr_page_url: src._page || '',\n  // Which product pitched this person, and the claim they were told. source_config cannot carry\n  // this: the live sheet repurposed that column to mean HOW the lead arrived (Apollo / Referral /\n  // Manual), which is a different question from WHO pitched them.\n  Product: src._product || '',\n  signal: src._signal || '',\n  updated_at: new Date().toISOString(),\n} };\n"
       },
       "id": "vio-wfd-write",
       "name": "Shape row update",
@@ -328,8 +328,8 @@
               "canBeUsedToMatch": true
             },
             {
-              "id": "product",
-              "displayName": "product",
+              "id": "Product",
+              "displayName": "Product",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -350,6 +350,144 @@
       },
       "id": "vio-wfd-upd",
       "name": "Write result back",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1080,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Mark the row as waiting on a human, using the sheet's OWN vocabulary, before the gated call.\n// Until now nothing claimed the row until the chain finished, so a row parked on an unanswered\n// Slack approval was re-drafted and re-paged every single minute.\nconst src = $('Shape for page').first().json;\nreturn { json: {\n  row_number: src._row,\n  channel_state_email: 'pending_approval',\n  opener: src._opener || '',\n  email_draft: src._email_draft || '',\n  sendr_page_url: src._page_pending || '',\n  Product: src._product || '',\n  signal: src._signal || '',\n  updated_at: new Date().toISOString(),\n} };\n"
+      },
+      "id": "vio-wfd-claim",
+      "name": "Claim row (pending_approval)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [
+            "row_number"
+          ],
+          "value": {},
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_email",
+              "displayName": "channel_state_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opener",
+              "displayName": "opener",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_draft",
+              "displayName": "email_draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sendr_page_url",
+              "displayName": "sendr_page_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "verify_reason",
+              "displayName": "verify_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Product",
+              "displayName": "Product",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "signal",
+              "displayName": "signal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        }
+      },
+      "id": "vio-wfd-upd2",
+      "name": "Claim row in sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
@@ -453,7 +591,7 @@
       "main": [
         [
           {
-            "node": "Shape for enrolment",
+            "node": "Claim row (pending_approval)",
             "type": "main",
             "index": 0
           }
@@ -498,6 +636,28 @@
         [
           {
             "node": "Write result back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim row (pending_approval)": {
+      "main": [
+        [
+          {
+            "node": "Claim row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Shape for enrolment",
             "type": "main",
             "index": 0
           }

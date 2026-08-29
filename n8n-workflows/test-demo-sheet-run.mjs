@@ -42,7 +42,7 @@ for (const sc of ['Manual', 'manual', 'MANUAL', ' Manual '])
 
 // Idempotence — this polls every minute, so a claimed row must never be re-processed.
 // Leads has no `status` column; channel_state_email is the one that means exactly this.
-for (const s of ['queued', 'sent', 'bounced', 'not_sent'])
+for (const s of ['pending_approval', 'enrolled', 'needs_review', 'dropped', 'bounced', 'replied'])
   ok(`channel_state_email "${s}" means already claimed`, pick([row({ channel_state_email: s })]).length === 0);
 ok('blank channel_state_email is unclaimed', pick([row({ channel_state_email: '   ' })]).length === 1);
 
@@ -98,16 +98,16 @@ const writeCode = jsOf('Shape row update');
 const write = (rep, src) => new Function('$input', '$', writeCode)(
   { item: { json: rep } }, () => ({ first: () => ({ json: src }) })).json;
 const src = { _row: 2, _opener: 'op', _email_draft: 'body', _page: 'https://p' };
-ok('an enrolled row is marked queued, not sent',
-   write({ leads: [{ status: 'enrolled' }] }, src).channel_state_email === 'queued');
-ok('a NOT-enrolled row is marked not_sent',
-   write({ leads: [{ status: 'already_in_another_campaign' }] }, src).channel_state_email === 'not_sent');
-ok('an empty result is not_sent', write({}, src).channel_state_email === 'not_sent');
+ok('an enrolled row uses the sheet vocabulary: enrolled',
+   write({ leads: [{ status: 'enrolled' }] }, src).channel_state_email === 'enrolled');
+ok('a NOT-enrolled row is dropped',
+   write({ leads: [{ status: 'already_in_another_campaign' }] }, src).channel_state_email === 'dropped');
+ok('an empty result is dropped', write({}, src).channel_state_email === 'dropped');
 ok('the page url is written back', write({ leads: [{ status: 'enrolled' }] }, src).sendr_page_url === 'https://p');
 
 const badRow = new Function('$input', jsOf('Explain the bad row'))(
   { item: { json: { row_number: 5, problems: 'contact_email is blank' } } }).json;
-ok('a bad row is marked not_sent', badRow.channel_state_email === 'not_sent');
+ok('a bad row is marked needs_review', badRow.channel_state_email === 'needs_review');
 ok('a bad row explains itself in the sheet', /contact_email is blank/.test(badRow.verify_reason));
 
 // An Execute Workflow call returns ONLY the sub-workflow's own output — anything the caller
@@ -131,6 +131,29 @@ let threw = null;
 try { runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _email: '' }); } catch (e) { threw = e.message; }
 ok('a row that LOST its email refuses here, before a human is asked',
    threw !== null && /REFUSED/.test(threw), threw || 'did not throw');
+
+// Every value written to channel_state_email must exist in the live sheet's data-validation
+// dropdown. The docs say not_sent/queued/sent/bounced; the live column says
+// needs_review / pending_approval / approved / enrolled / replied / positive / booked /
+// rejected / dropped / unsubscribed / bounced. Writing through the API bypasses validation, so
+// an off-vocabulary value lands silently in a column a human filters on.
+const SHEET_VOCAB = new Set(['needs_review','pending_approval','approved','enrolled','replied',
+  'positive','booked','rejected','dropped','unsubscribed','bounced']);
+for (const node of ['Shape row update', 'Explain the bad row', 'Claim row (pending_approval)']) {
+  const src = jsOf(node);
+  for (const m of src.matchAll(/channel_state_email:\s*(?:[^'"\n]*\?\s*)?'([a-z_]+)'/g))
+    ok(`${node} writes "${m[1]}" — a value the sheet dropdown allows`, SHEET_VOCAB.has(m[1]));
+  for (const m of src.matchAll(/:\s*'([a-z_]+)'\s*;?\s*$/gm)) { /* no-op, guard above is enough */ }
+}
+
+// A row parked on an unanswered approval must be CLAIMED, or the one-minute schedule re-drafts and
+// re-pages it every cycle. Two Sendr pages were burned that way before this was added.
+const claimIdx = wf.nodes.findIndex(n => n.name === 'Claim row (pending_approval)');
+ok('the row is claimed before the gated enrolment', claimIdx !== -1);
+ok('the claim writes pending_approval', /pending_approval/.test(jsOf('Claim row (pending_approval)')));
+const afterPage = wf.connections['Generate Sendr page'].main[0].map(c => c.node);
+ok('the claim happens straight after the page, before enrolment',
+   afterPage.includes('Claim row (pending_approval)'), afterPage.join(','));
 
 // ---------- structure ----------
 ok('workflow id stable', wf.id === 'VIOwfDsheetdemo1');
