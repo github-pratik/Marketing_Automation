@@ -432,6 +432,21 @@ const happy = endToEnd({ approved: true, outcome: 'approve' });
 ok(`end-to-end: ${e2e} approval shapes, only the boolean-true one enrols anybody`,
    e2eEnrolled === 0 && happy.enrolled === 3);
 
+// The Sheets writes run AFTER the enrolment. A misconfigured one throws "Could not get
+// parameter" once the lead has already landed — so the enrolment succeeds and the execution still
+// reports error. Found live 2026-08-29. The proven shape (VIO-inbound-reply-to-call) is
+// typeVersion 4.7 with an explicit `schema`; 4.5 with autoMapInputData + matchingColumns and no
+// schema is what failed.
+for (const n of wf.nodes.filter((x) => x.type === 'n8n-nodes-base.googleSheets')) {
+  ok(`${n.name} is typeVersion 4.7`, n.typeVersion === 4.7, `got ${n.typeVersion}`);
+  ok(`${n.name} declares a column schema`,
+     Array.isArray(n.parameters.columns?.schema) && n.parameters.columns.schema.length > 0);
+  ok(`${n.name} pins the Sheets credential by id`,
+     n.credentials?.googleApi?.id === 'VIOgsheetcred01');
+  if (n.parameters.operation === 'appendOrUpdate')
+    ok(`${n.name} names a matching column`, (n.parameters.columns?.matchingColumns || []).length > 0);
+}
+
 // ---------------------------------------------------------------------------
 // RE-CONTACT: opt-in, and the human must be able to see it in what they approve
 // ---------------------------------------------------------------------------

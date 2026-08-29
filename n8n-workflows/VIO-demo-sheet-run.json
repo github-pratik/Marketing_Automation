@@ -18,7 +18,7 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        -900,
+        -1120,
         0
       ]
     },
@@ -33,17 +33,19 @@
         },
         "sheetName": {
           "__rl": true,
-          "value": "Demo",
+          "value": "Leads",
           "mode": "name"
         },
-        "options": {}
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        }
       },
       "id": "vio-wfd-read",
-      "name": "Read Demo tab",
+      "name": "Read Leads",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        -680,
+        -920,
         0
       ],
       "credentials": {
@@ -57,14 +59,14 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Pick up rows a human typed into the Demo tab and has not been processed yet.\n//\n// A dedicated Demo tab, NOT the Leads tab. The Leads tab is written by the live intake pipeline,\n// so polling it would re-trigger on rows this system itself just appended \u2014 a feedback loop\n// against real spend. A separate input surface cannot loop.\n//\n// `status` is the claim marker: blank means unprocessed. Anything else (queued/done/skipped/an\n// error string) means leave it alone. That makes a re-poll idempotent without needing a lock \u2014\n// the row's own state is the lock.\nconst rows = $input.all().map((i) => i.json || {});\nconst clean = (v, cap = 160) => (typeof v === 'string'\n  ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, cap) : '');\n\nconst PRODUCTS = ['oryoniq', 'visioneerit', 'demo'];\nconst out = [];\n\nfor (const r of rows) {\n  if (clean(r.status)) continue;                       // already claimed\n  const first_name = clean(r.first_name, 80);\n  const company    = clean(r.company, 160);\n  const email      = clean(r.contact_email, 160).toLowerCase();\n  if (!first_name && !company && !email) continue;     // blank spacer row\n\n  const rowNum = r.row_number ?? r.__rowNum ?? null;\n  const problems = [];\n  if (!first_name) problems.push('first_name is blank');\n  if (!company)    problems.push('company is blank');\n  // Strict on purpose: a comma or bracket smuggled in here turns one row into two recipients.\n  if (!/^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/.test(email)) {\n    problems.push(email ? `'${email}' is not a single valid address` : 'contact_email is blank');\n  }\n  let product = clean(r.product, 40).toLowerCase() || 'demo';\n  if (!PRODUCTS.includes(product)) {\n    problems.push(`product '${product}' is not one of ${PRODUCTS.join('/')}`);\n  }\n\n  out.push({ json: {\n    row_number: rowNum,\n    first_name, company, email,\n    title: clean(r.title, 120) || '(role)',\n    product,\n    // A bad row is REPORTED back into the sheet, never silently skipped \u2014 the person who typed it\n    // is standing right there, and a row that vanishes looks like the system is broken.\n    invalid: problems.length > 0,\n    problems: problems.join('; '),\n  }});\n}\n\nreturn out;\n"
+        "jsCode": "// Pick up rows a human typed into the Leads tab and marked as demo rows.\n//\n// TWO filters, and both matter:\n//   source_config === 'manual' \u2014 the marker for a row a HUMAN typed.\n//\n//     Not 'demo'. The live sheet has a data-validation dropdown on this column offering exactly\n//     Apollo / Warmly-Intent / Referral / Manual, so 'demo' cannot be entered at all. Note that\n//     this disagrees with SHEET_SCHEMA.md, which documents the column as the PRODUCT config\n//     ('oryoniq' / 'visioneerit'). The live sheet's meaning is \"how did this lead arrive\"; the\n//     doc's is \"which product owns it\". Matching the sheet, since the sheet is what a human types\n//     into \u2014 but the two need reconciling.\n//\n//     The loop guard still holds: the intake pipeline writes 'oryoniq'/'visioneerit', and Apollo-\n//     sourced rows carry 'Apollo'. Neither matches 'manual', so this schedule cannot re-trigger on\n//     rows the system itself appended.\n//   channel_state_email blank \u2014 the claim marker. This polls every minute, so a row already picked\n//                               up must never be picked up again. Leads has no `status` column;\n//                               channel_state_email is the column that means exactly this\n//                               (not_sent / queued / sent / bounced), so it is the honest one to use.\nconst rows = $input.all().map((i) => i.json || {});\nconst clean = (v, cap = 160) => (typeof v === 'string'\n  ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, cap) : '');\n\nconst out = [];\nfor (const r of rows) {\n  if (clean(r.source_config).toLowerCase() !== 'manual') continue;\n  if (clean(r.channel_state_email)) continue;\n\n  const first_name = clean(r.first_name, 80);\n  const company    = clean(r.company, 160);\n  const email      = clean(r.contact_email, 160).toLowerCase();\n  if (!first_name && !company && !email) continue;\n\n  const problems = [];\n  if (!first_name) problems.push('first_name is blank');\n  if (!company)    problems.push('company is blank');\n  if (!/^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/.test(email)) {\n    problems.push(email ? `'${email}' is not a single valid address` : 'contact_email is blank');\n  }\n\n  out.push({ json: {\n    row_number: r.row_number ?? null,\n    first_name, company, email,\n    title: clean(r.title, 120) || '(role)',\n    company_domain: clean(r.company_domain, 160),\n    // The demo campaign carries OryonIQ's step-1 copy verbatim, so it drafts with that config.\n    product: 'demo',\n    draft_config: 'oryoniq',\n    invalid: problems.length > 0,\n    problems: problems.join('; '),\n  }});\n}\nreturn out;\n"
       },
       "id": "vio-wfd-pick",
-      "name": "Pick unprocessed rows",
+      "name": "Pick demo rows",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -460,
+        -720,
         0
       ]
     },
@@ -78,7 +80,7 @@
           },
           "conditions": [
             {
-              "id": "vio-wfd-valid",
+              "id": "vio-wfd-v",
               "leftValue": "={{ $json.invalid === true }}",
               "rightValue": true,
               "operator": {
@@ -96,7 +98,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        -240,
+        -520,
         0
       ]
     },
@@ -104,15 +106,30 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Hand the drafting sub-workflow exactly the fields it reads, and carry the row identity so the\n// result can be written back to the row the human is watching.\nconst r = $input.item.json;\nreturn { json: {\n  first_name: r.first_name,\n  title: r.title,\n  company: r.company,\n  // The drafting workflow selects OryonIQ vs VisioneerIT copy from this. 'demo' is the demo\n  // campaign, whose copy is OryonIQ's step 1 verbatim, so it drafts with the OryonIQ config.\n  source_config: r.product === 'demo' ? 'oryoniq' : r.product,\n  _row: r.row_number, _email: r.email, _product: r.product, _company: r.company,\n  _first_name: r.first_name, _title: r.title,\n} };\n"
+        "jsCode": "const r = $input.item.json;\nreturn { json: { row_number: r.row_number, channel_state_email: 'not_sent',\n                 verify_reason: `demo row not processed \u2014 ${r.problems}`,\n                 updated_at: new Date().toISOString() } };\n"
+      },
+      "id": "vio-wfd-bad",
+      "name": "Explain the bad row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const r = $input.item.json;\nreturn { json: { first_name: r.first_name, title: r.title, company: r.company,\n                 source_config: r.draft_config,\n                 _row: r.row_number, _email: r.email, _company: r.company,\n                 _first_name: r.first_name, _title: r.title, _domain: r.company_domain } };\n"
       },
       "id": "vio-wfd-shape",
       "name": "Shape for drafting",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -20,
-        120
+        -320,
+        140
       ]
     },
     {
@@ -122,78 +139,105 @@
           "value": "VIOwf4agent0001",
           "mode": "id"
         },
+        "mode": "each",
         "options": {
           "waitForSubWorkflow": true
-        },
-        "mode": "each"
+        }
       },
       "id": "vio-wfd-draft",
       "name": "Draft (operator agent)",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [
-        200,
-        120
+        -120,
+        140
       ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Fold the drafted opener back onto the row, ready for the page + enrolment stages.\nconst d = $input.item.json;\nconst opener = typeof d.opener === 'string' ? d.opener.trim() : '';\nreturn { json: {\n  row_number: d._row, first_name: d._first_name, title: d._title, company: d._company,\n  product: d._product, contact_email: d._email,\n  opener,\n  email_draft: typeof d.email === 'string' ? d.email : '',\n  drafted: opener.length > 0,\n} };\n"
+        "jsCode": "// Shape for VIO-sendr-generate-page.\n//\n// The identity fields (_row, _email, ...) are read back from 'Shape for drafting', NOT from the\n// item in front of us. An Execute Workflow call returns only what the SUB-workflow's own output\n// node emits \u2014 anything the caller attached to the input is gone. Carrying them on the input and\n// expecting them back produced an enrolment with a blank address and \"(unnamed lead)\", which the\n// gate correctly refused. Each execution here handles one row (mode: 'each'), so first() is that\n// row's context.\nconst drafted = $input.item.json;\nconst src = $('Shape for drafting').first().json;\nreturn { json: {\n  product: 'oryoniq',\n  first_name: src._first_name, title: src._title,\n  company: src._company, company_domain: src._domain || '',\n  _row: src._row, _email: src._email, _first_name: src._first_name,\n  _title: src._title, _company: src._company,\n  _opener: typeof drafted.opener === 'string' ? drafted.opener.trim() : '',\n  _email_draft: typeof drafted.email === 'string' ? drafted.email : '',\n} };\n"
       },
-      "id": "vio-wfd-merge",
-      "name": "Merge draft onto row",
+      "id": "vio-wfd-page",
+      "name": "Shape for page",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        420,
-        120
+        80,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "VIOwf6sendrgen01",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "vio-wfd-genpage",
+      "name": "Generate Sendr page",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        280,
+        140
       ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Report the problem into the sheet rather than dropping the row silently.\nconst r = $input.item.json;\nreturn { json: { row_number: r.row_number, status: 'skipped',\n                 notes: `Not processed \u2014 ${r.problems}`, opener: '', email_draft: '',\n                 sendr_page_url: '' } };"
+        "jsCode": "// Hand the gated enrolment tool one lead. It posts a Slack approval and BLOCKS until a human\n// answers \u2014 that pause is the design, not a stall.\n//\n// Same rule as the node above: the page URL comes from the item in front of us (the sub-workflow's\n// own output), everything else is read back from 'Shape for page'.\nconst page = $input.item.json.pageUrl || $input.item.json.sendr_page_url || '';\nconst src = $('Shape for page').first().json;\nif (!src._email) {\n  throw new Error(`REFUSED: row ${src._row} lost its contact_email between stages \u2014 refusing to propose an enrolment the human could not act on.`);\n}\nreturn { json: {\n  product: 'demo',\n  allow_recontact: true,\n  leads: [{\n    first_name: src._first_name, title: src._title, company: src._company,\n    contact_email: src._email, sendr_page_url: page,\n    opener: src._opener, verify_action: 'pass',\n  }],\n  _row: src._row, _page: page, _opener: src._opener, _email_draft: src._email_draft,\n} };\n"
       },
-      "id": "vio-wfd-bad",
-      "name": "Explain the bad row",
+      "id": "vio-wfd-enrol",
+      "name": "Shape for enrolment",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -20,
-        -140
+        480,
+        140
       ]
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "language": "javaScript",
-        "jsCode": "// Drafted, not yet sent. The enrolment step is gated and runs separately, so this row\n// deliberately does NOT claim an email went out.\nconst r = $input.item.json;\nreturn { json: { ...r, status: r.drafted ? 'drafted' : 'error',\n  notes: r.drafted ? 'Drafted online. Enrolment is a separate approved step.'\n                   : 'Drafting returned no opener.' } };"
+        "workflowId": {
+          "__rl": true,
+          "value": "VIOwfBpushinst1",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
       },
-      "id": "vio-wfd-ok",
-      "name": "Mark drafted",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "vio-wfd-push",
+      "name": "Enrol (GATED \u2014 Slack approval)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
       "position": [
-        640,
-        120
+        680,
+        140
       ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Build the row update the human sees appear beside what they typed.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nreturn { json: {\n  row_number: r.row_number,\n  status: r.status,\n  opener: scrub(r.opener || ''),\n  email_draft: scrub(r.email_draft || ''),\n  sendr_page_url: r.sendr_page_url || '',\n  notes: scrub(r.notes || ''),\n  updated_at: new Date().toISOString(),\n} };\n"
+        "jsCode": "// Write the outcome back onto the row the human is watching. Uses Leads' own columns \u2014 there is\n// no invented schema here.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nconst src = $('Shape for enrolment').first().json;\nconst enrolled = Array.isArray(r.leads) && r.leads.some((l) => l.status === 'enrolled');\nreturn { json: {\n  row_number: src._row,\n  // 'queued' not 'sent': enrolment adds someone to a campaign; the send is a separate act.\n  channel_state_email: enrolled ? 'queued' : 'not_sent',\n  opener: scrub(src._opener || ''),\n  email_draft: scrub(src._email_draft || ''),\n  sendr_page_url: src._page || '',\n  updated_at: new Date().toISOString(),\n} };\n"
       },
       "id": "vio-wfd-write",
       "name": "Shape row update",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        860,
-        0
+        880,
+        140
       ]
     },
     {
@@ -207,7 +251,7 @@
         },
         "sheetName": {
           "__rl": true,
-          "value": "Demo",
+          "value": "Leads",
           "mode": "name"
         },
         "options": {
@@ -218,13 +262,78 @@
           "matchingColumns": [
             "row_number"
           ],
-          "value": {}
+          "value": {},
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_email",
+              "displayName": "channel_state_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opener",
+              "displayName": "opener",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_draft",
+              "displayName": "email_draft",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sendr_page_url",
+              "displayName": "sendr_page_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "verify_reason",
+              "displayName": "verify_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
         }
       },
-      "id": "vio-wfd-update",
+      "id": "vio-wfd-upd",
       "name": "Write result back",
       "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.5,
+      "typeVersion": 4.7,
       "position": [
         1080,
         0
@@ -242,25 +351,25 @@
       "main": [
         [
           {
-            "node": "Read Demo tab",
+            "node": "Read Leads",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Read Demo tab": {
+    "Read Leads": {
       "main": [
         [
           {
-            "node": "Pick unprocessed rows",
+            "node": "Pick demo rows",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Pick unprocessed rows": {
+    "Pick demo rows": {
       "main": [
         [
           {
@@ -304,36 +413,47 @@
       "main": [
         [
           {
-            "node": "Merge draft onto row",
+            "node": "Shape for page",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Merge draft onto row": {
+    "Shape for page": {
       "main": [
         [
           {
-            "node": "Mark drafted",
+            "node": "Generate Sendr page",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Mark drafted": {
+    "Generate Sendr page": {
       "main": [
         [
           {
-            "node": "Shape row update",
+            "node": "Shape for enrolment",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Explain the bad row": {
+    "Shape for enrolment": {
+      "main": [
+        [
+          {
+            "node": "Enrol (GATED \u2014 Slack approval)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrol (GATED \u2014 Slack approval)": {
       "main": [
         [
           {
@@ -345,6 +465,17 @@
       ]
     },
     "Shape row update": {
+      "main": [
+        [
+          {
+            "node": "Write result back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Explain the bad row": {
       "main": [
         [
           {
