@@ -106,7 +106,15 @@ real. Each config's `sendr` block carries its own campaign + page template:
   no unknown columns means still-typing, unknown columns mean ask the model. The first cut of that
   fix omitted the exception and silently disabled the LLM path for the exact case it exists for; the
   *test suite* caught it, on an assertion written weeks earlier. See `SHEET_SCHEMA.md` Tab 6.
-- `VIO-intake-verify-curate` — **COMPLETE and proven, still deactivated by design.** Since
+- `VIO-intake-verify-curate` — **LIVE and ACTIVE since 2026-08-29.** It now has a third thing:
+  `Intake Result (to caller)`, a single join fed by all four terminal branches, so a caller can
+  finally tell "verified and written" from "silently dropped as suppressed". Before it, an Execute
+  Workflow call returned whichever branch happened to run last. It echoes `inbox_row` back because
+  identity does NOT survive an Execute Workflow call. Called by `VIO-inbox-mapper`, batch-mode
+  (**not** `mode:'each'` — the opposite of `VIO-run-campaign`: intake is a batch pipeline whose two
+  Sheets reads are `executeOnce`, so per-lead would re-read Leads and Suppression once per lead).
+  Historical note follows.
+- `VIO-intake-verify-curate` (history) — **COMPLETE and proven, was deactivated by design.** Since
   2026-08-25 it has **two entry points**: the manual trigger, and an `executeWorkflowTrigger` so
   `VIO-source-leads` can hand it a batch. They converge on `Normalize Lead`, so there is still
   exactly one copy of the gates. Batch shape is **one n8n item per lead** — every node downstream is
@@ -208,6 +216,27 @@ lags `/healthz` by ~20s, so a fresh probe can 404 on a perfectly good endpoint.
 renders it; 8462 does not, so OryonIQ's new contact URL reaches the *email* but cannot reach the
 *page*. Proven live 2026-08-17 by generating one page per product and diffing `variablesUsed`.
 Adding `cta` to 8462 is a manual Sendr UI action — the template API is read-only.
+
+**Three wiring fixes landed 2026-08-29** — the Inbox path was built but never actually connected:
+1. **Verification was being skipped entirely.** `VIO-inbox-mapper` wrote straight to `Leads`, around
+   Reoon, the dedupe check and the suppression list. It now hands its batch to
+   `VIO-intake-verify-curate` and reports each verdict back onto the Inbox row. A row whose
+   verification could not finish is left **unclaimed** so the next cycle retries it — claiming it
+   would let a Reoon outage silently eat the row.
+2. **The handoff column disagreed.** `VIO-demo-sheet-run` required `channel_state_email` to be
+   BLANK; nothing that writes a lead leaves it blank (intake stamps `not_sent`). Every staff-typed
+   lead landed in `Leads`, looked correct to a human, and was never picked up. `not_sent` is now
+   explicitly the ready state; every other value means hands off.
+3. **Product was hardcoded `'oryoniq'`.** A council CIO typed in for VisioneerIT would have been
+   drafted GovCon capture copy signed OryonIQ. There is now a `Product` column on `Inbox`, validated
+   in the mapper, carried through intake onto the `Leads` row, and read by the runner. **A blank or
+   unknown product REFUSES the row rather than guessing** — a wrong guess puts the wrong company's
+   pitch in front of a real person and cannot be recalled. `source_config` is deliberately NOT a
+   fallback: on the live sheet it means how the lead ARRIVED, not who pitches it.
+
+**⚠️ Still manual:** the `Product` header cell and its dropdown must be added to the live `Inbox`
+tab by hand — the Sheets node cannot create data validation, and re-running `VIO-sheet-provision`
+appends rather than repairing a header.
 
 **Next:** rewrite the email copy — the user read a real send and said it did not communicate the
 offer (market commentary first, the point buried third, no clear ask); this is the highest-value

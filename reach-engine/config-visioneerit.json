@@ -19,7 +19,7 @@
     "q_keywords": "government"
   },
   "signal": "Every DoD component has to reach zero-trust architecture by September 30, 2027, and that deadline hasn't moved — while AI procurement mandates land on top of it. Security and modernization budgets are committed now.",
-  "offer": "VisioneerIT stands up zero-trust architecture and AI-augmented security operations without a year-long procurement cycle, with CMMC readiness alongside.",
+  "offer": "VisioneerIT stands up zero-trust architecture and AI-assisted security operations for federal and SLED teams, and gets it running in months rather than as a multi-year program, with CMMC readiness handled alongside.",
   "_comment_cta": "URL dropped into the soft ask at the end of every assembled email, and rendered as the page's link button. Use THIS PRODUCT'S OWN domain — see config-oryoniq.json, which points at oryoniq.com for the same reason.",
   "cta": "https://www.visioneerit.com/contact",
   "sender": "Ellen\nVisioneerIT",
@@ -33,5 +33,6 @@
     "campaign_sheet_id": "l4gqjtd62rp7jtqvjuu0z50i",
     "gif_source": "dynamic-website",
     "gif_hyperlink_text": "See your agency's zero-trust readiness gaps"
-  }
+  },
+  "_comment_offer": "The plain-words paragraph that follows the AI opener in the email, and that fills the `offer` variable on the Sendr page. REWRITTEN 2026-08-29: the previous OryonIQ line was 'maps who's already winning in your NAICS and who they're teaming with' — category jargon (NAICS, maps, teaming) that describes a product category rather than telling the reader what they get. Whatever this says must stay inside oryoniq-product-features.md, and must be re-synced into VIO-sendr-generate-page's ROUTES map with `python3 n8n-workflows/sync-routes.py --fix` or the page and the email argue different cases to the same prospect."
 }

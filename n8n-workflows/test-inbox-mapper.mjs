@@ -18,7 +18,11 @@ const ok = (l, c, d = '') => { if (c) pass++; else { console.error(`  FAIL  ${l}
 const mapCode = jsOf('Map headers (alias table)');
 const map = (rows) => new Function('$input', mapCode)({ all: () => rows.map(j => ({ json: j })) })
   .map(i => i.json);
-const one = (r) => { const o = map([{ row_number: 2, status: '', ...r }]); return o.length ? o[0] : null; };
+// Every usable row now needs a Product — staff choose it, nothing can infer it. The default keeps
+// the ~200 assertions that are about column MAPPING focused on column mapping; the cases that are
+// about the product itself pass their own value.
+const one = (r) => { const o = map([{ row_number: 2, status: '', Product: 'OryonIQ', ...r }]);
+                     return o.length ? o[0] : null; };
 
 // ---------- the real upload shape (49,251 contacts) ----------
 const real = one({ 'Company name': 'TRUSTED SOLUTIONS LLC', 'First name': 'ROBERT',
@@ -161,15 +165,76 @@ ok('a bad row is marked needs_review', bad.status === 'needs_review');
 ok('  and the note says why', /no email column found/.test(bad.notes));
 ok('  and names the unrecognised columns', /Zip/.test(bad.notes));
 
-// ---------- an imported lead is not mail-ready ----------
+// ---------- an uploaded lead goes through VERIFICATION, not straight to the sheet ----------
+// Changed 2026-08-29. This node used to build a Leads row and the next node wrote it, which put
+// every staff-typed lead round the outside of Reoon, the dedupe check and the suppression list.
 const leadCode = jsOf('Shape Lead row');
 const lead = new Function('$input', leadCode)({ item: { json: { contact_email: 'a@b.com',
-  first_name: 'A', company: 'C', source_config: 'Manual' } } }).json;
-ok('an uploaded lead lands as needs_review, not ready to send',
-   lead.channel_state_email === 'needs_review');
-ok('  which is a value the live sheet dropdown allows',
-   ['needs_review','pending_approval','approved','enrolled','replied','positive','booked',
-    'rejected','dropped','unsubscribed','bounced'].includes(lead.channel_state_email));
+  first_name: 'A', company: 'C', source_config: 'Manual', Product: 'OryonIQ', row_number: 7,
+  _unmapped_headers: ['Zip'], _warnings: ['w'] } } }).json;
+ok('the lead is shaped for the verifier, keyed the way intake expects', lead.email === 'a@b.com');
+ok('it carries the chosen product', lead.Product === 'OryonIQ');
+ok('it does NOT stamp a lifecycle state — intake owns the Leads row',
+   lead.channel_state_email === undefined);
+ok('it carries the Inbox row so the verdict can be reported back', lead.inbox_row === 7);
+ok('mapping diagnostics ride along for the merge node', lead._inbox.unmapped_headers[0] === 'Zip');
+
+// The mapper must not write to Leads any more — that is intake's job, and two writers stamping
+// the same row is how a lead ends up disagreeing with itself.
+ok('the mapper no longer writes to the Leads tab',
+   !wf.nodes.some(n => n.type === 'n8n-nodes-base.googleSheets'
+     && (n.parameters.sheetName?.value || n.parameters.sheetName) === 'Leads'));
+const call = wf.nodes.find(n => n.type === 'n8n-nodes-base.executeWorkflow');
+ok('it calls the verify/curate workflow instead', call?.parameters.workflowId?.value === 'VIOwf1intake0001');
+ok('it waits for the verdict', call?.parameters.options?.waitForSubWorkflow === true);
+// Intake is a BATCH pipeline whose two Sheets reads are executeOnce — the opposite of
+// VIO-run-campaign, where mode:'each' was the fix. Per-lead here would re-read Leads and
+// Suppression once per lead.
+ok('it verifies the whole batch in one call, not one call per lead',
+   call?.parameters.mode === undefined || call?.parameters.mode === 'once');
+
+// ---------- the product gate ----------
+ok('a row with no product is refused, not guessed',
+   one({ 'Email address': 'a@b.com', 'First name': 'A', 'Company name': 'C', Product: '' })._ok === false);
+ok('  and says what to do about it',
+   /choose OryonIQ or VisioneerIT/.test(
+     one({ 'Email address': 'a@b.com', 'First name': 'A', 'Company name': 'C', Product: '' })._problems.join(' ')));
+// A complete row, so these cases isolate the product and nothing else.
+const withProduct = (p, extra = {}) => one({ 'Email address': 'a@b.com', 'First name': 'A',
+                                             'Company name': 'C', Product: p, ...extra });
+ok('an unknown product is refused', withProduct('Acme')._ok === false);
+ok('OryonIQ resolves', withProduct('oryoniq').Product === 'OryonIQ');
+ok('VisioneerIT resolves', withProduct(' visioneer it ').Product === 'VisioneerIT');
+ok('the product is never mistaken for lead data', withProduct('OryonIQ').company === 'C');
+// source_config records how the lead ARRIVED and must never stand in for the product.
+ok('source_config is not used as a product fallback',
+   withProduct('', { source_config: 'oryoniq' })._ok === false);
+
+// ---------- the merge node: a verdict that never came back is not a success ----------
+const mergeCode = jsOf('Merge verdicts');
+const merge = (verdicts, sent) => new Function('$input', '$', mergeCode)(
+  { all: () => verdicts.map(j => ({ json: j })) },
+  (n) => ({ all: () => sent.map(j => ({ json: j })) })).map(i => i.json);
+const SENT = [{ contact_email: 'a@b.com', inbox_row: 4,
+                _inbox: { row_number: 4, llm_used: false, llm_applied: [], warnings: [], unmapped_headers: [] } }];
+for (const [outcome, want] of [['pass', true], ['needs_review', true],
+                               ['drop', false], ['skipped', false], ['verify_failed', false]]) {
+  const m = merge([{ inbox_row: 4, outcome, reason: 'r', reoon_status: 'safe' }], SENT)[0];
+  ok(`verification "${outcome}" -> imported=${want}`, m._ok === want, `got ${m._ok}`);
+}
+ok('a lead intake never answered for is NOT reported as imported',
+   merge([], SENT)[0]._ok === false);
+ok('  and says so rather than inventing a reason',
+   /no verdict/.test(merge([], SENT)[0]._problems.join(' ')));
+
+// A row verification could not finish must stay UNCLAIMED, or a Reoon outage silently eats it.
+ok('a failed verification leaves the row unclaimed for the next cycle',
+   status({ row_number: 4, _ok: false, _verify_outcome: 'verify_failed', _problems: ['x'] }).status === '');
+ok('a rejected address IS claimed, with the reason',
+   status({ row_number: 4, _ok: false, _verify_outcome: 'drop', _problems: ['address rejected'] }).status === 'needs_review');
+ok('a verified lead is claimed as mapped',
+   status({ row_number: 4, _ok: true, _verify_outcome: 'pass', contact_email: 'a@b.com',
+            _reoon_status: 'safe' }).status === 'mapped');
 
 // ---------- structure ----------
 ok('workflow id stable', wf.id === 'VIOwfHinboxmap');
@@ -181,8 +246,6 @@ ok('every Sheets node is typeVersion 4.7', sheetNodes.every(n => n.typeVersion =
 const writeNodes = sheetNodes.filter(n => n.parameters.operation !== 'read');
 ok('every Sheets WRITE declares a schema',
    writeNodes.length > 0 && writeNodes.every(n => (n.parameters.columns?.schema || []).length > 0));
-ok('the Leads write matches on contact_email',
-   (sheetNodes.find(n => n.name === 'Add to Leads')?.parameters.columns?.matchingColumns || []).includes('contact_email'));
 ok('no A1 range anywhere', !/"[A-Z]{1,2}[0-9]{1,4}:[A-Z]{1,2}/.test(JSON.stringify(wf)));
 ok('an error workflow is set', wf.settings?.errorWorkflow === 'VIOwfEerroralert');
 

@@ -114,11 +114,20 @@ class Sandbox:
         #    must apply. Once the real repo is repaired the old wording is legitimately gone, and a
         #    hard anchor here would fail the whole suite for the good reason. The strict anchor in
         #    sub() stays correct for the MUTATION helpers, where a silent no-op would test nothing.
-        stale = 'f"Put together a quick page with the ones it\'s surfacing for {company}: {page_url}"'
-        fixed = 'f"I put together a short page for {company}: {page_url}"'
+        # Two superseded wordings now, not one. The 2026-08-29 copy rewrite added "so you can see
+        # the format" (a page link with no reason to click is a link nobody clicks), so the
+        # sentence this fixture repairs TO has moved once more. Each entry is a state this file
+        # may legitimately be found in; the last is today's.
+        supersedes = [
+            'f"Put together a quick page with the ones it\'s surfacing for {company}: {page_url}"',
+            'f"I put together a short page for {company}: {page_url}"',
+        ]
+        fixed = ('f"I put a short page together for {company} so you can see the format: '
+                 '{page_url}"')
         text = self.read("reach-engine/engine.py")
-        if stale in text:
-            self.write("reach-engine/engine.py", text.replace(stale, fixed, 1))
+        hit = next((x for x in supersedes if x in text), None)
+        if hit:
+            self.write("reach-engine/engine.py", text.replace(hit, fixed, 1))
         elif fixed not in text:
             raise AssertionError(
                 "engine.py has neither the stale nor the repaired CTA sentence — the anchor this "
@@ -245,8 +254,13 @@ case("editing the config's cta trips routes + both agents only",
 case("ROUTES map alone drifts -> only `routes` reports",
      lambda sb: sb.sub_node_js("n8n-workflows/VIO-sendr-generate-page.json",
                                "Route Product to Template",
-                               "gif_hyperlink_text: \"See the 3 pursuits",
-                               "gif_hyperlink_text: \"See the 4 pursuits"),
+                               # derived, not retyped: the fixture only needs SOME value the
+                               # config also holds, so it survives copy rewrites (this anchor went
+                               # stale on 2026-08-29 when the pursuits/NAICS claim was dropped)
+                               "gif_hyperlink_text: " + json.dumps(
+                                   sb.json("reach-engine/config-oryoniq.json")
+                                     ["sendr"]["gif_hyperlink_text"]),
+                               "gif_hyperlink_text: \"something else entirely\""),
      1, expect_checks=("routes",),
      forbid_checks=("agent-v1-config", "agent-v2-config", "instantly-copy", "cta-sentence"))
 
@@ -290,10 +304,20 @@ case("the Instantly step-1 offer alone drifts -> only `instantly-copy` reports",
      forbid_checks=("routes", "agent-v1-config", "agent-v2-config", "cta-sentence"))
 
 
+def _signoff_html(sb):
+    """The campaign's sign-off block, derived from the config rather than retyped.
+
+    Hardcoding this cost four fixtures at once when the sender changed on 2026-08-29. A fixture
+    that names a value the repo no longer holds either mutates nothing (and silently tests
+    nothing) or injects genuine drift into a case asserting there is none."""
+    return "Ellen<br>" + sb.json("reach-engine/config-oryoniq.json")["sender"].split("\n", 1)[1]
+
+
 def mutate_campaign_sender(sb):
     c = sb.json("reach-engine/campaign-oryoniq-pilot.json")
     v = c["sequences"][0]["steps"][1]["variants"][0]
-    v["body"] = v["body"].replace("Ellen<br>OryonIQ, VisioneerIT", "Ellen<br>Acme Corp")
+    v["body"] = v["body"].replace(_signoff_html(sb), "Ellen<br>Acme Corp")
+    assert "Acme Corp" in v["body"], "fixture no-op: sign-off anchor moved"
     sb.put_json("reach-engine/campaign-oryoniq-pilot.json", c)
 
 
@@ -315,21 +339,21 @@ case("an OryonIQ email linking visioneerit.com is caught (the 2026-08-17 bug)",
 
 case("rewording the n8n CTA sentence away from the deployed one -> `cta-sentence`",
      lambda sb: sb.sub_node_js("n8n-workflows/VIO-operator-agent.json", "Assemble + Report",
-                               "I put together a short page for ${cfg.company}",
+                               "I put a short page together for ${cfg.company} so you can see the format",
                                "Made you a page, ${cfg.company}"),
      1, expect_checks=("cta-sentence",), forbid_checks=("routes", "agent-v1-config"))
 
 case("reordering the n8n email blocks -> `email-shape`",
      lambda sb: sb.sub_node_js(
          "n8n-workflows/VIO-operator-agent.json", "Assemble + Report",
-         "`Hi ${cfg.first_name},\\n\\n${opener}\\n\\n${cfg.offer}\\n\\n${cfg.sender}`",
-         "`Hi ${cfg.first_name},\\n\\n${cfg.offer}\\n\\n${opener}\\n\\n${cfg.sender}`"),
+         "`Hi ${cfg.first_name},\\n\\n${opener}\\n\\n${cfg.offer}\\n\\n${ask}\\n\\n${cfg.sender}`",
+         "`Hi ${cfg.first_name},\\n\\n${cfg.offer}\\n\\n${opener}\\n\\n${ask}\\n\\n${cfg.sender}`"),
      1, expect_checks=("email-shape",))
 
 case("declaring the email incomplete WITHOUT carrying the omitted sentence is drift",
      lambda sb: sb.sub_node_js("n8n-workflows/VIO-operator-agent.json", "Assemble + Report",
-                               "const cta_line_pending = `I put together",
-                               "const something_else = `I put together"),
+                               "const cta_line_pending = `I put a short page",
+                               "const something_else = `I put a short page"),
      1, expect_checks=("email-shape",), expect_text=("cta_line_pending",))
 
 
@@ -380,7 +404,7 @@ def rewrite_touch3(sb):
     v = c["sequences"][0]["steps"][2]["variants"][0]
     v["body"] = ("<div>Hi {{firstName}},</div><div><br></div><div>A completely different argument "
                  "that shares not one word with the config.</div><div><br></div>"
-                 "<div>Ellen<br>OryonIQ, VisioneerIT</div>")
+                 "<div>" + _signoff_html(sb) + "</div>")
     sb.put_json("reach-engine/campaign-oryoniq-pilot.json", c)
 
 
@@ -395,7 +419,7 @@ def extra_variant(sb):
         "subject": "variant C",
         "body": ("<div>Hi {{firstName}},</div><div><br></div><div>{{personalization}}</div>"
                  "<div><br></div><div>An entirely new angle with none of the config copy in it.</div>"
-                 "<div><br></div><div>Ellen<br>OryonIQ, VisioneerIT</div>"),
+                 "<div><br></div><div>" + _signoff_html(sb) + "</div>"),
     })
     sb.put_json("reach-engine/campaign-oryoniq-pilot.json", c)
 
@@ -404,9 +428,14 @@ case("an extra A/B variant that drops the offer is not drift (one variant must k
      extra_variant, 0, forbid_checks=NO_DRIFT)
 
 case("rendering the sign-off on one comma-separated line is not drift",
-     lambda sb: sb.sub_node_js("n8n-workflows/VIO-operator-agent.json", "validate_config",
-                               _sender_literal(sb, "n8n-workflows/VIO-operator-agent.json"),
-                               "sender: 'Ellen, OryonIQ, VisioneerIT'"),
+     # The SAME sender, rendered on one comma-separated line instead of two — a formatting
+     # difference the checker must tolerate. Derived from the config, so this keeps meaning what
+     # it says the next time the sender changes.
+     lambda sb: sb.sub_node_js(
+         "n8n-workflows/VIO-operator-agent.json", "validate_config",
+         _sender_literal(sb, "n8n-workflows/VIO-operator-agent.json"),
+         "sender: '"
+         + sb.json("reach-engine/config-oryoniq.json")["sender"].replace("\n", ", ") + "'"),
      0, forbid_checks=NO_DRIFT)
 
 case("truncating an agent's illustrative icp list is not drift (icp never reaches a prospect)",

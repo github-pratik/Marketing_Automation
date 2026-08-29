@@ -1,11 +1,11 @@
 {
-  "_comment_product": "Campaign / product identity. Printed in the run banner and tells the engine (and downstream n8n) which Visioneerit product this config is for \u2014 swap the whole file to run another product.",
+  "_comment_product": "Campaign / product identity. Printed in the run banner and tells the engine (and downstream n8n) which Visioneerit product this config is for — swap the whole file to run another product.",
   "product": "OryonIQ",
   "_comment_one_liner": "Plain-English pitch printed at the start of a live run so operators know what this campaign is selling. Not injected into the email body.",
-  "one_liner": "AI market intelligence for GovCon \u2014 surfaces federal pursuits before the RFP.",
+  "one_liner": "AI market intelligence for GovCon — who is winning the work, who they team with, and who you already know inside the agency.",
   "_comment_icp": "Ideal Customer Profile filters passed to Apollo's free people search. Wrong ICP = wrong leads; the engine does not hardcode titles or geos.",
   "icp": {
-    "_comment_person_titles": "Apollo title filters \u2014 who we want on the list (capture/BD roles that buy market-intel tools).",
+    "_comment_person_titles": "Apollo title filters — who we want on the list (capture/BD roles that buy market-intel tools).",
     "person_titles": [
       "Capture Manager",
       "VP of Business Development",
@@ -19,28 +19,29 @@
     "_comment_q_keywords": "Free-text Apollo keyword that narrows results to the buyer's world (beyond title alone).",
     "q_keywords": "government contracting"
   },
-  "_comment_signal": "The live, dated market hook fed into OpenAI's system prompt. Gives the personalizer a real trigger to ground the opener \u2014 keep it current and specific or openers go generic.",
-  "signal": "The Pentagon suspended CMMC Phase II on July 13, 2026 \u2014 third-party assessments are paused pending a 60-day review, while DoD committed $32B to AI, cloud, and cyber in H1 FY2026. The bid barrier just dropped on a lot of money.",
-  "_comment_offer": "Mid-email value line assembled after the AI opener. One concrete outcome for this ICP \u2014 not a feature list.",
-  "offer": "OryonIQ maps who's already winning in your NAICS and who they're teaming with \u2014 so you know who to partner with instead of who to outbid.",
-  "_comment_cta": "URL dropped into the soft ask at the end of every assembled email, and rendered as the page's link button. Use THIS PRODUCT'S OWN domain \u2014 an OryonIQ email that sends the prospect to visioneerit.com reads like a bait-and-switch and costs the click. OryonIQ has its own live site, so it gets its own contact page (verified 200, 2026-08-17).",
+  "_comment_signal": "The live, dated market hook fed into OpenAI's system prompt. Gives the personalizer a real trigger to ground the opener — keep it current and specific or openers go generic.",
+  "signal": "The Pentagon suspended CMMC Phase II on July 13, 2026 — third-party assessments are paused pending a 60-day review, while DoD committed $32B to AI, cloud, and cyber in H1 FY2026. The bid barrier just dropped on a lot of money.",
+  "_comment_offer": "The plain-words paragraph that follows the AI opener in the email, and that fills the `offer` variable on the Sendr page. REWRITTEN 2026-08-29: the previous OryonIQ line was 'maps who's already winning in your NAICS and who they're teaming with' — category jargon (NAICS, maps, teaming) that describes a product category rather than telling the reader what they get. Whatever this says must stay inside oryoniq-product-features.md, and must be re-synced into VIO-sendr-generate-page's ROUTES map with `python3 n8n-workflows/sync-routes.py --fix` or the page and the email argue different cases to the same prospect.",
+  "offer": "OryonIQ shows you who has been winning the work you bid on, who they teamed with to win it, and whether anyone you already know sits inside the agency deciding it. Award data and relationship data on one map.",
+  "_comment_cta": "URL dropped into the soft ask at the end of every assembled email, and rendered as the page's link button. Use THIS PRODUCT'S OWN domain — an OryonIQ email that sends the prospect to visioneerit.com reads like a bait-and-switch and costs the click. OryonIQ has its own live site, so it gets its own contact page (verified 200, 2026-08-17).",
   "cta": "https://www.oryoniq.com/contact",
-  "_comment_sender": "Sign-off block appended to every email (name + company). Use \\n for the line break between name and company.",
-  "sender": "Ellen\nOryonIQ, VisioneerIT",
+  "_comment_sender": "Was 'OryonIQ, VisioneerIT', which reads as two companies co-signing one email and leaves the reader unsure who is writing. The parenthetical keeps the parent-company attribution without competing for the byline.",
+  "sender": "Ellen\nOryonIQ (a VisioneerIT company)",
   "_comment_personalization_prompt": "Per-lead OpenAI task template. Must keep {first_name} and {company} (and usually {title}) so the engine can fill them per prospect. Instructs the model not to invent company facts.",
-  "personalization_prompt": "Write ONE specific opening line (max 2 sentences) for a cold email to {first_name}, {title} at {company} \u2014 a US government contractor. Tie the current signal to their capture/BD reality. Do NOT invent specific facts about {company}; keep it about their role and the signal.",
-  "_comment_booking_url": "A URL that can be EMBEDDED \u2014 Sendr's calendar element puts its value in an <iframe src>, which is why this is deliberately separate from `cta` (an ordinary link on a button). EMPTY ON PURPOSE, and a contact page is NOT a substitute: both www.oryoniq.com/contact and www.visioneerit.com/contact were re-tested 2026-08-17 and send `X-Frame-Options: SAMEORIGIN` + `frame-ancestors 'self'`, so the browser refuses to render them and the page shows a grey broken-content box (seen live 2026-08-16 on both templates). Contact pages therefore belong in `cta`, on a link button \u2014 putting one here re-creates the exact bug. Until a real embeddable booking URL exists (Calendly, HubSpot Meetings, Cal.com \u2014 all designed to be framed), leave this empty and keep the calendar element REMOVED from the Sendr template. Filling it later also makes Sendr's `engagement:meeting_booked` event reachable, which VIO-sendr-events already routes to Slack as the goal state.",
+  "personalization_prompt": "Write ONE specific opening line (max 2 sentences) for a cold email to {first_name}, {title} at {company} — a US government contractor. Tie the current signal to their capture/BD reality. Do NOT invent specific facts about {company}; keep it about their role and the signal.",
+  "_comment_booking_url": "A URL that can be EMBEDDED — Sendr's calendar element puts its value in an <iframe src>, which is why this is deliberately separate from `cta` (an ordinary link on a button). EMPTY ON PURPOSE, and a contact page is NOT a substitute: both www.oryoniq.com/contact and www.visioneerit.com/contact were re-tested 2026-08-17 and send `X-Frame-Options: SAMEORIGIN` + `frame-ancestors 'self'`, so the browser refuses to render them and the page shows a grey broken-content box (seen live 2026-08-16 on both templates). Contact pages therefore belong in `cta`, on a link button — putting one here re-creates the exact bug. Until a real embeddable booking URL exists (Calendly, HubSpot Meetings, Cal.com — all designed to be framed), leave this empty and keep the calendar element REMOVED from the Sendr template. Filling it later also makes Sendr's `engagement:meeting_booked` event reachable, which VIO-sendr-events already routes to Slack as the goal state.",
   "booking_url": "",
-  "_comment_sendr": "The LinkedIn + personalized-page leg. Optional: omit the whole block and the engine skips Sendr entirely. Every id here is a REAL id read from the live Sendr account \u2014 see INTEGRATIONS.md. This block is what makes 'one engine, many products' true on the Sendr side: swap the config, get the other product's page and sequence with no code change.",
+  "_comment_sendr": "The LinkedIn + personalized-page leg. Optional: omit the whole block and the engine skips Sendr entirely. Every id here is a REAL id read from the live Sendr account — see INTEGRATIONS.md. This block is what makes 'one engine, many products' true on the Sendr side: swap the config, get the other product's page and sequence with no code change.",
   "sendr": {
     "_comment_page_template_id": "Sendr page template built in the Sendr UI (Sendr has no create-template API). Its declared variable tags are read live at generate time, so this never needs editing when the template's copy changes.",
     "page_template_id": 8462,
-    "_comment_campaign_id": "The LinkedIn sequence for this product. Read-only from the API \u2014 Sendr has no add-lead-to-campaign endpoint, so enrolment stays a human action in the Sendr UI. Recorded here so the operator (and the docs) always know which sequence pairs with which page.",
+    "_comment_campaign_id": "The LinkedIn sequence for this product. Read-only from the API — Sendr has no add-lead-to-campaign endpoint, so enrolment stays a human action in the Sendr UI. Recorded here so the operator (and the docs) always know which sequence pairs with which page.",
     "campaign_id": 10748,
     "campaign_name": "OryonIQ - GovCon Capture/BD LinkedIn",
     "campaign_sheet_id": "jmaohm6rppfqj0xgvrs2f50q",
     "_comment_gif_source": "How the GIF preview embedded in the outreach message is rendered. 'dynamic-website' screenshots the LEAD's own site (needs a per-lead URL, highest impact); 'landing-page' previews the generated page itself and needs no extra input, so it is the safe default when a lead has no known domain.",
     "gif_source": "dynamic-website",
-    "gif_hyperlink_text": "See the 3 pursuits OryonIQ is tracking for your NAICS codes"
-  }
+    "gif_hyperlink_text": "See who has been winning the work you bid on"
+  },
+  "_comment_claims": "Both of these carried the disputed pre-RFP claim until 2026-08-29. one_liner said 'surfaces federal pursuits before the RFP' and gif_hyperlink_text said 'See the 3 pursuits OryonIQ is tracking for your NAICS codes' — pre-RFP alerting, pursuit tracking and NAICS filtering appear NOWHERE on oryoniq.com (see oryoniq-product-features.md). The GIF link text is prospect-facing: it is the caption under the animation in the email and on the Sendr page, so it was the single most visible place the overclaim survived. Both now describe award + relationship data, which is what the product actually does."
 }

@@ -270,12 +270,22 @@ console.log('--- Assemble + Report: copy matches the deployed Instantly template
 const { cfg, asm } = chain({ first_name: 'Dana', company: 'Northgate Systems' });
 const lines = asm.email.split('\n\n');
 
-// 11. Structure mirrors deployed step 1: greeting / personalization / offer / sender.
-ok('email has four blocks (page line deliberately absent)', lines.length === 4, `${lines.length}`);
+// 11. Structure mirrors deployed step 1: greeting / personalization / offer / ASK / sender.
+// The ASK was added 2026-08-29. Step 1 previously ended on a link and a signature, so a cold
+// email went out with nothing to reply to — no amount of good copy above can produce a reply
+// when the mail never asks for one.
+ok('email has five blocks (page line deliberately absent)', lines.length === 5, `${lines.length}`);
 ok('block 1 is the greeting', lines[0] === 'Hi Dana,', lines[0]);
 ok('block 2 is the AI opener', lines[1] === 'A grounded opener about capture reality.', lines[1]);
 ok('block 3 is the config offer verbatim', lines[2] === cfg.offer, lines[2]);
-ok('block 4 is the sender block', lines[3] === cfg.sender, JSON.stringify(lines[3]));
+ok('block 4 asks for something', /\?$/.test(lines[3]) && lines[3].length > 20, JSON.stringify(lines[3]));
+ok('block 5 is the sender block', lines[4] === cfg.sender, JSON.stringify(lines[4]));
+
+// The ask must precede the page link, not follow it. sync-routes.py splices the omitted page
+// sentence in immediately before the sign-off, so an ask placed after the link cannot be
+// represented in this preview at all — the order is a shared contract, not a taste call.
+ok('the ask sits directly before the sign-off slot', lines[3].includes('Worth fifteen minutes'),
+   JSON.stringify(lines[3]));
 
 // 12. The stale CTA is gone, and no URL was invented in its place.
 ok('retired CTA copy is gone', !asm.email.includes('Want the three'), asm.email);
@@ -287,10 +297,10 @@ ok('email is flagged incomplete', asm.email_complete === false);
 ok('the missing piece is named', Array.isArray(asm.missing) && asm.missing.includes('sendr_page_url'),
   JSON.stringify(asm.missing));
 ok('the page sentence is NOT in the email body',
-  !asm.email.includes('I put together a short page'), asm.email);
+  !asm.email.includes('I put a short page together'), asm.email);
 ok('no sentence dangles on an empty value', !/:\s*$/m.test(asm.email), JSON.stringify(asm.email));
 ok('cta_line_pending carries the real sentence with the merge tag intact',
-  asm.cta_line_pending === 'I put together a short page for Northgate Systems: {{sendrPageUrl}}',
+  asm.cta_line_pending === 'I put a short page together for Northgate Systems so you can see the format: {{sendrPageUrl}}',
   asm.cta_line_pending);
 ok('cta_line_pending contains no invented URL', !/https?:\/\//.test(asm.cta_line_pending));
 ok('the omission is explained in prose', typeof asm.note === 'string' && asm.note.length > 20);
@@ -301,12 +311,33 @@ ok('the omission is explained in prose', typeof asm.note === 'string' && asm.not
 {
   const step1 = CAMPAIGN.sequences[0].steps[0].variants[0].body;
   ok('campaign step 1 still uses the page sentence',
-    step1.includes('I put together a short page for {{companyName}}: '), 'campaign copy moved');
+    step1.includes('I put a short page together for {{companyName}} so you can see the format: '),
+    'campaign copy moved');
   ok('campaign step 1 still carries the config offer verbatim', step1.includes(cfg.offer),
     'offer drifted between config and campaign');
   ok('assembled page sentence matches the campaign sentence shape',
-    asm.cta_line_pending.startsWith('I put together a short page for ')
+    asm.cta_line_pending.startsWith('I put a short page together for ')
     && asm.cta_line_pending.endsWith(': {{sendrPageUrl}}'), asm.cta_line_pending);
+
+  // Both A/B variants must word the CTA and the ask identically — they differ ONLY in the offer
+  // paragraph, which is the actual A/B question. sync-routes.py's cta-sentence check refuses to
+  // run while they disagree, so a four-way copy difference silently disables that guard.
+  const vA = CAMPAIGN.sequences[0].steps[0].variants[0].body;
+  const vB = CAMPAIGN.sequences[0].steps[0].variants[1].body;
+  const cta = 'I put a short page together for {{companyName}} so you can see the format: ';
+  const ask = 'Worth fifteen minutes to see whether it tells you anything you do not already have?';
+  ok('both step-1 variants share the CTA sentence', vA.includes(cta) && vB.includes(cta));
+  ok('both step-1 variants share the ask', vA.includes(ask) && vB.includes(ask));
+  ok('the A/B variants actually differ somewhere', vA !== vB);
+
+  // The copy may not re-acquire either disputed claim. Both were dropped 2026-08-29 rather than
+  // resolved: 'set-asides are opening' does not follow from the CMMC Phase II suspension, and
+  // pre-RFP / NAICS / SDB matching appears nowhere on oryoniq.com.
+  const ALL = JSON.stringify(CAMPAIGN.sequences);
+  for (const banned of ['set-asides', 'before the RFP', 'pre-RFP', 'SDB status', 'NAICS'])
+    ok(`no step re-acquires the "${banned}" claim`, !ALL.includes(banned));
+  ok('no unfinished placeholder survives in any step', !ALL.includes('!!'));
+  ok('no DRAFT marker survives in any subject', !ALL.includes('DO NOT SEND'));
 }
 
 // 15. Assemble refuses a half-built email rather than emitting one.

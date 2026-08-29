@@ -165,16 +165,40 @@ def reoon_verify(email, secrets):
     return {"reoon_status": reoon_status, "action": action, "reason": reason}
 
 
+# The opening line is the only sentence most recipients read, so this prompt is the highest-leverage
+# string in the engine. REWRITTEN 2026-08-29: the previous version ended "Ground it in the SIGNAL
+# below", and the signal is a paragraph of Pentagon policy news — so every email opened on market
+# commentary and the reader met the news before they met a reason to care. Feedback on a real send
+# was "i didn't feel like reading it, and with reading also i didn't understand what the email is
+# mostly about". The signal is now background the model may NOT recite. Mirrored verbatim in the
+# `personalize` node of n8n-workflows/VIO-operator-agent.json — change both together.
+OPENER_SYSTEM_PROMPT = """You write the FIRST LINE of a B2B cold email to a US government contractor.
+
+Write ONE sentence, two at the very most, about the READER'S OWN WORLD: the bids they chase, the
+incumbents they keep losing to, the teaming calls they have to make. It must read as though written
+by someone who understands their job.
+
+Hard rules:
+- Do NOT open with market news, policy, budget figures or dates. The background below is context
+  for YOU, not material to recite. An email that opens with news reads as a newsletter and gets
+  deleted unread. This is the single most common failure.
+- Do NOT begin with a greeting or the person's name. assemble_email() already opens with
+  "Hi <first name>,", so a name here reads as "Hi Kiara, Kiara, ...".
+- Do NOT invent any specific fact about their company, their contracts, their customers or their
+  people. You know only a name, a title and a company name.
+- Plain words a busy person understands on one read. No em-dashes. No "leverage", "unlock",
+  "streamline", "in today's landscape", "I hope this finds you well".
+- Do not pitch. The next paragraph does that. This line only has to earn it.
+
+BACKGROUND (context only, never quote or paraphrase it): """
+
+
 def openai_opener(lead, cfg, secrets, model):
     task = cfg["personalization_prompt"].format(
         first_name=lead.get("first_name", "there"),
         title=lead.get("title", "(role)"),
         company=org_name(lead))
-    system = ("You write sharp B2B GovCon cold-email opening lines. One or two sentences, "
-              "no fluff, no em-dashes, no 'leverage/unlock/streamline'. Never invent specific "
-              "facts about the company. Do NOT begin with the person's name or any greeting — "
-              "assemble_email() already opens with \"Hi <first name>,\" and a name here reads as "
-              "\"Hi Kiara, Kiara, ...\". Ground it in the SIGNAL below.\n\nSIGNAL: " + cfg.get("signal", ""))
+    system = (OPENER_SYSTEM_PROMPT + cfg.get("signal", ""))
     body = {"model": model, "temperature": 0.7,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": task}]}
@@ -196,16 +220,18 @@ def assemble_email(lead, opener, cfg, page_url=None):
     if page_url:
         # Must match the DEPLOYED Instantly step-1 sentence verbatim — the template is what the
         # prospect actually reads, so this preview is the side that follows it, not the reverse.
-        # sync-routes.py's `cta-sentence` check enforces this; the previous wording ("the ones
-        # it's surfacing") also dangled — its antecedent lived in a line that no longer precedes it.
-        cta_line = f"I put together a short page for {company}: {page_url}"
+        # sync-routes.py's `cta-sentence` check enforces it.
+        cta_line = f"I put a short page together for {company} so you can see the format: {page_url}"
     else:
         # No page for this lead. Must stay product-NEUTRAL — both configs share this branch, so
         # anything naming a specific artefact ("the map", "the pursuits") is wrong for the other
-        # product. The previous wording ("the three it's surfacing") also outlived its antecedent
-        # when the offer stopped mentioning pursuits, leaving "it" pointing at nothing.
+        # product.
         cta_line = f"Worth a quick look for {company}? {cfg['cta']}"
-    return f"Hi {fn},\n\n{opener}\n\n{cfg['offer']}\n\n{cta_line}\n\n{cfg['sender']}"
+    # THE ASK. Added 2026-08-29: step 1 variant A previously ended on a link and a signature, so a
+    # cold email went out with nothing to reply to. A mail with no ask cannot produce a reply no
+    # matter how good the paragraphs above it are.
+    ask = "Worth fifteen minutes to see whether it tells you anything you do not already have?"
+    return f"Hi {fn},\n\n{opener}\n\n{cfg['offer']}\n\n{ask}\n\n{cta_line}\n\n{cfg['sender']}"
 
 
 def main():

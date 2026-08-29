@@ -25,7 +25,9 @@ const pick = (rows) => new Function('$input', pickCode)({ all: () => rows.map(j 
 const row = (o = {}) => ({
   row_number: 2, first_name: 'Pratik', title: 'AI Solutions Engineer',
   company: 'VisioneerIT', contact_email: 'p.pshpatil@outlook.com',
-  source_config: 'Manual', channel_state_email: '', ...o,
+  // Product is required since 2026-08-29 — nothing can infer which company should be pitching
+  // this person, so a row without it is refused rather than guessed at.
+  source_config: 'Manual', channel_state_email: '', Product: 'OryonIQ', ...o,
 });
 
 ok('a fresh row is picked up', pick([row()]).length === 1);
@@ -45,6 +47,17 @@ for (const sc of ['Manual', 'manual', 'MANUAL', ' Manual '])
 for (const s of ['pending_approval', 'enrolled', 'needs_review', 'dropped', 'bounced', 'replied'])
   ok(`channel_state_email "${s}" means already claimed`, pick([row({ channel_state_email: s })]).length === 0);
 ok('blank channel_state_email is unclaimed', pick([row({ channel_state_email: '   ' })]).length === 1);
+
+// THE HANDOFF (fixed 2026-08-29). Readiness used to mean "this column is blank", but nothing that
+// writes a lead leaves it blank — VIO-intake-verify-curate stamps 'not_sent'. Every verified
+// staff-typed lead therefore landed in Leads and was never picked up, while looking correct to a
+// human reading the sheet. 'not_sent' is now explicitly the ready state.
+ok('not_sent is READY — it is what the verified intake path writes',
+   pick([row({ channel_state_email: 'not_sent' })]).length === 1);
+ok('  and it is case-insensitive', pick([row({ channel_state_email: 'NOT_SENT' })]).length === 1);
+ok('  while every other state still means hands off',
+   ['queued', 'sent', 'approved', 'positive', 'booked', 'rejected', 'unsubscribed']
+     .every((s) => pick([row({ channel_state_email: s })]).length === 0));
 
 // Blank spacer rows are not errors.
 ok('a wholly blank row is ignored',
@@ -88,8 +101,20 @@ ok('over-long values are capped', pick([row({ company: 'x'.repeat(9000) })])[0].
 // ---------- product routing into the drafter ----------
 const shapeCode = jsOf('Shape for drafting');
 const shape = (j) => new Function('$input', shapeCode)({ item: { json: j } }).json;
-ok('a demo row drafts with the OryonIQ config (the demo campaign carries that copy)',
-   shape(pick([row()])[0]).source_config === 'oryoniq');
+// PRODUCT ROUTING (fixed 2026-08-29). draft_config was hardcoded 'oryoniq', so a council CIO
+// typed in for VisioneerIT was drafted GovCon capture copy signed OryonIQ. It now comes from the
+// sheet's own Product column.
+ok('an OryonIQ row drafts with the OryonIQ config',
+   shape(pick([row({ Product: 'OryonIQ' })])[0]).source_config === 'oryoniq');
+ok('a VisioneerIT row drafts with the VisioneerIT config',
+   shape(pick([row({ Product: 'VisioneerIT' })])[0]).source_config === 'visioneerit');
+for (const p of ['', '   ', 'Acme', 'oryon', 'both'])
+  ok(`Product "${p}" is refused rather than guessed`, pick([row({ Product: p })])[0].invalid === true);
+ok('a refused row says what to do about it',
+   /choose OryonIQ or VisioneerIT/.test(pick([row({ Product: '' })])[0].problems));
+// The page call must follow the row, not a constant.
+ok('the Sendr page is generated for the row\'s own product',
+   !/product: 'oryoniq'/.test(jsOf('Shape for page')));
 ok('the row identity survives into the drafter', shape(pick([row()])[0])._row === 2);
 ok('the email address survives into the drafter', shape(pick([row()])[0])._email === 'p.pshpatil@outlook.com');
 

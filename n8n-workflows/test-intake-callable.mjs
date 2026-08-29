@@ -352,8 +352,28 @@ console.log('\n== one lead failing does not abort the rest of the batch ==');
   eq('the error output is wired to exactly one terminal node', errBranch.length, 1);
   const errNode = nodeByName(errBranch[0]);
   eq('...and that node is a terminal NoOp', errNode.type, 'n8n-nodes-base.noOp');
+  // The claim is "writes nothing to any Sheet", so test THAT, not the stronger proxy of "has no
+  // outgoing connections at all" — which was true only until the branch had to report its outcome
+  // back to a caller (2026-08-29). Walk everything reachable from the failure branch and assert
+  // no Sheets node is among it.
+  const reachable = (start) => {
+    const seen = new Set(), stack = [start];
+    while (stack.length) {
+      const cur = stack.pop();
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      for (const grp of (WF.connections[cur]?.main || []))
+        for (const c of grp) stack.push(c.node);
+    }
+    seen.delete(start);
+    return [...seen];
+  };
+  const downstream = reachable(errNode.name);
   ok('the failure branch writes nothing to any Sheet',
-    !(errNode.name in WF.connections), `${errNode.name} has outgoing connections`);
+    downstream.every((nm) => nodeByName(nm).type !== 'n8n-nodes-base.googleSheets'),
+    `reaches: ${downstream.join(', ')}`);
+  ok('the failure branch does report its outcome to the caller',
+    downstream.includes('Intake Result (to caller)'), `reaches: ${downstream.join(', ')}`);
 
   // Successes on output 0 still classify: Classify resolves each lead by the echoed email, so the
   // gap left by a failed sibling cannot misalign the survivors.
