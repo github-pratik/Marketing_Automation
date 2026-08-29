@@ -1,0 +1,604 @@
+{
+  "id": "VIOwfHinboxmap",
+  "name": "VIO-inbox-mapper",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "id": "vio-im-cron",
+      "name": "Every 2 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Inbox",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "id": "vio-im-read",
+      "name": "Read Inbox",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -960,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Normalise an arbitrary staff-uploaded sheet into the Leads schema.\n//\n// Staff paste whatever their source gave them \u2014 \"Company name\", \"First name\", \"Email address\",\n// \"Website\". This maps those onto canonical fields WITHOUT an LLM call in the common case: a\n// deterministic alias table is instant, free, auditable, and cannot hallucinate a mapping. The\n// model is a fallback for headers this table has never seen, not the first move.\n//\n// CONTROL COLUMNS are ours and are never treated as data.\nconst CONTROL = new Set(['status', 'notes', 'mapped_lead_id', 'row_number', 'source_config']);\n\n// BATCH CAP. A real upload is 49,000 rows \u2014 reading and mapping all of them in one execution\n// would blow memory and, worse, hand 49,000 rows to the downstream sheet write at once. Capped\n// per cycle; the poll simply picks up the next batch two minutes later, so a large upload drains\n// steadily instead of failing all at once.\nconst MAX_PER_CYCLE = 50;\n\nconst ALIASES = {\n  contact_email: ['email', 'emailaddress', 'workemail', 'businessemail', 'contactemail',\n                  'primaryemail', 'mail', 'emailid', 'eaddress', 'personalemail'],\n  first_name:    ['firstname', 'fname', 'givenname', 'first', 'forename'],\n  last_name:     ['lastname', 'lname', 'surname', 'familyname', 'last'],\n  _full_name:    ['fullname', 'name', 'contactname', 'leadname', 'personname', 'contact'],\n  company:       ['company', 'companyname', 'organization', 'organisation', 'org', 'account',\n                  'accountname', 'employer', 'business', 'firm'],\n  title:         ['title', 'jobtitle', 'position', 'role', 'designation', 'jobrole', 'jobposition'],\n  company_domain:['domain', 'companydomain', 'website', 'websiteurl', 'url', 'web', 'companyurl',\n                  'site', 'companywebsite'],\n  linkedin_url:  ['linkedin', 'linkedinurl', 'linkedinprofile', 'liprofile', 'profileurl', 'li'],\n  phone:         ['phone', 'phonenumber', 'mobile', 'mobilenumber', 'telephone', 'tel',\n                  'directdial', 'cell', 'cellphone'],\n};\n\n// Compared after stripping everything that is not a letter or digit, so \"E-mail Address\",\n// \"email_address\" and \"Email Address\" all collapse to the same key.\nconst norm = (s) => String(s === undefined || s === null ? '' : s).toLowerCase().replace(/[^a-z0-9]/g, '');\nconst LOOKUP = {};\nfor (const [field, names] of Object.entries(ALIASES)) for (const n of names) LOOKUP[n] = field;\n\nconst CTRL_CHARS = /[\u0000-\u001f\u007f]+/g;\nconst clean = (v, cap) => {\n  const n = cap || 200;\n  if (typeof v === 'number') return String(v);\n  if (typeof v !== 'string') return '';\n  return v.replace(CTRL_CHARS, ' ').replace(/\\s+/g, ' ').trim().slice(0, n);\n};\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\n\n// Real uploads arrive SHOUTING: ROBERT, NATHANIEL, TRUSTED SOLUTIONS LLC. Interpolated straight\n// into a greeting that becomes \"Hi ROBERT,\" which reads as shouting at a stranger. Only rewritten\n// when the value has no lowercase at all, so McDonald and O'Brien and IBM-style names that were\n// typed correctly are left exactly as they are.\n// Entity suffixes and common acronyms stay upper \u2014 \"Trusted Solutions Llc\" is worse than the\n// shouting it replaced, and it is the company name a prospect sees written about their own firm.\nconst KEEP_UPPER = new Set(['LLC','L.L.C','INC','LLP','PLLC','PC','LP','LTD','PLC','CO','CORP',\n  'USA','US','IT','AI','HR','IP','GSA','DOD','LLC.','INC.','SA','NV','BV','GMBH','AG','PBC']);\nconst fixCase = (s) => {\n  if (!s || /[a-z]/.test(s)) return s;\n  return s.replace(/[A-Za-z][A-Za-z'\\u2019.-]*/g, (w) => {\n    const bare = w.replace(/[.,]+$/, '');\n    if (KEEP_UPPER.has(bare)) return w;\n    if (bare.length <= 1) return w;\n    return w.charAt(0) + w.slice(1).toLowerCase();\n  });\n};\n\nconst rows = $input.all().map((i) => i.json || {});\nconst out = [];\nconst seenEmails = new Set();\n\nfor (const r of rows) {\n  if (out.length >= MAX_PER_CYCLE) break;\n  if (clean(r.status)) continue;                    // already handled; blank is the claim marker\n\n  const dataKeys = Object.keys(r).filter((k) => !CONTROL.has(k));\n  if (!dataKeys.some((k) => clean(r[k]))) continue; // blank spacer row\n\n  const mapped = {};\n  const unmapped = [];\n  for (const key of dataKeys) {\n    const field = LOOKUP[norm(key)];\n    const val = clean(r[key]);\n    if (!field) { if (val) unmapped.push(key); continue; }\n    if (val && !mapped[field]) mapped[field] = val;  // first non-empty wins\n  }\n\n  // A single \"Full Name\" column is common and useless unsplit \u2014 the opener greets a first name.\n  if (!mapped.first_name && mapped._full_name) {\n    const parts = mapped._full_name.split(/\\s+/).filter(Boolean);\n    if (parts.length) mapped.first_name = parts[0];\n    if (parts.length > 1 && !mapped.last_name) mapped.last_name = parts.slice(1).join(' ');\n  }\n  delete mapped._full_name;\n\n  mapped.first_name = fixCase(mapped.first_name);\n  mapped.last_name = fixCase(mapped.last_name);\n  mapped.company = fixCase(mapped.company);\n\n  if (mapped.company_domain) {\n    mapped.company_domain = mapped.company_domain\n      .replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').split('/')[0].toLowerCase();\n  }\n  if (mapped.contact_email) mapped.contact_email = mapped.contact_email.toLowerCase();\n\n  // What a lead REQUIRES to be run: an address to write to, a name to greet, a company to talk\n  // about. Anything less produces an email addressed to nobody about nothing.\n  const problems = [];\n  if (!mapped.contact_email) problems.push('no email column found');\n  else if (!EMAIL.test(mapped.contact_email)) problems.push(`'${mapped.contact_email}' is not a single valid address`);\n  else if (seenEmails.has(mapped.contact_email)) problems.push('duplicate address earlier in this upload');\n  if (!mapped.first_name) problems.push('no first name found');\n  if (!mapped.company) problems.push('no company found');\n\n  // Worth surfacing rather than fixing: a first name that does not appear in the address at all\n  // often means the row pairs one person's name with another's email. Seen in a real upload \u2014\n  // \"ANGELA SPEASE\" against Kevin.Spease@. Not fatal, and not something to guess at, but the\n  // human importing 49,000 rows should be told.\n  const warnings = [];\n  if (mapped.contact_email && mapped.first_name && EMAIL.test(mapped.contact_email)) {\n    const local = mapped.contact_email.split('@')[0].toLowerCase();\n    const fn = mapped.first_name.toLowerCase();\n    if (fn.length > 2 && !local.includes(fn) && !local.includes(fn.slice(0, 3))) {\n      warnings.push(`first name \"${mapped.first_name}\" does not appear in the address \u2014 check the row pairs the right person`);\n    }\n  }\n\n  if (mapped.contact_email && EMAIL.test(mapped.contact_email)) seenEmails.add(mapped.contact_email);\n\n  out.push({ json: Object.assign({}, mapped, {\n    row_number: r.row_number === undefined ? null : r.row_number,\n    source_config: clean(r.source_config) || 'Manual',\n    _raw: r,\n    _unmapped_headers: unmapped,\n    _problems: problems,\n    _warnings: warnings,\n    // The model is needed only when a REQUIRED field is still missing AND there are unrecognised\n    // headers that might contain it. No unknown headers means the model cannot help, so no call.\n    _needs_llm: problems.length > 0 && unmapped.length > 0,\n    _ok: problems.length === 0,\n  }) });\n}\nreturn out;\n"
+      },
+      "id": "vio-im-map",
+      "name": "Map headers (alias table)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-im-needllmc",
+              "leftValue": "={{ $json._needs_llm === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-im-needllm",
+      "name": "Needs AI mapping?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Ask the model to map ONLY the headers the alias table did not recognise, and only for rows where\n// a required field is still missing. One call per such row \u2014 never for the common case.\nconst r = $input.item.json;\nreturn { json: Object.assign({}, r, {\n  _prompt: 'Map these spreadsheet column headers onto canonical lead fields.\\n'\n    + 'Canonical fields: contact_email, first_name, last_name, company, title, company_domain, '\n    + 'linkedin_url, phone.\\n'\n    + 'Reply with ONLY a JSON object mapping header -> field. Omit any header that does not '\n    + 'clearly correspond to one of those fields. Never invent a field name.\\n\\n'\n    + 'Headers: ' + JSON.stringify(r._unmapped_headers),\n}) };\n"
+      },
+      "id": "vio-im-llmshape",
+      "name": "Shape AI prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "complete",
+        "model": "gpt-4.1-mini",
+        "prompt": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You map spreadsheet column headers onto a fixed set of lead fields. Reply with ONLY a JSON object. Never invent a field name."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json._prompt }}"
+            }
+          ]
+        },
+        "simplifyOutput": false,
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "vio-im-llm",
+      "name": "Map remaining headers (AI)",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        -180
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "7t8KDC4EZpbIkOxP",
+          "name": "Openai Marketing"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Apply the model's proposed mapping, then RE-VALIDATE from scratch.\n//\n// The model's answer is a suggestion about column NAMES only. It never decides whether a row is\n// usable \u2014 the same required-field check runs again afterwards \u2014 and a mapping onto a field that\n// does not exist is discarded rather than written.\nconst CANON = new Set(['contact_email','first_name','last_name','company','title',\n                       'company_domain','linkedin_url','phone']);\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\nconst clean = (v, cap) => (typeof v === 'string'\n  ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, cap || 200) : '');\n\nconst src = $('Shape AI prompt').first().json;\nconst r = Object.assign({}, src);\nlet proposed = {};\ntry {\n  const raw = $input.item.json?.message?.content\n    ?? $input.item.json?.choices?.[0]?.message?.content\n    ?? $input.item.json?.text ?? '';\n  const m = String(raw).match(/\\{[\\s\\S]*\\}/);\n  if (m) proposed = JSON.parse(m[0]);\n} catch (e) { proposed = {}; }\n\nconst applied = [];\nfor (const [header, field] of Object.entries(proposed)) {\n  if (!CANON.has(field)) continue;          // invented field -> discard\n  if (r[field]) continue;                   // alias table already found it -> keep that\n  const val = clean((r._raw || {})[header]);\n  if (!val) continue;\n  r[field] = field === 'contact_email' ? val.toLowerCase() : val;\n  applied.push(header + ' -> ' + field);\n}\n\nconst problems = [];\nif (!r.contact_email) problems.push('no email column found');\nelse if (!EMAIL.test(r.contact_email)) problems.push(\"'\" + r.contact_email + \"' is not a single valid address\");\nif (!r.first_name) problems.push('no first name found');\nif (!r.company) problems.push('no company found');\n\nreturn { json: Object.assign({}, r, { _problems: problems, _ok: problems.length === 0,\n                                      _llm_applied: applied, _llm_used: true }) };\n"
+      },
+      "id": "vio-im-apply",
+      "name": "Apply AI mapping",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-im-okc",
+              "leftValue": "={{ $json._ok === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-im-ok",
+      "name": "Usable row?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Shape the canonical Leads row. Lands as needs_review, NOT as a lead ready to mail: an uploaded\n// address has not been verified by Reoon and has not passed the suppression gate, and both of\n// those cost money and are somebody else's job.\nconst r = $input.item.json;\nconst now = new Date().toISOString();\nreturn { json: {\n  contact_email: r.contact_email, first_name: r.first_name || '', last_name: r.last_name || '',\n  company: r.company || '', title: r.title || '', company_domain: r.company_domain || '',\n  linkedin_url: r.linkedin_url || '', phone: r.phone || '',\n  source_config: r.source_config || 'Manual',\n  channel_state_email: 'needs_review',\n  created_at: now, updated_at: now,\n} };\n"
+      },
+      "id": "vio-im-lead",
+      "name": "Shape Lead row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company_domain",
+              "displayName": "company_domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_url",
+              "displayName": "linkedin_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_config",
+              "displayName": "source_config",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_email",
+              "displayName": "channel_state_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "matchingColumns": [
+            "contact_email"
+          ]
+        }
+      },
+      "id": "vio-im-write",
+      "name": "Add to Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        640,
+        -140
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Write the outcome back onto the Inbox row a human is watching. A row is NEVER silently dropped:\n// if it could not be imported the row says why, and names the headers nobody recognised.\nconst r = $input.item.json;\nconst ok = r._ok === true;\nconst bits = [];\nif (r._llm_used) bits.push((r._llm_applied || []).length\n  ? 'AI mapped: ' + r._llm_applied.join(', ')\n  : 'AI could not map the remaining headers');\nif (!ok) bits.push('Not imported \u2014 ' + (r._problems || []).join('; '));\nfor (const w of (r._warnings || [])) bits.push('Check: ' + w);\nif ((r._unmapped_headers || []).length) bits.push('Unrecognised columns: ' + r._unmapped_headers.join(', '));\nreturn { json: {\n  row_number: r.row_number,\n  status: ok ? 'mapped' : 'needs_review',\n  notes: bits.join(' | ').slice(0, 900),\n  mapped_lead_id: ok ? (r.contact_email || '') : '',\n} };\n"
+      },
+      "id": "vio-im-status",
+      "name": "Shape Inbox status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Inbox",
+          "mode": "name"
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mapped_lead_id",
+              "displayName": "mapped_lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "matchingColumns": [
+            "row_number"
+          ]
+        }
+      },
+      "id": "vio-im-upd",
+      "name": "Mark Inbox row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        640,
+        160
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 2 minutes": {
+      "main": [
+        [
+          {
+            "node": "Read Inbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Inbox": {
+      "main": [
+        [
+          {
+            "node": "Map headers (alias table)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map headers (alias table)": {
+      "main": [
+        [
+          {
+            "node": "Needs AI mapping?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs AI mapping?": {
+      "main": [
+        [
+          {
+            "node": "Shape AI prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Usable row?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape AI prompt": {
+      "main": [
+        [
+          {
+            "node": "Map remaining headers (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map remaining headers (AI)": {
+      "main": [
+        [
+          {
+            "node": "Apply AI mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply AI mapping": {
+      "main": [
+        [
+          {
+            "node": "Usable row?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usable row?": {
+      "main": [
+        [
+          {
+            "node": "Shape Lead row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Inbox status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Lead row": {
+      "main": [
+        [
+          {
+            "node": "Add to Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Leads": {
+      "main": [
+        [
+          {
+            "node": "Shape Inbox status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Inbox status": {
+      "main": [
+        [
+          {
+            "node": "Mark Inbox row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "VIOwfEerroralert"
+  }
+}
