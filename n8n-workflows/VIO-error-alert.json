@@ -1,0 +1,86 @@
+{
+  "id": "VIOwfEerroralert",
+  "name": "VIO-error-alert",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "vio-wfe-trigger",
+      "name": "On any VIO failure",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Turn n8n's error payload into something a human can act on without opening n8n.\n//\n// This exists because there was NO failure notification of any kind on any VIO workflow. Three\n// things broke during the first live enrolment \u2014 an inactive sub-workflow, an authorizer refusal,\n// and an enrolment that silently no-opped \u2014 and every one was found by reading `docker logs`.\n// The operator had no way to know. A pipeline you cannot see failing is one you have to babysit.\nconst e = $input.first().json || {};\nconst wf = e.workflow || {};\nconst ex = e.execution || {};\nconst err = ex.error || e.error || {};\n\nconst clip = (v, n) => String(v === undefined || v === null ? '' : v)\n  .replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, n);\n\nconst name = clip(wf.name, 80) || '(unnamed workflow)';\nconst node = clip(ex.lastNodeExecuted, 80) || '(unknown node)';\nlet message = clip(err.message, 600) || '(no message)';\n\n// n8n prefixes thrown Code-node errors; the REFUSED text is the part that matters, so lead with it.\nconst refused = message.match(/REFUSED:[^]*/);\nconst headline = refused ? clip(refused[0], 400) : message;\n\n// A refusal is a GATE DOING ITS JOB, not an outage. Saying so stops the on-call reflex of\n// \"something is broken\" when the correct read is \"something was correctly stopped\".\nconst isRefusal = /REFUSED/.test(message);\n\nconst base = ($env.N8N_EDITOR_BASE_URL || '').replace(/\\/+$/, '');\nconst link = (base && ex.id) ? `${base}/workflow/${clip(wf.id, 40)}/executions/${clip(ex.id, 20)}` : '';\n\nreturn [{ json: {\n  subject: `${isRefusal ? 'Refused' : 'FAILED'}: ${name}`,\n  text:\n    `*${isRefusal ? ':no_entry: Refused' : ':rotating_light: Workflow failed'}* \u2014 ${name}\\n` +\n    `*Node:* ${node}\\n` +\n    `*Reason:* ${headline}\\n` +\n    (ex.id ? `*Execution:* ${clip(ex.id, 20)}\\n` : '') +\n    (link ? `${link}\\n` : '') +\n    (isRefusal\n      ? '\\nThis is a guard refusing, not an outage \u2014 nothing was spent and nobody was contacted.'\n      : '\\nNothing downstream of this node ran.'),\n  is_refusal: isRefusal,\n  workflow_name: name,\n  node_name: node,\n} }];\n"
+      },
+      "id": "vio-wfe-shape",
+      "name": "Shape Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "#marketing_testing_1"
+        },
+        "text": "={{ $json.text }}",
+        "otherOptions": {}
+      },
+      "id": "vio-wfe-slack",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        100,
+        0
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "niWxNp4EIL0Dvgfh",
+          "name": "slack marketing"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On any VIO failure": {
+      "main": [
+        [
+          {
+            "node": "Shape Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Alert": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -432,14 +432,82 @@ const happy = endToEnd({ approved: true, outcome: 'approve' });
 ok(`end-to-end: ${e2e} approval shapes, only the boolean-true one enrols anybody`,
    e2eEnrolled === 0 && happy.enrolled === 3);
 
+// ---------------------------------------------------------------------------
+// RE-CONTACT: opt-in, and the human must be able to see it in what they approve
+// ---------------------------------------------------------------------------
+const rcBase = { product: 'demo', leads: [{ first_name: 'P', company: 'V',
+  contact_email: 'p@v.com', sendr_page_url: 'https://x', opener: 'o', verify_action: 'pass' }] };
+const rcOff = runNode('Build Proposal', { input: [rcBase] })[0];
+const rcOn  = runNode('Build Proposal', { input: [{ ...rcBase, allow_recontact: true }] })[0];
+
+ok('skip_if_in_campaign defaults to true', rcOff.bodies[0].skip_if_in_campaign === true);
+ok('allow_recontact flips it to false', rcOn.bodies[0].skip_if_in_campaign === false);
+ok('re-contact is named in the headline the human reads', /RE-CONTACT ON/.test(rcOn.action));
+ok('re-contact is explained in the detail body', /already in another/i.test(rcOn.detail));
+ok('no re-contact warning when it is off', !/RE-CONTACT ON/.test(rcOff.action) && !/warning/i.test(rcOff.detail));
+// Truthy-but-not-true must not enable it — same discipline as every other gate here.
+for (const v of ['true', 1, 'yes', [1], {}])
+  ok(`allow_recontact=${JSON.stringify(v)} does NOT enable re-contact`,
+     runNode('Build Proposal', { input: [{ ...rcBase, allow_recontact: v }] })[0]
+       .bodies[0].skip_if_in_campaign === true);
+
+// The authorizer re-asserts skip_if_in_campaign independently of Build Proposal. It may be
+// false ONLY on a re-contact the human was actually shown — not merely one the caller asked for.
+const authOf = (bodies, prop) => {
+  try {
+    runNode('Authorize Enrolment (fail closed)', {
+      input: [{ approved: true, outcome: 'approve' }],
+      byName: { 'Build Proposal': [prop], 'Decision (fail closed)': [{ approved: true, outcome: 'approve' }],
+                'Verify Approval (fail closed)': [{ approved: true, outcome: 'approve' }] },
+    });
+    return null;
+  } catch (e) { return e.message; }
+};
+const propWith = (over = {}) => ({ ...realProposal,
+  bodies: realProposal.bodies.map(b => ({ ...b, ...(over.body || {}) })),
+  allow_recontact: over.allow_recontact,
+  detail: over.detail !== undefined ? over.detail : realProposal.detail });
+
+ok('skip=false REFUSES when the proposal did not request re-contact',
+   /REFUSED/.test(authOf(null, propWith({ body: { skip_if_in_campaign: false } })) || ''));
+ok('skip=false REFUSES when the shown text never warned about it',
+   /never shown|did not say so/i.test(
+     // The detail must still LIST the recipients — the per-recipient consent check runs first and
+     // would otherwise fire instead, which is what an earlier version of this fixture tripped over.
+     authOf(null, propWith({ body: { skip_if_in_campaign: false }, allow_recontact: true,
+       detail: realProposal.detail.replace(/RE-CONTACT IS ON/gi, 'nothing to see here') })) || ''));
+ok('skip missing entirely still REFUSES',
+   /REFUSED/.test(authOf(null, propWith({ body: { skip_if_in_campaign: undefined } })) || ''));
+
 // ===========================================================================
 // 7. REPORT
 // ===========================================================================
+// Real Instantly responses carry `campaign`, and the report now checks it: a 200 whose record
+// sits on a DIFFERENT campaign means skip_if_in_campaign matched elsewhere in the workspace and
+// nothing was created here. Verified live 2026-08-22.
+const CAMP = realProposal.campaign_id;
 const report = runNode('Report', {
-  input: [{ id: 'lead-1' }, { error: 'HTTP 400 bad request' }, { id: 'lead-3' }],
+  input: [{ id: 'lead-1', campaign: CAMP }, { error: 'HTTP 400 bad request' }, { id: 'lead-3', campaign: CAMP }],
   byName: { 'Build Proposal': [realProposal], 'Authorize Enrolment (fail closed)': authorized },
 })[0];
-eq('report counts enrolments', report.enrolled, 2);
+eq('report counts enrolments that actually landed', report.enrolled, 2);
+
+// The bug this check exists for: the workflow reported enrolled:2 while the campaign held zero.
+const skippedElsewhere = runNode('Report', {
+  input: [{ id: 'old-1', campaign: 'some-other-campaign' }, { error: 'x' }, { id: 'lead-3', campaign: CAMP }],
+  byName: { 'Build Proposal': [realProposal], 'Authorize Enrolment (fail closed)': authorized },
+})[0];
+eq('a lead that landed on ANOTHER campaign is not counted as enrolled', skippedElsewhere.enrolled, 1);
+eq('and is reported as not_enrolled', skippedElsewhere.not_enrolled, 1);
+eq('with a status naming the cause', skippedElsewhere.leads[0].status, 'already_in_another_campaign');
+ok('a partial landing is not ok:true', skippedElsewhere.ok === false);
+
+const noCampaign = runNode('Report', {
+  input: [{ id: 'x' }, { id: 'y' }, { id: 'z' }],
+  byName: { 'Build Proposal': [realProposal], 'Authorize Enrolment (fail closed)': authorized },
+})[0];
+eq('a response with no campaign is unverified, not assumed enrolled', noCampaign.enrolled, 0);
+eq('unverified is surfaced', noCampaign.leads[0].status, 'unverified');
 eq('report counts failures', report.failed, 1);
 ok('report restates that nothing was started', /not started/i.test(report.note));
 ok('report is JSON-clean (no raw control characters)',
