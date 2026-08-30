@@ -1,0 +1,567 @@
+{
+  "id": "VIOwfLenrolmail",
+  "name": "VIO-enrol-email",
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "VIOwfEerroralert"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "vio-em-trigger",
+      "name": "Called by Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -820,
+        0
+      ],
+      "notes": "inputSource:passthrough, matching every other callable workflow here. It was `workflowInputs:{values:[]}` — an EMPTY declared schema — and n8n refused to run the workflow at all with WorkflowHasIssuesError. Same trap as a declared schema dropping fields in transit: if you name the inputs, you get only the inputs you named."
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Suppression",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-em-supp",
+      "name": "Read Suppression",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -620,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Events",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-em-ev",
+      "name": "Read Events",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -420,
+        0
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// EMAIL ENROLMENT WITHOUT A HUMAN CLICK — and what replaces the click.\n//\n// The Slack approval was removed from the EMAIL leg on the owner's instruction: the goal is 15-20\n// outreach a day and approving each one individually does not scale. It is still in place for the\n// agent's own tool (VIO-agent-tool-push-instantly), and it must stay there, because that path lets\n// an LLM CHOOSE the recipients. Here a human already chose every recipient by typing them into the\n// Inbox tab. That is the whole justification for this workflow existing separately, and if leads\n// ever start arriving here from an automated source, the gate has to come back.\n//\n// The human was doing five jobs. Each is now a check that THROWS:\n//   1. \"is this a real address\"      -> verification must have passed, or a human vouched by name\n//   2. \"have they asked us to stop\"  -> the suppression list is re-read at send time, not trusted\n//   3. \"is this the right company\"   -> the product must resolve to a real campaign\n//   4. \"does the email read right\"   -> the AI-written opener is sanity-checked\n//   5. \"is this too many\"            -> a hard daily cap, counted from what actually sent\n//\n// Same structure as the gated tool: nothing downstream has a URL of its own. The Instantly\n// endpoint is produced ONLY past these throws, so a rewire that skips this node does not produce\n// an unchecked send, it produces an HTTP node with nothing to call.\n\nconst CAP_PER_DAY = 20;          // the owner's stated ceiling of 15-20/day\nconst MAX_PER_RUN = 5;\n\nconst CAMPAIGNS = {\n  oryoniq: { id: '77b2cd80-5bf2-4656-8857-b310858d5a77', name: 'OryonIQ - Reach Engine Pilot (2026-08)' },\n  // Deliberately null until a VisioneerIT campaign exists in Instantly. Null refuses with a reason;\n  // omitting the key would refuse with \"unknown product\", which sends someone hunting the wrong bug.\n  visioneerit: null,\n};\n\n// ⚠️ READ THE REQUEST FROM THE TRIGGER BY NAME, NOT FROM $input.\n// Two Google Sheets reads sit between the trigger and this node (suppression, then events), and a\n// Sheets node's output is ITS ROWS. Reading $input here got the last sheet row and refused every\n// call with \"no leads supplied\". This is the THIRD time this exact shape has bitten this build in\n// one day — any node that reads a value from further upstream than its immediate predecessor must\n// name the node it wants.\nconst req = $('Called by Workflow').first().json || {};\nconst leads = Array.isArray(req.leads) ? req.leads : [];\nif (!leads.length) throw new Error('REFUSED: no leads supplied.');\nif (leads.length > MAX_PER_RUN) {\n  throw new Error(`REFUSED: ${leads.length} leads in one call exceeds the per-run cap of ${MAX_PER_RUN}.`);\n}\n\nconst key = String(req.product || '').toLowerCase().replace(/[^a-z]/g, '');\nif (!key) throw new Error('REFUSED: no product named — refusing to guess which company is pitching.');\nif (!(key in CAMPAIGNS)) {\n  throw new Error(`REFUSED: unknown product '${req.product}'. Known: ${Object.keys(CAMPAIGNS).join(', ')}`);\n}\nconst campaign = CAMPAIGNS[key];\nif (!campaign) {\n  throw new Error(`REFUSED: ${key} has no Instantly campaign yet, so there is nothing to enrol into. Create one and add its id here.`);\n}\n\n// ---- 2. SUPPRESSION, re-read now rather than trusted from upstream ----------------------------\n// Append-only and matched on ANY identifier. Someone may have opted out since this lead was\n// drafted; the whole point of re-reading is that the list moves under us.\nconst supp = new Set();\nfor (const it of $('Read Suppression').all()) {\n  const v = String((it.json || {}).identifier_value || '').trim().toLowerCase();\n  if (v) supp.add(v);\n}\n\n// ---- 5. DAILY CAP, counted from what actually sent -------------------------------------------\n// Counted off the Events log, not off an internal tally: a counter this workflow keeps in its own\n// head resets whenever it restarts, and would happily send another 20.\nconst today = new Date().toISOString().slice(0, 10);\nlet sentToday = 0;\nfor (const it of $('Read Events').all()) {\n  const e = it.json || {};\n  if (String(e.tool || '').toLowerCase() !== 'instantly') continue;\n  if (String(e.action || '').toLowerCase() !== 'enroll') continue;\n  if (String(e.timestamp || '').slice(0, 10) !== today) continue;\n  sentToday += 1;\n}\nif (sentToday >= CAP_PER_DAY) {\n  throw new Error(`REFUSED: ${sentToday} leads already enrolled today, at the daily cap of ${CAP_PER_DAY}. Nothing sent.`);\n}\nconst room = CAP_PER_DAY - sentToday;\nif (leads.length > room) {\n  throw new Error(`REFUSED: ${leads.length} leads would pass the daily cap (${sentToday} already sent, ${room} left today).`);\n}\n\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\nconst BANNED = [/\\{\\{/, /\\}\\}/, /\\[\\[/, /lorem ipsum/i, /as an ai/i, /^here'?s?\\b/i,\n                /placeholder/i, /TODO/, /undefined/, /\\bnull\\b/];\n\nconst bodies = [];\nfor (const l of leads) {\n  const email = String((l && l.contact_email) || '').trim().toLowerCase();\n  if (!EMAIL.test(email)) throw new Error(`REFUSED: '${email}' is not a single valid address.`);\n\n  // ---- 1. VERIFIED, or vouched for by a person -----------------------------------------------\n  // 'pass' is Reoon's verdict. 'approved' is a human overriding it for one named address, which is\n  // how a catch-all domain gets through — a catch-all accepts mail for ANY address, so no verifier\n  // can confirm a mailbox on it, and only somebody who knows the person can say it is real.\n  const verdict = String(l.verify_action || '').toLowerCase();\n  const state = String(l.channel_state_email || '').toLowerCase();\n  // A vouch is a judgement call about an AMBIGUOUS address. It is not a veto over a definite\n  // negative: if Reoon says the mailbox does not exist, no amount of human confidence makes it\n  // deliverable, and mailing it just earns a bounce against the sending domain. Checked before the\n  // vouch is consulted so the ordering cannot be reversed by a later edit.\n  if (verdict === 'drop' || verdict === 'invalid') {\n    throw new Error(`REFUSED: ${email} was rejected by verification ('${verdict}'). That is a verified negative, not a judgement call — a human vouch cannot override it.`);\n  }\n  if (verdict !== 'pass' && state !== 'approved') {\n    throw new Error(`REFUSED: ${email} is '${verdict || 'unverified'}' and nobody vouched for it. Only a verified address or an explicit human approval may be mailed.`);\n  }\n\n  // ---- 2. suppression, on every identifier we hold ------------------------------------------\n  const domain = email.split('@')[1] || '';\n  for (const id of [email, domain, String(l.linkedin_url || '').toLowerCase(), String(l.phone || '')]) {\n    if (id && supp.has(id.trim().toLowerCase())) {\n      throw new Error(`REFUSED: ${email} matches the suppression list on '${id}'. Nothing sent.`);\n    }\n  }\n\n  // ---- 4. the AI-written line, sanity-checked in the human's place --------------------------\n  // This is the ONLY part of the email a model writes; everything else is fixed campaign copy.\n  // With nobody reading it before it goes, an unrendered merge tag or a chatbot preamble would\n  // reach a real prospect.\n  const opener = String(l.opener || '').trim();\n  if (opener.length < 20) throw new Error(`REFUSED: ${email} has no usable opening line (${opener.length} chars).`);\n  if (opener.length > 400) throw new Error(`REFUSED: ${email} has a ${opener.length}-char opening line; something went wrong upstream.`);\n  for (const re of BANNED) {\n    if (re.test(opener)) throw new Error(`REFUSED: ${email}'s opening line matches ${re} — it looks unrendered or machine-leaked, not like copy.`);\n  }\n\n  // ---- 3. the page the campaign CTA points at ------------------------------------------------\n  const page = String(l.sendr_page_url || '').trim();\n  if (!/^https?:\\/\\//.test(page)) {\n    throw new Error(`REFUSED: ${email} has no Sendr page URL. Step 1's CTA is {{sendrPageUrl}} and would render empty.`);\n  }\n\n  bodies.push({\n    campaign: campaign.id,\n    email,\n    first_name: String(l.first_name || ''),\n    company_name: String(l.company || ''),\n    personalization: opener,\n    // TOP-LEVEL, never nested under `payload`: Instantly silently discards custom variables nested\n    // there and still answers 201, so the CTA renders as a bare colon to a real prospect.\n    custom_variables: { sendrPageUrl: page, firstName: String(l.first_name || ''), companyName: String(l.company || '') },\n    skip_if_in_campaign: true,\n  });\n}\n\nconst INSTANTLY_LEADS_URL = 'https://api.instantly.ai/api/v2/leads';\nreturn bodies.map((body, i) => ({ json: {\n  instantly_url: INSTANTLY_LEADS_URL,\n  instantly_body: body,\n  email: body.email,\n  index: i,\n  product: key,\n  campaign_id: campaign.id,\n  campaign_name: campaign.name,\n  sent_today_before: sentToday,\n  daily_cap: CAP_PER_DAY,\n  authorized_at: new Date().toISOString(),\n} }));"
+      },
+      "id": "vio-em-pre",
+      "name": "Preconditions (fail closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.instantly_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; oryoniq-reach-engine/1.0)"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.instantly_body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "vio-em-post",
+      "name": "Enroll Lead (Instantly)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "VIOinstantlycr01",
+          "name": "VIO Instantly"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// What actually happened, per lead, in terms a human can audit later.\n//\n// ⚠️ Instantly answers 201 for a lead it did NOT create. skip_if_in_campaign is WORKSPACE-wide, so\n// an address already present anywhere in the workspace comes back 200/201 carrying the PRE-EXISTING\n// lead id and nothing is added. A previous version of this pipeline reported \"enrolled: 2\" while\n// the campaign held zero. The only honest signal is whether the returned lead's campaign matches\n// the one we asked for.\nconst auth = $('Preconditions (fail closed)').all().map((i) => i.json);\nconst out = [];\n$input.all().forEach((item, i) => {\n  const res = item.json || {};\n  const a = auth[i] || {};\n  const returnedCampaign = String(res.campaign || res.campaign_id || '');\n  const created = Boolean(res.id) && returnedCampaign === String(a.campaign_id || '');\n  out.push({ json: {\n    email: a.email,\n    product: a.product,\n    campaign_id: a.campaign_id,\n    campaign_name: a.campaign_name,\n    instantly_lead_id: res.id || '',\n    enrolled: created,\n    note: created ? 'lead created in the campaign'\n      : 'Instantly returned a lead that is NOT in this campaign — it already existed somewhere in the workspace, so nothing was added',\n    sendr_page_url: (a.instantly_body && a.instantly_body.custom_variables && a.instantly_body.custom_variables.sendrPageUrl) || '',\n    opener: (a.instantly_body && a.instantly_body.personalization) || '',\n    daily_cap: a.daily_cap,\n    sent_today_before: a.sent_today_before,\n    at: new Date().toISOString(),\n  }});\n});\nreturn out;"
+      },
+      "id": "vio-em-report",
+      "name": "Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        180,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Two tabs, one shape per row. Only leads Instantly ACTUALLY created advance the lifecycle —\n// reporting a send that did not happen is worse than reporting nothing.\nconst rows = [];\nfor (const it of $input.all()) {\n  const r = it.json || {};\n  const now = new Date().toISOString();\n  if (r.enrolled) {\n    rows.push({ json: { _kind: 'lead',\n      contact_email: r.email, channel_state_email: 'enrolled', Product: r.product,\n      sendr_page_url: r.sendr_page_url, opener: r.opener, updated_at: now } });\n  }\n  rows.push({ json: { _kind: 'event',\n    timestamp: now, lead_email: r.email, tool: 'instantly',\n    action: r.enrolled ? 'enroll' : 'enroll_noop',\n    units: r.enrolled ? 1 : 0,\n    result: r.note, workflow: 'VIO-enrol-email', lead_id: r.instantly_lead_id,\n    // Measured, never estimated — the project rule. Blank means nobody measured it.\n    est_cost_usd: '', source_config: r.product } });\n}\nreturn rows;"
+      },
+      "id": "vio-em-rows",
+      "name": "Build Sheet Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json._kind }}",
+              "rightValue": "lead",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-em-fl",
+      "name": "Leads rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        580,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json._kind }}",
+              "rightValue": "event",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-em-fe",
+      "name": "Events rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        580,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "contact_email"
+          ],
+          "schema": [
+            {
+              "id": "contact_email",
+              "displayName": "contact_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_email",
+              "displayName": "channel_state_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Product",
+              "displayName": "Product",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sendr_page_url",
+              "displayName": "sendr_page_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "opener",
+              "displayName": "opener",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "id": "vio-em-wl",
+      "name": "Write Lead Row (Leads)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        780,
+        -120
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Events",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_email",
+              "displayName": "lead_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tool",
+              "displayName": "tool",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "units",
+              "displayName": "units",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "result",
+              "displayName": "result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "est_cost_usd",
+              "displayName": "est_cost_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_config",
+              "displayName": "source_config",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "id": "vio-em-we",
+      "name": "Log Enrolment (Events)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        780,
+        120
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Called by Workflow": {
+      "main": [
+        [
+          {
+            "node": "Read Suppression",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Suppression": {
+      "main": [
+        [
+          {
+            "node": "Read Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Events": {
+      "main": [
+        [
+          {
+            "node": "Preconditions (fail closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preconditions (fail closed)": {
+      "main": [
+        [
+          {
+            "node": "Enroll Lead (Instantly)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enroll Lead (Instantly)": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Report": {
+      "main": [
+        [
+          {
+            "node": "Build Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Sheet Rows": {
+      "main": [
+        [
+          {
+            "node": "Leads rows",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Events rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leads rows": {
+      "main": [
+        [
+          {
+            "node": "Write Lead Row (Leads)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Events rows": {
+      "main": [
+        [
+          {
+            "node": "Log Enrolment (Events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

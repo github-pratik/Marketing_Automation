@@ -72,10 +72,11 @@ ok('dropped is never ready, no matter what',
    pick([row({ channel_state_email: 'dropped' })]).length === 0);
 // The override buys the right to be DRAFTED, not the right to be SENT: the Slack gate still
 // stands behind it. If this ever stops being true the override becomes a way to mail anyone.
-ok('the Slack approval gate still sits in front of enrolment',
+// The override buys the right to be DRAFTED and then to pass VIO-enrol-email's own checks — it is
+// not a licence to mail anyone. That workflow re-reads suppression and re-checks the verdict.
+ok('enrolment still runs through a fail-closed precondition step',
    wf.nodes.some((n) => n.type === 'n8n-nodes-base.executeWorkflow'
-     && n.parameters.workflowId?.value === 'VIOwfBpushinst1')
-   && /GATED/.test(JSON.stringify(wf.nodes.map((n) => n.name))));
+     && n.parameters.workflowId?.value === 'VIOwfLenrolmail'));
 
 // Blank spacer rows are not errors.
 ok('a wholly blank row is ignored',
@@ -143,9 +144,15 @@ const write = (rep, src) => new Function('$input', '$', writeCode)(
 const src = { _row: 2, _opener: 'op', _email_draft: 'body', _page: 'https://p' };
 ok('an enrolled row uses the sheet vocabulary: enrolled',
    write({ leads: [{ status: 'enrolled' }] }, src).channel_state_email === 'enrolled');
-ok('a NOT-enrolled row is dropped',
-   write({ leads: [{ status: 'already_in_another_campaign' }] }, src).channel_state_email === 'dropped');
-ok('an empty result is dropped', write({}, src).channel_state_email === 'dropped');
+// NOT 'dropped'. That word belongs to verification — it means Reoon says the address is not real,
+// and VIO-enrol-email refuses such a lead as a negative no human may override. Using it for
+// "enrolment did not land" locked a lead with a perfectly good address out permanently.
+ok('a NOT-enrolled row goes to needs_review, not dropped',
+   write({ leads: [{ status: 'already_in_another_campaign' }] }, src).channel_state_email === 'needs_review');
+ok('an empty result goes to needs_review',
+   write({}, src).channel_state_email === 'needs_review');
+ok('  and never to dropped, which would be a verified negative',
+   write({}, src).channel_state_email !== 'dropped');
 ok('the page url is written back', write({ leads: [{ status: 'enrolled' }] }, src).sendr_page_url === 'https://p');
 
 const badRow = new Function('$input', jsOf('Explain the bad row'))(
@@ -240,14 +247,34 @@ const calls = wf.nodes.filter(n => n.type === 'n8n-nodes-base.executeWorkflow')
                       .map(n => n.parameters.workflowId.value);
 ok('calls the drafting workflow', calls.includes('VIOwf4agent0001'));
 ok('calls the Sendr page workflow', calls.includes('VIOwf6sendrgen01'));
-ok('calls the GATED enrolment tool', calls.includes('VIOwfBpushinst1'));
+// ⚠️ THE EMAIL LEG IS DELIBERATELY UNGATED (2026-08-30, owner's instruction: 15-20 outreach a day
+// makes a click per lead unworkable). It calls VIO-enrol-email, which replaces the human with five
+// checks that throw. This is defensible ONLY because a human chose every recipient by typing them
+// into the Inbox tab — no model picks who gets mailed on this path.
+ok('the email leg calls the ungated email enrolment path', calls.includes('VIOwfLenrolmail'));
+ok('it does NOT call the agent\'s gated tool — that gate stays for the path where an LLM picks people',
+   !calls.includes('VIOwfBpushinst1'));
 for (const n of wf.nodes.filter(x => x.type === 'n8n-nodes-base.executeWorkflow'))
   ok(`${n.name} runs once per row`, n.parameters.mode === 'each');
-// The enrolment tool holds its own Slack approval. This schedule may reach it, but it cannot
-// enrol anybody without a human answering — that property lives in the tool, not here.
-ok('the enrolment step waits for its sub-workflow (the approval blocks)',
-   wf.nodes.find(n => n.parameters?.workflowId?.value === 'VIOwfBpushinst1')
+ok('the enrolment step waits for its sub-workflow, so a refusal surfaces here',
+   wf.nodes.find(n => n.parameters?.workflowId?.value === 'VIOwfLenrolmail')
      ?.parameters?.options?.waitForSubWorkflow === true);
+
+// The agent's tool MUST keep its gate. If this ever fails, an LLM can mail strangers unreviewed.
+{
+  const tool = JSON.parse(readFileSync(new URL('./VIO-agent-tool-push-instantly.json', import.meta.url)));
+  ok('the AGENT tool still holds its Slack approval',
+     tool.nodes.some((n) => /Ask Human/i.test(n.name))
+     && tool.nodes.some((n) => /Authorize Enrolment/i.test(n.name)));
+}
+
+// The runner must hand the enrolment step the REAL verification state. It used to hardcode
+// verify_action:'pass', which would tell the ungated path every lead was Reoon-verified —
+// including catch-all addresses that only got through because a human vouched by name.
+ok('the real verification verdict is carried, not asserted',
+   !/verify_action:\s*'pass'/.test(jsOf('Shape for enrolment')));
+ok('  and it comes from the sheet row', /_verify_action/.test(jsOf('Pick demo rows'))
+   || /verify_action: clean\(r\.verify_action/.test(jsOf('Pick demo rows')));
 
 // This workflow runs unattended on a schedule. Nothing that spends money or reaches a person may
 // be reachable from it without its own approval — and neither is wired in today.
@@ -300,5 +327,55 @@ for (const [src, v] of Object.entries(wf.connections))
   ok('enrolment refuses a lead with no page URL', /REFUSED[^`]*Sendr page URL/.test(enrol));
 }
 
+
+// ---------- claim first, work second ----------
+// A row used to be claimed only after drafting AND page generation, while the schedule re-read the
+// same tab every 60 seconds — so one row produced two Slack approval requests, two drafts and two
+// Sendr pages (seen live 2026-08-29).
+{
+  const branch = wf.connections['Row usable?'].main[1].map((c) => c.node);
+  ok('the claim branch is wired off the usable path', branch.includes('Claim row early'), branch.join(', '));
+  ok('the claim runs BEFORE drafting — v1 execution order follows connection order',
+     branch.indexOf('Claim row early') < branch.indexOf('Shape for drafting'), branch.join(' then '));
+
+  // It must be a PARALLEL branch, never inline: inline would hand the drafting chain a Sheets
+  // node's output instead of the picked row, which is exactly how the Sendr page URL was lost.
+  ok('drafting still receives the picked row, not a Sheets write',
+     branch.includes('Shape for drafting'));
+  ok('the claim chain is terminal', !('Claim early in sheet' in wf.connections));
+
+  const early = jsOf('Claim row early');
+  ok('the early claim sets pending_approval', /pending_approval/.test(early));
+  // Writing blanks for fields that do not exist yet would erase a previous run's values.
+  for (const f of ['opener', 'email_draft', 'sendr_page_url'])
+    ok(`the early claim does not blank ${f}`, !new RegExp(`${f}\\s*:`).test(early));
+
+  const sheetNode = wf.nodes.find((n) => n.name === 'Claim early in sheet');
+  ok('the early claim writes via update on row_number',
+     sheetNode.parameters.operation === 'update'
+     && sheetNode.parameters.columns.matchingColumns.includes('row_number'));
+  ok('  declaring an explicit schema', (sheetNode.parameters.columns.schema || []).length > 0);
+  ok('  pinned to the service-account credential by id',
+     sheetNode.credentials?.googleApi?.id === 'VIOgsheetcred01');
+  ok('  on typeVersion 4.7', sheetNode.typeVersion === 4.7);
+
+  // The poll must not be faster than the work it starts.
+  const mins = wf.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger')
+                 .parameters.rule.interval[0].minutesInterval;
+  ok('the poll interval leaves room for the chain to claim', mins >= 2, `every ${mins} min`);
+}
+
+// 'dropped' belongs to VERIFICATION — it means Reoon says the address is not real, and
+// VIO-enrol-email refuses such a lead outright as a negative no human may override. Writing it
+// here for "enrolment did not land" locked a lead with a perfectly good address out of the
+// pipeline permanently (seen live 2026-08-30).
+{
+  const upd = jsOf('Shape row update');
+  ok("a non-landing enrolment is NOT recorded as 'dropped'", !/: 'dropped'/.test(upd), upd.match(/.{0,60}'dropped'.{0,40}/)?.[0]);
+  ok('  it is recorded as needs_review, which is what it actually is',
+     /enrolled \? 'enrolled' : 'needs_review'/.test(upd));
+}
+
 console.log(`\n[demo-sheet-run] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+

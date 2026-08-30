@@ -1,0 +1,388 @@
+// Offline proof of the SEAMS between workflows — not the insides of any one of them.
+//
+// Every other test-*.mjs in this folder loads jsCode out of ONE workflow's JSON and tests it in
+// isolation. That is exactly why two real bugs reached a live run uncaught:
+//   (a) VIO-inbox-mapper handed VIO-intake-verify-curate a lead, and VIO-intake-verify-curate's
+//       'Normalize Lead' node builds its return value as an EXPLICIT object — so any field the
+//       mapper sent that isn't named there is silently dropped. `Product` was lost this way.
+//   (b) VIO-intake-verify-curate stamped a lifecycle value on EVERY lead it wrote to the Leads
+//       tab, including ones Reoon had just rejected, and that exact value had just become
+//       VIO-demo-sheet-run's definition of "ready to send" — so a rejected address landed in
+//       Leads marked ready to run.
+// Both are fixed in the code as of this writing (see the "FIX" comments inside the workflow JSON
+// themselves), but nothing in the existing suites would fail if either regressed, because no
+// existing suite ever feeds one workflow's real output into the next workflow's real input. This
+// file does exactly that, by chaining the same jsCode-out-of-JSON technique across files.
+//
+// Chain under test: Inbox row -> VIO-inbox-mapper -> VIO-intake-verify-curate -> Leads row ->
+// VIO-demo-sheet-run -> VIO-operator-agent.
+//
+// NEVER re-type any workflow's logic here. Every value asserted below is produced by running the
+// REAL jsCode pulled straight out of the REAL JSON, so this file cannot drift from what is
+// actually deployed the way a hand-written mock of "what intake does" could.
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const DIR = path.dirname(fileURLToPath(import.meta.url));
+const loadWf = (file) => JSON.parse(readFileSync(path.join(DIR, file)));
+const jsOf = (wf, name, file = '?') => {
+  const n = wf.nodes.find((x) => x.name === name);
+  if (!n) throw new Error(`no node "${name}" in ${file}`);
+  if (typeof n.parameters.jsCode !== 'string') throw new Error(`node "${name}" in ${file} has no jsCode`);
+  return n.parameters.jsCode;
+};
+
+let pass = 0, fail = 0;
+const ok = (label, cond, detail = '') => {
+  if (cond) pass++;
+  else { console.error(`  FAIL  ${label}${detail ? ' — ' + detail : ''}`); fail++; }
+};
+
+const mapperWf = loadWf('VIO-inbox-mapper.json');
+const intakeWf = loadWf('VIO-intake-verify-curate.json');
+const demoWf = loadWf('VIO-demo-sheet-run.json');
+const agentWf = loadWf('VIO-operator-agent.json');
+
+// ============================================================================================
+// SEAM 1 — VIO-inbox-mapper "Shape Lead row"  --(Execute Workflow)-->  VIO-intake-verify-curate
+//          "Batch In (one item per lead)" -> "Normalize Lead"
+// ============================================================================================
+// The exact shape of bug (a): 'Normalize Lead' rebuilds the lead as an explicit object literal.
+// Anything the mapper sent that isn't named in that literal vanishes with no error, no warning,
+// and no test anywhere else in this repo would go red.
+const mapCode = jsOf(mapperWf, 'Map headers (alias table)', 'VIO-inbox-mapper.json');
+const leadRowCode = jsOf(mapperWf, 'Shape Lead row', 'VIO-inbox-mapper.json');
+const batchInCode = jsOf(intakeWf, 'Batch In (one item per lead)', 'VIO-intake-verify-curate.json');
+const normalizeCode = jsOf(intakeWf, 'Normalize Lead', 'VIO-intake-verify-curate.json');
+
+const runMap = (rows) => new Function('$input', mapCode)({ all: () => rows.map((j) => ({ json: j })) });
+const runLeadRow = (row) => new Function('$input', leadRowCode)({ item: { json: row } }).json;
+const runBatchIn = (items) => new Function('$input', batchInCode)({ all: () => items });
+const runNormalize = (items) => new Function('$input', normalizeCode)({ all: () => items });
+
+// A realistic Inbox row, arbitrary real-world headers, a human typed it and chose the product.
+const inboxRow = {
+  row_number: 9, status: '',
+  'Company name': 'Acme Regional Water Authority', 'First name': 'PAT', 'Last name': 'OKONKWO',
+  'Email address': 'pat.okonkwo@acmewater.gov', 'Website': 'acmewater.gov', 'Job Title': 'CIO',
+  Product: 'VisioneerIT',
+};
+
+const mapped = runMap([inboxRow]).map((i) => i.json)[0];
+ok('setup: the crafted Inbox row actually maps cleanly (so the seam test below is meaningful)',
+   !!mapped && mapped._ok === true, JSON.stringify(mapped));
+
+// This IS what crosses the Execute Workflow boundary from the mapper's side.
+const shaped = runLeadRow(mapped);
+const SENT_FIELDS = ['email', 'contact_email', 'first_name', 'last_name', 'company', 'title',
+  'company_domain', 'linkedin_url', 'phone', 'source_config', 'Product'];
+for (const f of SENT_FIELDS) {
+  ok(`setup: the mapper's "Shape Lead row" actually sends "${f}"`, shaped[f] !== undefined && shaped[f] !== null);
+}
+
+const batched = runBatchIn([{ json: shaped }]);
+ok('the intake join accepts a single bare lead item (not wrapped in a { leads: [...] } envelope)',
+   batched.length === 1, JSON.stringify(batched));
+
+const normalized = runNormalize(batched).map((i) => i.json);
+ok('exactly one lead survives normalisation', normalized.length === 1);
+const n = normalized[0] || {};
+
+// THE REGRESSION THIS WOULD CATCH: if 'Normalize Lead' ever again forgets to name one of these
+// fields in its explicit return object, that field reads back as undefined here and this line
+// goes red — which is exactly the failure mode a Product-drop bug looks like from the outside.
+for (const f of SENT_FIELDS) {
+  ok(`"${f}" survives Normalize Lead's explicit-object rebuild`, n[f] === shaped[f],
+     `sent ${JSON.stringify(shaped[f])}, got back ${JSON.stringify(n[f])}`);
+}
+// Named explicitly because this is the exact field and exact failure this seam existed to catch.
+ok('Product specifically is not blank after normalisation (bug (a), as it actually happened)',
+   n.Product === 'VisioneerIT', JSON.stringify(n));
+ok('the email specifically is not blank after normalisation', n.email === 'pat.okonkwo@acmewater.gov');
+
+// inbox_row is a deliberate, DOCUMENTED exception, not an oversight: Normalize Lead does not carry
+// it, and 'Intake Result (to caller)' instead reads it back from Batch In's own output at the
+// join. Assert both halves, so a change to either side that breaks the report-back path (without
+// touching Normalize Lead at all) still goes red here.
+ok("Normalize Lead does not carry inbox_row (by design — it is not part of this node's contract)",
+   n.inbox_row === undefined);
+ok("but Batch In's own output still carries inbox_row, for 'Intake Result' to read directly",
+   batched[0].json.inbox_row === 9);
+
+// ============================================================================================
+// SEAM 2 — VIO-intake-verify-curate "Shape Lead Row"  -->  VIO-demo-sheet-run "Pick demo rows"
+// ============================================================================================
+// The exact shape of bug (b): intake writes ONE lifecycle value to Leads.channel_state_email no
+// matter what Reoon decided, and demo-sheet-run reads that same column to decide what is safe to
+// run. If the two ever disagree on which value means "go", either a rejected address gets sent or
+// a good one never runs. The verdict->value mapping below is produced by running the REAL
+// 'Classify' node, not by re-deriving my own idea of what Reoon status should mean.
+const classifyCode = jsOf(intakeWf, 'Classify (pass / drop / needs_review)', 'VIO-intake-verify-curate.json');
+const shapeLeadRowCode = jsOf(intakeWf, 'Shape Lead Row', 'VIO-intake-verify-curate.json');
+const pickDemoRowsCode = jsOf(demoWf, 'Pick demo rows', 'VIO-demo-sheet-run.json');
+
+// Fakes just enough of n8n's $() node-reference API for 'Classify' to run standalone.
+const runClassify = (reoonResponse, gateLead) => {
+  const $ = (name) => ({
+    all: () => (name === 'Gate (dedupe + suppression)' ? [{ json: gateLead }] : []),
+  });
+  return new Function('$input', '$', classifyCode)({ all: () => [{ json: reoonResponse }] }, $);
+};
+const runShapeLeadRow = (classifyItemJson) =>
+  new Function('$input', shapeLeadRowCode)({ all: () => [{ json: classifyItemJson }] });
+const runPickDemoRows = (rows) =>
+  new Function('$input', pickDemoRowsCode)({ all: () => rows.map((j) => ({ json: j })) });
+
+const baseLead = {
+  lead_id: 'abc123def456', source_config: 'Manual', Product: 'VisioneerIT', apollo_id: '',
+  first_name: 'Pat', last_name: 'Okonkwo', title: 'CIO', company: 'Acme Water Authority',
+  company_domain: 'acmewater.gov', email: 'pat.okonkwo@acmewater.gov',
+  contact_email: 'pat.okonkwo@acmewater.gov', phone: '', linkedin_url: '', timezone: '',
+  signal: '', has_email: true, has_phone: false,
+};
+
+// Reoon statuses picked to exercise all three of Classify's branches — pass / drop / needs_review
+// — per INTEGRATIONS.md's documented mapping, which 'Classify' itself implements and this reuses
+// rather than re-declaring.
+const scenarios = [
+  { label: 'a Reoon-safe address', status: 'safe',
+    extra: { is_safe_to_send: true, is_deliverable: true, is_catch_all: false }, runnable: true },
+  { label: 'a Reoon-invalid (hard-fail) address', status: 'invalid',
+    extra: { is_safe_to_send: false, is_deliverable: false, is_catch_all: false }, runnable: false },
+  { label: 'a Reoon catch-all address', status: 'catch_all',
+    extra: { is_safe_to_send: false, is_deliverable: true, is_catch_all: true }, runnable: false },
+];
+
+for (const { label, status, extra, runnable } of scenarios) {
+  const reoonResponse = { email: baseLead.email, status, overall_score: 70, ...extra };
+  const verdict = runClassify(reoonResponse, baseLead)[0].json;
+  const leadsRow = runShapeLeadRow(verdict)[0].json; // == what intake actually writes to Leads
+  ok(`setup: ${label} is written to Leads with a Product (column-name check, see SEAM 3)`,
+     leadsRow.Product === 'VisioneerIT', JSON.stringify(leadsRow));
+
+  const picked = runPickDemoRows([leadsRow]);
+  if (runnable) {
+    ok(`${label} (verdict "${verdict.action}", channel_state_email="${leadsRow.channel_state_email}") IS picked up by the runner`,
+       picked.length === 1, JSON.stringify(picked));
+  } else {
+    ok(`${label} (verdict "${verdict.action}", channel_state_email="${leadsRow.channel_state_email}") is NOT picked up automatically — bug (b) would have shipped this row`,
+       picked.length === 0, JSON.stringify(picked));
+  }
+}
+
+// The documented human override: a catch-all lead a person has personally vouched for. This is
+// the other half of the same seam — the override column value has to ALSO be honoured, not just
+// the automatic 'not_sent' path.
+{
+  const reoonResponse = { email: baseLead.email, status: 'catch_all', is_safe_to_send: false,
+    is_deliverable: true, is_catch_all: true, overall_score: 70 };
+  const verdict = runClassify(reoonResponse, baseLead)[0].json;
+  const leadsRow = runShapeLeadRow(verdict)[0].json;
+  ok('setup: the catch-all row really was parked at needs_review before the override',
+     leadsRow.channel_state_email === 'needs_review');
+  leadsRow.channel_state_email = 'approved'; // a human, editing the live sheet, vouches for it
+  const picked = runPickDemoRows([leadsRow]);
+  ok('a human-approved catch-all row IS picked up by the runner (the override that exists for exactly this)',
+     picked.length === 1, JSON.stringify(picked));
+}
+
+// ============================================================================================
+// SEAM 3 — column-name agreement: "Product" (capital P), everywhere this pipeline touches it
+// ============================================================================================
+// A case mismatch between a writer and a reader (or between a writer's jsCode and the Sheets
+// node's own column schema) does not error — the Sheets node's autoMapInputData either creates a
+// brand new blank column or silently leaves the intended one untouched, and a reader keyed on the
+// other case just gets undefined forever.
+ok('mapper writes the lead\'s product under the key "Product" (capital P)', shaped.Product !== undefined);
+ok('Normalize Lead still exposes it as "Product"', n.Product !== undefined);
+ok('intake\'s Shape Lead Row writes it to the Leads row as "Product"',
+   runShapeLeadRow(runClassify({ email: baseLead.email, status: 'safe', is_safe_to_send: true,
+     is_deliverable: true, is_catch_all: false }, baseLead)[0].json)[0].json.Product === 'VisioneerIT');
+ok('"Pick demo rows" reads the column back as "Product" (capital P) as its PRIMARY key',
+   /r\.Product\s*\?\?\s*r\.product/.test(pickDemoRowsCode));
+
+// Every Google Sheets WRITE node in the whole repo whose schema declares a product-ish column
+// must spell it EXACTLY "Product" — derived dynamically from every VIO-*.json on disk, not from a
+// list of files I typed by hand (parallel agents are editing this folder right now).
+const files = readdirSync(DIR).filter((f) => /^VIO-.*\.json$/.test(f));
+const allWfs = new Map(files.map((f) => [f, loadWf(f)]));
+
+let productSchemaChecks = 0;
+for (const [f, wf] of allWfs) {
+  for (const wnode of wf.nodes) {
+    const schema = wnode.parameters?.columns?.schema || [];
+    for (const col of schema) {
+      if (String(col.id || '').toLowerCase() === 'product') {
+        productSchemaChecks++;
+        ok(`${f} node "${wnode.name}" spells the product column exactly "Product"`, col.id === 'Product',
+           `got ${JSON.stringify(col.id)}`);
+      }
+    }
+  }
+}
+ok('setup: at least one product column schema was actually found and checked (not vacuous)',
+   productSchemaChecks > 0);
+
+// SEAM 3b — the last leg of the stated chain: demo-sheet-run -> VIO-operator-agent. The product
+// travels as lowercase `source_config` on the way in; the agent's own `validate_config` must
+// resolve it to the SAME product it was drafted for, or a VisioneerIT lead gets OryonIQ copy
+// again (the exact bug this build has already shipped once, per CLAUDE.md's own commit history).
+const draftingCode = jsOf(demoWf, 'Shape for drafting', 'VIO-demo-sheet-run.json');
+const validateConfigCode = jsOf(agentWf, 'validate_config', 'VIO-operator-agent.json');
+const runShapeForDrafting = (row) => new Function('$input', draftingCode)({ item: { json: row } }).json;
+const runValidateConfig = (item) =>
+  new Function('$input', validateConfigCode)({ first: () => ({ json: item }) })[0].json;
+
+const baseSheetRow = (productCol) => ({
+  row_number: 12, first_name: 'Pat', company: 'Acme Water Authority',
+  contact_email: 'pat.okonkwo@acmewater.gov', title: 'CIO', company_domain: 'acmewater.gov',
+  source_config: 'Manual', channel_state_email: 'not_sent', Product: productCol,
+  verify_action: 'pass', reoon_status: 'safe',
+});
+
+for (const productCol of ['OryonIQ', 'VisioneerIT']) {
+  const picked = runPickDemoRows([baseSheetRow(productCol)])[0]?.json;
+  ok(`setup: a "${productCol}" row is picked up as valid, not refused`, !!picked && picked.invalid === false,
+     JSON.stringify(picked));
+  const drafted = runShapeForDrafting(picked);
+  const cfg = runValidateConfig(drafted);
+  ok(`demo-sheet-run's product handoff resolves the operator agent's OWN "${productCol}" config, not a default`,
+     cfg.product === productCol, `config_used=${cfg.config_used}, product=${cfg.product}, defaulted=${cfg.config_defaulted}`);
+}
+
+// ============================================================================================
+// SEAM 4 — every Execute Workflow node's target actually exists as a workflow on disk
+// ============================================================================================
+// A call to a workflow id that doesn't exist (typo, renamed file, id changed on import) throws
+// only at RUNTIME on a live n8n instance — nothing in any single-workflow suite can see it, since
+// each one only ever loads its own file. Derived fully dynamically: every VIO-*.json currently in
+// the folder, and every id it declares — not a list I typed by hand.
+const idToFile = new Map();
+for (const [f, wf] of allWfs) {
+  if (wf.id) idToFile.set(wf.id, f);
+}
+ok('setup: more than one workflow id was found to check Execute Workflow targets against',
+   idToFile.size > 1, `found ${idToFile.size}`);
+
+let execWorkflowChecks = 0;
+for (const [f, wf] of allWfs) {
+  for (const wnode of wf.nodes) {
+    if (wnode.type !== 'n8n-nodes-base.executeWorkflow') continue;
+    const target = wnode.parameters?.workflowId?.value;
+    execWorkflowChecks++;
+    ok(`${f} node "${wnode.name}" (Execute Workflow) targets an id that exists as some VIO-*.json's own id`,
+       typeof target === 'string' && idToFile.has(target),
+       `target=${JSON.stringify(target)}; known ids: ${[...idToFile.keys()].join(', ')}`);
+  }
+}
+ok('setup: at least one Execute Workflow node was actually found and checked (not vacuous)',
+   execWorkflowChecks > 0, `checked ${execWorkflowChecks}`);
+
+// ============================================================================================
+// SEAM 5 — one shared vocabulary for Leads.channel_state_email across every workflow that writes it
+// ============================================================================================
+// The whole point of this section: derive what each workflow ACTUALLY writes by reading its own
+// code, rather than typing out "the vocabulary" from memory or from a doc — a doc can drift, and
+// a hand-typed list would just be my own guess repeated back at me.
+//
+// Extraction method: find every `channel_state_email:` object-literal assignment in a workflow's
+// combined jsCode, and pull out the literal string(s) it can resolve to — a bare string literal,
+// every "then" branch of a ternary chain (a value right after a `?`), the final "else" at the end
+// of a ternary chain, or (for a bare identifier like `e.stage`) whatever that identifier is
+// literally assigned to elsewhere in the SAME file. This deliberately does not try to be a real
+// JS parser — it is good enough to recover every case actually used in this codebase, which was
+// checked by hand against the source above while writing this file.
+function stripLineComments(code) {
+  return code.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+}
+function extractAssignedLiterals(code, key) {
+  const values = new Set();
+  const re = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:\\s*', 'g');
+  let m;
+  while ((m = re.exec(code))) {
+    let i = m.index + m[0].length;
+    let depth = 0, j = i;
+    while (j < code.length) {
+      const ch = code[j];
+      if ('([{'.includes(ch)) depth++;
+      else if (')]}'.includes(ch)) { if (depth === 0) break; depth--; }
+      else if (ch === ',' && depth === 0) break;
+      j++;
+    }
+    const expr = code.slice(i, j);
+    for (const mm of expr.matchAll(/\?\s*'([a-zA-Z_][a-zA-Z0-9_]*)'/g)) values.add(mm[1]);
+    const tail = expr.match(/:\s*'([a-zA-Z_][a-zA-Z0-9_]*)'\s*$/);
+    if (tail) values.add(tail[1]);
+    const bare = expr.trim().match(/^'([a-zA-Z_][a-zA-Z0-9_]*)'$/);
+    if (bare) values.add(bare[1]);
+    const ident = expr.trim().match(/^[a-zA-Z_][a-zA-Z0-9_.]*$/);
+    if (ident) {
+      const varName = ident[0].split('.').pop();
+      const assignRe = new RegExp('\\b' + varName + "\\s*=\\s*'([a-zA-Z_][a-zA-Z0-9_]*)'", 'g');
+      for (const am of code.matchAll(assignRe)) values.add(am[1]);
+    }
+  }
+  return values;
+}
+
+const vocabByFile = new Map();
+for (const [f, wf] of allWfs) {
+  const allCode = stripLineComments(wf.nodes.map((wn) => wn.parameters?.jsCode || '').join('\n\n'));
+  const values = extractAssignedLiterals(allCode, 'channel_state_email');
+  if (values.size) vocabByFile.set(f, values);
+}
+ok('setup: more than one workflow was found writing channel_state_email (the seam this section checks)',
+   vocabByFile.size > 1, `writers: ${[...vocabByFile.keys()].join(', ')}`);
+
+// The reader side, extracted from its own literal Set(...) rather than retyped.
+const readyMatch = stripLineComments(pickDemoRowsCode).match(/READY\s*=\s*new Set\(\[([^\]]*)\]\)/);
+ok('setup: found "Pick demo rows"\' own READY set literal to test every writer against', !!readyMatch);
+const READY = new Set(((readyMatch && readyMatch[1].match(/'([^']*)'/g)) || []).map((s) => s.slice(1, -1)));
+
+// GENERIC, self-referential invariant (no invented list): a workflow must never write, as a claim
+// marker on a row IT ITSELF is responsible for claiming, a value that its own downstream READY
+// check would treat as still-unclaimed. If 'Shape row update' or 'Claim row ...' in
+// VIO-demo-sheet-run ever regresses to writing '', 'not_sent' or 'approved' by mistake (a
+// copy-paste from the wrong branch), this goes red — that is bug-class (a)/(b), generalised.
+const demoWriterValues = vocabByFile.get('VIO-demo-sheet-run.json') || new Set();
+ok('setup: demo-sheet-run itself was found writing at least one channel_state_email value',
+   demoWriterValues.size > 0, `got ${[...demoWriterValues]}`);
+for (const v of demoWriterValues) {
+  ok(`demo-sheet-run's own claim/terminal marker "${v}" is excluded from its own READY set (a claimed row must never be re-picked)`,
+     !READY.has(v), `READY=${[...READY]}`);
+}
+
+// SPECIFIC cross-file checks tied directly to the two named historical bugs. These tokens are not
+// an invented vocabulary — 'not_sent' / 'dropped' / 'needs_review' come from intakeWriterValues
+// (extracted from intake's own code above), and their required READY-membership is exactly what
+// bug (b) got backwards.
+const intakeWriterValues = vocabByFile.get('VIO-intake-verify-curate.json') || new Set();
+ok('setup: intake was found writing all three of its documented verdict values',
+   ['not_sent', 'dropped', 'needs_review'].every((v) => intakeWriterValues.has(v)),
+   `got ${[...intakeWriterValues]}`);
+ok('intake\'s verified-and-ready value "not_sent" is inside demo-sheet-run\'s own extracted READY set',
+   READY.has('not_sent'));
+for (const rejected of ['dropped', 'needs_review']) {
+  ok(`intake's own rejection value "${rejected}" is correctly EXCLUDED from demo-sheet-run's READY set`,
+     !READY.has(rejected));
+}
+
+// The other end of the same override checked in SEAM 2: whichever file writes 'approved' as a
+// human-vouch marker, demo-sheet-run's READY set must actually honour it.
+const approvedWriters = [...vocabByFile.entries()].filter(([, v]) => v.has('approved')).map(([f]) => f);
+ok('setup: some workflow was found writing the human-override value "approved"', approvedWriters.length > 0,
+   `writers checked: ${[...vocabByFile.keys()].join(', ')}`);
+ok('"approved" is inside demo-sheet-run\'s own extracted READY set (the override actually works)',
+   READY.has('approved'));
+
+// 'enrolled' means "already sent" everywhere it is written — every writer of it must agree that it
+// is a terminal state, i.e. NONE of them should also be treating it as still-runnable.
+const enrolledWriters = [...vocabByFile.entries()].filter(([, v]) => v.has('enrolled')).map(([f]) => f);
+ok('setup: more than one workflow was found writing "enrolled" (push-instantly / enrol-email / demo-sheet-run)',
+   enrolledWriters.length > 1, `writers: ${enrolledWriters.join(', ')}`);
+ok('"enrolled" is excluded from demo-sheet-run\'s READY set everywhere it is written (an enrolled lead must never restart)',
+   !READY.has('enrolled'));
+
+console.log(`\n[chain-integration] ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
