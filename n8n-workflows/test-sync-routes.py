@@ -32,7 +32,14 @@ COPY = {
     "n8n-workflows": ["sync-routes.py", "VIO-sendr-generate-page.json",
                       "VIO-operator-agent.json", "VIO-operator-agent-v2.json"],
     "reach-engine": ["engine.py", "config-oryoniq.json", "config-visioneerit.json",
-                     "campaign-oryoniq-pilot.json"],
+                     "campaign-oryoniq-pilot.json",
+                     # Every file named in sync-routes.py's CAMPAIGNS map must be here. The script
+                     # exits 2 ("anchor problem") when a declared campaign file is missing, which
+                     # is correct — a campaign the checker believes in but cannot read is exactly
+                     # the silent gap that let VisioneerIT's copy go unchecked. But it means this
+                     # sandbox has to stay complete: adding a product to CAMPAIGNS without adding
+                     # it here fails every fixture at once. (2026-08-29)
+                     "campaign-visioneerit-pilot.json"],
 }
 
 PASS, FAIL = [], []
@@ -445,8 +452,25 @@ case("truncating an agent's illustrative icp list is not drift (icp never reache
          "person_titles: ['Capture Manager']"),
      0, forbid_checks=NO_DRIFT)
 
-case("VisioneerIT having no Instantly campaign yet is a note, not drift", None, 0,
-     expect_text=("no Instantly campaign file yet",), forbid_checks=NO_DRIFT)
+# VisioneerIT HAS a campaign as of 2026-08-29, so the old "no campaign yet is a note" case is gone.
+# What matters now is the opposite: that its copy is actually CHECKED. While CAMPAIGNS mapped only
+# oryoniq, the checker skipped VisioneerIT entirely and said so in a note — which reads like a pass.
+# A product whose copy nothing verifies can drift from its config indefinitely.
+case("VisioneerIT's campaign is checked, not skipped", None, 0,
+     forbid_checks=NO_DRIFT,
+     forbid_text=("no Instantly campaign file yet",))
+
+
+def mutate_visioneerit_offer(sb):
+    c = sb.json("reach-engine/campaign-visioneerit-pilot.json")
+    v = c["sequences"][0]["steps"][0]["variants"][0]
+    cfg = sb.json("reach-engine/config-visioneerit.json")
+    v["body"] = v["body"].replace(cfg["offer"], "Something the config never said.")
+    sb.put_json("reach-engine/campaign-visioneerit-pilot.json", c)
+
+
+case("VisioneerIT campaign copy drifting from its config IS caught",
+     mutate_visioneerit_offer, 1, expect_checks=("instantly-copy",))
 
 
 # ------------------------------------------------------------------ 4. broken anchors
