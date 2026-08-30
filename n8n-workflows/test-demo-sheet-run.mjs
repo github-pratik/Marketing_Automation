@@ -56,8 +56,26 @@ ok('not_sent is READY — it is what the verified intake path writes',
    pick([row({ channel_state_email: 'not_sent' })]).length === 1);
 ok('  and it is case-insensitive', pick([row({ channel_state_email: 'NOT_SENT' })]).length === 1);
 ok('  while every other state still means hands off',
-   ['queued', 'sent', 'approved', 'positive', 'booked', 'rejected', 'unsubscribed']
+   ['queued', 'sent', 'positive', 'booked', 'rejected', 'unsubscribed', 'dropped', 'needs_review']
      .every((s) => pick([row({ channel_state_email: s })]).length === 0));
+
+// THE HUMAN OVERRIDE. visioneerit.com is a catch-all domain: it accepts mail for any address, so
+// Reoon returns is_deliverable:true but is_safe_to_send:false and intake parks the lead at
+// needs_review. Weakening the automatic rule would let unverified strangers through, so instead a
+// person who knows the mailbox exists marks that ONE row `approved`.
+ok('approved is READY — the human override for a lead verification will not pass',
+   pick([row({ channel_state_email: 'approved' })]).length === 1);
+ok('  case-insensitively', pick([row({ channel_state_email: 'APPROVED' })]).length === 1);
+ok('needs_review on its own is NOT ready — a human must actually act',
+   pick([row({ channel_state_email: 'needs_review' })]).length === 0);
+ok('dropped is never ready, no matter what',
+   pick([row({ channel_state_email: 'dropped' })]).length === 0);
+// The override buys the right to be DRAFTED, not the right to be SENT: the Slack gate still
+// stands behind it. If this ever stops being true the override becomes a way to mail anyone.
+ok('the Slack approval gate still sits in front of enrolment',
+   wf.nodes.some((n) => n.type === 'n8n-nodes-base.executeWorkflow'
+     && n.parameters.workflowId?.value === 'VIOwfBpushinst1')
+   && /GATED/.test(JSON.stringify(wf.nodes.map((n) => n.name))));
 
 // Blank spacer rows are not errors.
 ok('a wholly blank row is ignored',
@@ -146,14 +164,35 @@ ok('Shape for page reads identity from Shape for drafting, not from the draft ou
 ok('Shape for enrolment reads identity from Shape for page',
    /\$\('Shape for page'\)/.test(enrolCode));
 
+// The node now reads TWO upstream nodes by name — 'Generate Sendr page' for the URL and
+// 'Shape for page' for the lead — so the mock has to answer per node instead of returning the
+// same object for every name. A mock that ignores the node name cannot catch a node reading the
+// wrong upstream, which is exactly the bug this suite now guards.
 const runEnrol = (item, src) => new Function('$input', '$', enrolCode)(
-  { item: { json: item } }, () => ({ first: () => ({ json: src }) })).json;
+  { item: { json: item } },
+  (name) => ({ first: () => ({ json: name === 'Generate Sendr page' ? item : src }) })).json;
 const goodSrc = { _row: 2, _email: 'p@v.com', _first_name: 'P', _title: 'T', _company: 'V', _opener: 'o' };
 ok('a complete row produces one lead with its address',
-   runEnrol({ pageUrl: 'https://x' }, goodSrc).leads[0].contact_email === 'p@v.com');
-ok('the page url reaches the lead', runEnrol({ pageUrl: 'https://x' }, goodSrc).leads[0].sendr_page_url === 'https://x');
+   runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _product: 'oryoniq' }).leads[0].contact_email === 'p@v.com');
+
+// THE PRODUCT MUST BE THE LEAD'S OWN. It was the constant 'demo', which push-instantly maps to a
+// campaign carrying OryonIQ's copy — so an approved VisioneerIT lead would have been sent OryonIQ's
+// email while linking to a VisioneerIT page, and would have bypassed that tool's fail-closed
+// `visioneerit: null` refusal. Cross-product leakage is the mistake a prospect actually sees.
+ok('an OryonIQ lead enrols as oryoniq',
+   runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _product: 'oryoniq' }).product === 'oryoniq');
+ok('a VisioneerIT lead enrols as visioneerit, NOT as the OryonIQ-copy demo campaign',
+   runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _product: 'visioneerit' }).product === 'visioneerit');
+ok('the product is never the hardcoded string "demo"',
+   !/^\s*product:\s*'demo',/m.test(enrolCode));
+{
+  let t = null;
+  try { runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _product: '' }); } catch (e) { t = e.message; }
+  ok('a lead with no product refuses before a human is asked', t !== null && /REFUSED/.test(t), t);
+}
+ok('the page url reaches the lead', runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _product: 'oryoniq' }).leads[0].sendr_page_url === 'https://x');
 let threw = null;
-try { runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _email: '' }); } catch (e) { threw = e.message; }
+try { runEnrol({ pageUrl: 'https://x' }, { ...goodSrc, _product: 'oryoniq', _email: '' }); } catch (e) { threw = e.message; }
 ok('a row that LOST its email refuses here, before a human is asked',
    threw !== null && /REFUSED/.test(threw), threw || 'did not throw');
 
@@ -223,6 +262,43 @@ const names = new Set(wf.nodes.map(n => n.name));
 for (const [src, v] of Object.entries(wf.connections))
   for (const g of v.main) for (const c of g)
     ok(`connection ${src} -> ${c.node} resolves`, names.has(c.node));
+
+
+// ---------- the page URL must survive the claim step ----------
+// Sendr really did build the page and the enrolment gate still refused with "no sendr_page_url",
+// because 'Claim row in sheet' sits between the page call and the readers and a Sheets update
+// outputs the ROW IT WROTE. Both readers must name the page node, never read $input. (2026-08-29)
+{
+  const order = [];
+  let cur = 'Generate Sendr page';
+  while (cur && order.length < 10) {
+    const nxt = wf.connections[cur]?.main?.[0]?.[0]?.node;
+    if (!nxt) break;
+    order.push(nxt); cur = nxt;
+  }
+  ok('a Sheets write really does sit between the page call and enrolment',
+     order.indexOf('Claim row in sheet') > -1
+     && order.indexOf('Claim row in sheet') < order.indexOf('Shape for enrolment'),
+     order.join(' -> '));
+
+  for (const node of ['Shape for enrolment', 'Claim row (pending_approval)']) {
+    const js = jsOf(node);
+    ok(`${node} reads the page URL from the page node by name`,
+       /\$\('Generate Sendr page'\)/.test(js), 'reads $input instead — the sheet row has no pageUrl');
+    ok(`${node} does not read pageUrl off its own input`,
+       !/\$input\.item\.json\.pageUrl/.test(js));
+  }
+  // The field that never existed. Match the ASSIGNMENT, not the word — the comment above the fix
+  // names `_page_pending` on purpose so the next reader knows what went wrong.
+  ok('the claim step no longer assigns the field Shape for page never produced',
+     !/sendr_page_url:\s*src\._page_pending/.test(jsOf('Claim row (pending_approval)')));
+  ok('  it writes the real page URL instead',
+     /sendr_page_url:\s*page\b/.test(jsOf('Claim row (pending_approval)')));
+
+  // An empty page URL must stop the lead, not ship a broken sentence: step 1's CTA IS the merge tag.
+  const enrol = jsOf('Shape for enrolment');
+  ok('enrolment refuses a lead with no page URL', /REFUSED[^`]*Sendr page URL/.test(enrol));
+}
 
 console.log(`\n[demo-sheet-run] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

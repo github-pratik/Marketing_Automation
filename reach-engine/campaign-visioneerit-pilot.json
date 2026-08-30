@@ -1,0 +1,84 @@
+{
+  "_comment": "Instantly campaign definition for the VisioneerIT reach-engine pilot. NOT YET CREATED in Instantly - no campaign id exists yet; the parent agent creates it there from this file. Built to the same rules as campaign-oryoniq-pilot.json and checked by hand against n8n-workflows/sync-routes.py's check_instantly_copy and check_cta_sentence (note: sync-routes.py's CAMPAIGNS map does not list this file yet, so running the script today reports 'no Instantly campaign file yet - nothing to check' for visioneerit rather than actively validating it; wiring that in is a separate change to sync-routes.py, which this task does not own). {{personalization}} is filled per-lead from the engine's opener; {{sendrPageUrl}} is the lead's own Sendr page, supplied per-lead as a TOP-LEVEL custom_variable (nested inside `payload` it is silently discarded and the API still returns 201). 4-step sequence landing roughly day 0 / 3 / 7 / 13, same cadence as the OryonIQ pilot. BLOCK ORDER in step 1 is greeting / {{personalization}} / offer / ask / page link / sign-off, matching the OryonIQ file: the ask sits BEFORE the link on purpose, as the real call to action, with the page as the lower-commitment alternative. The two step-1 variants share their CTA sentence AND their ask, word for word, and differ ONLY in the offer paragraph - that is the A/B question: variant A states plainly what VisioneerIT does (the config's `offer`, verbatim), variant B leads with 'the architecture is not what usually slips, the timeline does' and arrives at the same offer from the risk side. Testing more than one change at once would tell us nothing about which one moved the number. Steps 2-4 subjects are deliberately EMPTY so the follow-ups thread under step 1. Every step signs off with the config's `sender` (Ellen / VisioneerIT). TRUTH CONSTRAINT observed throughout: VisioneerIT sells zero-trust architecture, AI-assisted security operations, and CMMC readiness to federal and SLED agencies - nothing here claims a specific customer, certification, contract vehicle, metric, or a 'free tier' (unlike OryonIQ, VisioneerIT is not known to have one, so step 4 closes on the contact page instead of inventing a no-cost offer). The September 30, 2027 DoD zero-trust deadline in config-visioneerit.json's `signal` is DoD-specific, not universal across every federal/SLED recipient, so no step asserts that exact date applies to the reader's own organization - the copy asks about 'zero-trust and CMMC readiness' generally instead of naming the deadline as theirs.",
+  "name": "VisioneerIT - Reach Engine Pilot (2026-08)",
+  "campaign_schedule": {
+    "schedules": [
+      {
+        "name": "US business hours",
+        "timing": {
+          "from": "09:00",
+          "to": "17:00"
+        },
+        "days": {
+          "1": true,
+          "2": true,
+          "3": true,
+          "4": true,
+          "5": true
+        },
+        "timezone": "America/Detroit"
+      }
+    ]
+  },
+  "sequences": [
+    {
+      "steps": [
+        {
+          "type": "email",
+          "delay": 0,
+          "delay_unit": "days",
+          "variants": [
+            {
+              "subject": "zero-trust and CMMC readiness at {{companyName}}",
+              "body": "<div>Hi {{firstName}},</div><div><br></div><div>{{personalization}}</div><div><br></div><div>VisioneerIT stands up zero-trust architecture and AI-assisted security operations for federal and SLED teams, and gets it running in months rather than as a multi-year program, with CMMC readiness handled alongside.</div><div><br></div><div>Worth fifteen minutes to see where {{companyName}}'s current setup stands on zero-trust and CMMC readiness?</div><div><br></div><div>I put together a short page on {{companyName}}'s zero-trust readiness: <a href=\"{{sendrPageUrl}}\">{{sendrPageUrl}}</a></div><div><br></div><div>Ellen<br>VisioneerIT</div>"
+            },
+            {
+              "subject": "the part of a zero-trust rollout that actually slips",
+              "body": "<div>Hi {{firstName}},</div><div><br></div><div>{{personalization}}</div><div><br></div><div>The architecture decisions are usually the easier part of a zero-trust rollout. The harder part is standing it up, proving CMMC readiness alongside it, and doing both without a multi-year program eating the timeline. VisioneerIT runs that build for federal and SLED teams so the calendar is not the risk.</div><div><br></div><div>Worth fifteen minutes to see where {{companyName}}'s current setup stands on zero-trust and CMMC readiness?</div><div><br></div><div>I put together a short page on {{companyName}}'s zero-trust readiness: <a href=\"{{sendrPageUrl}}\">{{sendrPageUrl}}</a></div><div><br></div><div>Ellen<br>VisioneerIT</div>"
+            }
+          ]
+        },
+        {
+          "type": "email",
+          "delay": 3,
+          "delay_unit": "days",
+          "variants": [
+            {
+              "subject": "",
+              "body": "<div>Hi {{firstName}},</div><div><br></div><div>Rather than restate the pitch, here is the whole thing as something you can test yourself:</div><div><br></div><div>Pick one system {{companyName}} runs today that touches CUI or FCI. VisioneerIT will show you what zero-trust segmentation and CMMC-ready controls look like around it, and a realistic timeline to get there. If none of that is useful, we are not useful to you.</div><div><br></div><div>If it is the kind of read you would want before an assessment finds the gaps for you, I can walk through it.</div><div><br></div><div>Ellen<br>VisioneerIT</div>"
+            }
+          ]
+        },
+        {
+          "type": "email",
+          "delay": 4,
+          "delay_unit": "days",
+          "variants": [
+            {
+              "subject": "",
+              "body": "<div>Hi {{firstName}},</div><div><br></div><div>One angle I left out, for the case where {{companyName}} already has a modernization plan in motion:</div><div><br></div><div>A roadmap tells you what to build. It does not tell you whether the sequencing gets you to zero-trust on time, or whether CMMC readiness is being handled alongside the build instead of bolted on after it. That is the part VisioneerIT is set up to run.</div><div><br></div><div>Worth fifteen minutes to see whether it holds up against your current plan?</div><div><br></div><div>Ellen<br>VisioneerIT</div>"
+            }
+          ]
+        },
+        {
+          "type": "email",
+          "delay": 6,
+          "delay_unit": "days",
+          "variants": [
+            {
+              "subject": "",
+              "body": "<div>Hi {{firstName}},</div><div><br></div><div>Last note from me on this, no reply needed.</div><div><br></div><div>If where {{companyName}} stands on zero-trust and CMMC readiness ever moves up your list, reply to this and it will reach me.</div><div><br></div><div>Either way, here is where to see what VisioneerIT does: <a href=\"https://www.visioneerit.com/contact\">https://www.visioneerit.com/contact</a></div><div><br></div><div>Good luck with the rollout.</div><div><br></div><div>Ellen<br>VisioneerIT</div>"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "email_list": [
+    "ellen@visioneerit.com"
+  ],
+  "stop_on_reply": true,
+  "text_only": false,
+  "open_tracking": false,
+  "link_tracking": false
+}

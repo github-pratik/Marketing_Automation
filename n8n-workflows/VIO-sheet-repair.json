@@ -25,7 +25,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Same fail-closed gate every VIO webhook uses. This one writes into a tab staff type into.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nconst b = item.body || {};\n// A caller may seed a test lead. Defaults are a clearly-fake lead at a domain nobody owns, so an\n// accidental run cannot mail a real person.\nreturn { json: {\n  status: '', notes: '', mapped_lead_id: '',\n  Product: b.Product || 'OryonIQ',\n  'First name': b.first_name || 'Wiring',\n  'Last name': b.last_name || 'Test',\n  'Company name': b.company || 'Wiring Test Co',\n  'Email address': b.email || 'wiring-test@example.invalid',\n  'Website': b.website || 'example.invalid',\n} };"
+        "jsCode": "// Fail-closed gate, then route. Two actions, because both are operator chores that need the\n// service-account credential and neither belongs in a scheduled workflow.\n//\n//   seed    — put a row into the Inbox tab exactly as a human typing would. Also bootstraps the\n//             header row, which a Sheets append does when the tab is empty.\n//   approve — mark ONE lead in Leads as `approved`.\n//\n// WHY `approve` EXISTS. A catch-all domain accepts mail for any address, so no verifier can\n// confirm a specific mailbox on it. Reoon returns is_deliverable:true, is_safe_to_send:false, and\n// intake correctly parks the lead at needs_review. Loosening that rule would let unverified\n// strangers into the pipeline. Instead a person who KNOWS a mailbox exists vouches for that ONE\n// lead by address. It buys the lead the right to be DRAFTED — the Slack approval gate still\n// stands between it and any send.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\n\nconst b = item.body || {};\nconst action = String(b.action || 'seed').toLowerCase();\nif (action !== 'seed' && action !== 'approve') {\n  throw new Error(`REFUSED: unknown action '${b.action}' — expected 'seed' or 'approve'`);\n}\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\nif (action === 'approve') {\n  const email = String(b.email || '').trim().toLowerCase();\n  // Vouching for \"whatever matches\" is how the wrong person gets mailed. One exact address only.\n  if (!EMAIL.test(email)) throw new Error('REFUSED: approve needs one valid email address');\n  return { json: { action, email, force: b.force === true, reason: String(b.reason || 'human vouched: mailbox known to exist on a catch-all domain') } };\n}\nreturn { json: {\n  action, status: '', notes: '', mapped_lead_id: '',\n  Product: b.Product || 'OryonIQ',\n  'First name': b.first_name || 'Wiring',\n  'Last name': b.last_name || 'Test',\n  'Company name': b.company || 'Wiring Test Co',\n  'Email address': b.email || 'wiring-test@example.invalid',\n  'Website': b.website || 'example.invalid',\n} };"
       },
       "id": "vio-rp-auth",
       "name": "Authenticate (fail-closed)",
@@ -147,8 +147,8 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        -200,
-        0
+        -100,
+        120
       ],
       "credentials": {
         "googleApi": {
@@ -177,8 +177,8 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        0,
-        0
+        100,
+        120
       ],
       "credentials": {
         "googleApi": {
@@ -197,9 +197,163 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        200,
+        300,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-rp-isapprove",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "approve",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-rp-route",
+      "name": "Approve a lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -300,
         0
       ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-rp-readleads",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -100,
+        -180
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Find the ONE Leads row for this address and mark it approved.\n//\n// Refuses rather than guesses in every ambiguous case: no match, more than one match, or a row\n// already past this point in the pipeline. Vouching is a statement about a specific person, so a\n// fuzzy match here would put the wrong lead in front of a stranger.\nconst want = $('Authenticate (fail-closed)').first().json;\nconst email = String(want.email || '').toLowerCase();\nconst rows = $input.all().map((i) => i.json || {});\nconst hits = rows.filter((r) => String(r.contact_email || '').trim().toLowerCase() === email);\n\nif (hits.length === 0) throw new Error(`REFUSED: no lead in Leads with address ${email}`);\nif (hits.length > 1) throw new Error(`REFUSED: ${hits.length} rows share ${email} — refusing to guess which one`);\n\nconst row = hits[0];\nconst state = String(row.channel_state_email || '').trim().toLowerCase();\n// Only a lead that verification PARKED may be vouched for. Never resurrect one that was rejected\n// as undeliverable, and never re-open one already moving.\nif (state === 'dropped' || state === 'bounced' || state === 'unsubscribed') {\n  throw new Error(`REFUSED: ${email} is '${state}' — that is a verified negative, not a judgement call`);\n}\nconst VOUCHABLE = new Set(['needs_review', '']);\n// `pending_approval` means a human was asked and has not answered — re-approving that would post\n// a SECOND Slack request for the same lead. But a run that errors AFTER claiming the row (the\n// enrolment gate refusing, say) strands it in that state forever, and nothing else can free it.\n// So it is reachable only with an explicit force, which the caller has to mean.\nif (state === 'pending_approval' && want.force !== true) {\n  throw new Error(`REFUSED: ${email} is 'pending_approval' — a human has already been asked. Pass force:true only to free a row stranded by a failed run.`);\n}\nif (!VOUCHABLE.has(state) && state !== 'pending_approval') {\n  throw new Error(`REFUSED: ${email} is '${state}' — it is already in the pipeline, nothing to vouch for`);\n}\nreturn [{ json: {\n  row_number: row.row_number,\n  channel_state_email: 'approved',\n  verify_reason: String(want.reason || '').slice(0, 300),\n  updated_at: new Date().toISOString(),\n} }];"
+      },
+      "id": "vio-rp-mkapprove",
+      "name": "Mark approved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel_state_email",
+              "displayName": "channel_state_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "verify_reason",
+              "displayName": "verify_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "id": "vio-rp-wrapprove",
+      "name": "Write approval",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        300,
+        -180
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
     }
   ],
   "connections": {
@@ -218,7 +372,47 @@
       "main": [
         [
           {
+            "node": "Approve a lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approve a lead?": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Seed Inbox row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Mark approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark approved": {
+      "main": [
+        [
+          {
+            "node": "Write approval",
             "type": "main",
             "index": 0
           }

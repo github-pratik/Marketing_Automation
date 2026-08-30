@@ -317,12 +317,6 @@
           "mode": "list",
           "cachedResultName": "VIO-intake-verify-curate"
         },
-        "workflowInputs": {
-          "mappingMode": "defineBelow",
-          "value": {},
-          "matchingColumns": [],
-          "schema": []
-        },
         "options": {
           "waitForSubWorkflow": true
         }
@@ -335,7 +329,7 @@
         640,
         -140
       ],
-      "notes": "Runs ONCE FOR ALL ITEMS on purpose — the opposite of VIO-run-campaign's per-lead call. Intake is a batch pipeline (every node past Normalize Lead is $input.all().map), and its two Sheets reads are executeOnce, so one call verifies the whole batch for one read of Leads and one of Suppression. mode:'each' here would re-read both sheets per lead. The target MUST be active or this fails on n8n 2.22.6."
+      "notes": "Runs ONCE FOR ALL ITEMS on purpose — the opposite of VIO-run-campaign's per-lead call. Intake is a batch pipeline (every node past Normalize Lead is $input.all().map), and its two Sheets reads are executeOnce, so one call verifies the whole batch for one read of Leads and one of Suppression. mode:'each' here would re-read both sheets per lead. The target MUST be active or this fails on n8n 2.22.6. Carries NO workflowInputs block on purpose: intake's trigger is inputSource:passthrough, and every other Execute Workflow caller in this repo omits it. A declared schema is exactly how fields get silently dropped in transit."
     },
     {
       "parameters": {

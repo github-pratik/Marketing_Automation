@@ -149,6 +149,9 @@ PRODUCTS = {
 # and "built wrong" are different states and must read differently.
 CAMPAIGNS = {
     "oryoniq": "campaign-oryoniq-pilot.json",
+    # Added 2026-08-29. Without this entry the checker SKIPPED VisioneerIT entirely and
+    # reported "no Instantly campaign file yet" — so its copy could drift from the config unchecked.
+    "visioneerit": "campaign-visioneerit-pilot.json",
 }
 
 # Sendr-side labels that have no home in the config (they name the Sendr TEMPLATE, not the
