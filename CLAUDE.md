@@ -138,8 +138,9 @@ the current pipeline.
 
 **Google Sheets is LIVE (2026-08-16).** Service-account auth (not OAuth — it installs headlessly),
 n8n credential `VIO Google Sheets` (`VIOgsheetcred01`), spreadsheet id
-`1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`. **Six tabs now** — the `Inbox` tab (2026-08-29) is
-the one staff type into; every other tab is written by workflows and read by humans. Setup is one command:
+`1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`. **Seven tabs now** — `Inbox` (2026-08-29) is the one staff
+type into, and `System` (2026-08-30) is the liveness board that tells them the pollers are alive;
+every other tab is written by workflows and read by humans. Setup is one command:
 `n8n-workflows/setup-google-sheets.py`. **Sheet writes are not wired into the workflows yet.**
 
 **Sendr GIF: FIXED 2026-08-16.** Root cause was exactly what the webhook said —

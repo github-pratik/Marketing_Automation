@@ -190,6 +190,153 @@
           "name": "VIO Google Sheets"
         }
       }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sheet",
+        "operation": "create",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "title": "System",
+        "options": {}
+      },
+      "id": "vio-pv-sys",
+      "name": "Create System tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        400,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notes": "400s when the tab exists — the normal case. Both flags needed: continueRegularOutput alone still emits zero items and stops the chain."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Header row for the System tab — the liveness board staff glance at.\n//\n// This tab holds NO lead data. It is one row per scheduled workflow, rewritten on every cycle, so\n// a human typing into the Inbox can tell \"working, nothing to do\" from \"dead\". Both schedules are\n// silent when idle — the mapper's chain stops at the sheet read when nothing is claimable — so\n// without this the two states look identical from inside the spreadsheet.\n//\n// A Sheets append bootstraps the header row when the tab is empty, which is the only way to\n// create one: an append on a tab with NO header matches nothing, writes nothing, and returns 200.\nreturn [{ json: { workflow: '', last_run_at: '', checked: '', waiting: '',\n                  last_result: '', every: '', next_check_at: '' } }];"
+      },
+      "id": "vio-pv-sysrow",
+      "name": "System header row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "System",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_run_at",
+              "displayName": "last_run_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "checked",
+              "displayName": "checked",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "waiting",
+              "displayName": "waiting",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_result",
+              "displayName": "last_result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "every",
+              "displayName": "every",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "next_check_at",
+              "displayName": "next_check_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "insertInNewColumn"
+        }
+      },
+      "id": "vio-pv-syswrite",
+      "name": "Write System header",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        800,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      }
     }
   ],
   "connections": {
@@ -231,6 +378,39 @@
         [
           {
             "node": "Write header row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write header row": {
+      "main": [
+        [
+          {
+            "node": "Create System tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create System tab": {
+      "main": [
+        [
+          {
+            "node": "System header row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "System header row": {
+      "main": [
+        [
+          {
+            "node": "Write System header",
             "type": "main",
             "index": 0
           }

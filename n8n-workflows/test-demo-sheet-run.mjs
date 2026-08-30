@@ -237,8 +237,15 @@ ok('every Sheets node is pinned to the VIO credential by id',
 // appends, which is a loop against real Reoon and OpenAI spend.
 // It now polls the SAME tab the pipeline writes to, so the loop guard is the source_config filter
 // asserted above — not tab separation. Both must hold together.
+// The LEAD DATA must all live on one tab — the loop guard depends on that plus the source_config
+// filter. The System tab is exempt: it carries only the liveness heartbeat, never a lead, so it
+// cannot feed anything back into the poll.
 const tabs = sheetNodes.map(n => n.parameters.sheetName?.value);
-ok('operates on the Leads tab', tabs.every(t => t === 'Leads'), tabs.join(','));
+ok('every lead-data node operates on the Leads tab',
+   tabs.filter(t => t !== 'System').every(t => t === 'Leads'), tabs.join(','));
+ok('the only non-Leads tab touched is the heartbeat',
+   sheetNodes.filter(n => n.parameters.sheetName?.value === 'System')
+             .every(n => n.name === 'Write heartbeat'));
 ok('the loop guard is the source_config filter', /source_config/.test(pickCode) && /manual/.test(pickCode));
 ok('no A1 range anywhere (live column order does not match the docs)',
    !/"[A-Z]{1,2}[0-9]{1,4}:[A-Z]{1,2}/.test(JSON.stringify(wf)));
@@ -376,6 +383,43 @@ for (const [src, v] of Object.entries(wf.connections))
      /enrolled \? 'enrolled' : 'needs_review'/.test(upd));
 }
 
+// ---------- the heartbeat ----------
+// Staff type into this spreadsheet and nothing on screen tells them the poller is alive. Both
+// schedules are silent by design when there is nothing to do — the mapper's chain literally stops
+// at the sheet read — so "working, nothing to do" and "dead" looked identical from the sheet.
+{
+  const beat = (rows) => new Function('$input', jsOf('Heartbeat'))(
+    { all: () => rows.map((j) => ({ json: j })) }).json;
+  const readNode = 'Read Leads';
+
+  // It must hang off the sheet READ, so it reports what was actually seen rather than just that a
+  // timer fired — and it must be the FIRST branch, so a throw further down cannot swallow it.
+  const branch = wf.connections[readNode].main[0].map((c) => c.node);
+  ok('the heartbeat hangs off the sheet read', branch.includes('Heartbeat'), branch.join(', '));
+  ok('  and runs before the work, so a later throw cannot swallow it', branch[0] === 'Heartbeat');
+  // Without this the read emits nothing on an empty tab and the heartbeat never fires — exactly
+  // when a human most needs to know the system is alive.
+  ok('the read always emits, so an empty tab still produces a heartbeat',
+     wf.nodes.find((n) => n.name === readNode).alwaysOutputData === true);
+
+  const b = beat([{ row_number: 2, status: '', junk: 'x' }]);
+  ok('it names the workflow in words a human recognises', /VIO-demo-sheet-run/.test(b.workflow));
+  ok('it records when it last ran', typeof b.last_run_at === 'string' && b.last_run_at.length > 5);
+  ok('  in local time, not UTC arithmetic', !/UTC/.test(b.last_run_at));
+  ok('it says when the next check is due', typeof b.next_check_at === 'string' && b.next_check_at.length > 3);
+  ok('it states the interval', b.every === '3 min');
+  ok('it reports what it saw', /leads|lead|row/i.test(String(b.checked)));
+  ok('an idle cycle still reports a result', typeof b.last_result === 'string' && b.last_result.length > 5);
+
+  // A write failure must never take down the run it is only reporting on.
+  const w = wf.nodes.find((n) => n.name === 'Write heartbeat');
+  ok('the heartbeat write cannot break the run it reports on', w.onError === 'continueRegularOutput');
+  ok('  it updates one row per workflow instead of appending forever',
+     w.parameters.operation === 'appendOrUpdate' && w.parameters.columns.matchingColumns.includes('workflow'));
+  ok('  and writes to the System tab', w.parameters.sheetName.value === 'System');
+}
+
 console.log(`\n[demo-sheet-run] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
+
 

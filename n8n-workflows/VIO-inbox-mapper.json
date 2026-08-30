@@ -53,7 +53,8 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
@@ -344,6 +345,126 @@
         840,
         -140
       ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// HEARTBEAT — so a human can tell \"working, nothing to do\" from \"dead\".\n//\n// Staff type into this spreadsheet and nothing on screen tells them the poller is alive. Both\n// scheduled workflows are silent by design when there is nothing to pick up: the mapper's chain\n// literally stops at the sheet read when no row is claimable, so an idle system and a broken one\n// look identical from the sheet. This writes one row per workflow into the `System` tab on EVERY\n// cycle, whether or not it found work.\n//\n// It hangs off the sheet READ rather than the schedule trigger, so it reports what was actually\n// seen, not merely that a timer fired. It is a parallel branch and the first one connected, so it\n// records the check even if the work that follows throws.\nconst EVERY_MIN = 2;\nconst rows = $input.all().map((i) => i.json || {});\nconst real = rows.filter((r) => Object.keys(r).some((k) => k !== 'row_number' && String(r[k] ?? '').trim()));\nconst waiting = real.filter((r) => !String(r.status ?? '').trim()).length;\nconst now = new Date();\nconst next = new Date(now.getTime() + EVERY_MIN * 60000);\n// Local time, not UTC. This row exists to be glanced at by staff mid-typing — \"17:48\" is a thing\n// a person can compare to the clock on their wall; \"21:48 UTC\" needs arithmetic first, which is\n// exactly the friction that makes a status row go unread.\nconst TZ = 'America/Detroit';\nconst local = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true,\n  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });\nconst hhmm = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true, hour: 'numeric', minute: '2-digit' });\nreturn { json: {\n  workflow: \"VIO-inbox-mapper (reads your Inbox)\",\n  last_run_at: local(now),\n  checked: `${real.length} row(s) in Inbox`,\n  waiting: waiting,\n  // Deliberately \"not yet imported\" rather than \"picking up\": a row still being typed (no email\n  // address yet) counts here but is intentionally skipped until it is finished. Promising to pick\n  // it up this cycle would be a lie the staff member watches fail.\n  last_result: waiting ? `${waiting} row(s) not yet imported` : 'all rows imported, nothing waiting',\n  every: `${EVERY_MIN} min`,\n  next_check_at: hhmm(next),\n} };"
+      },
+      "id": "vio-map-beat",
+      "name": "Heartbeat",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "System",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "workflow"
+          ],
+          "schema": [
+            {
+              "id": "workflow",
+              "displayName": "workflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_run_at",
+              "displayName": "last_run_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "checked",
+              "displayName": "checked",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "waiting",
+              "displayName": "waiting",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_result",
+              "displayName": "last_result",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "every",
+              "displayName": "every",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "next_check_at",
+              "displayName": "next_check_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "handlingExtraData": "insertInNewColumn"
+        }
+      },
+      "id": "vio-map-beat-w",
+      "name": "Write heartbeat",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -560,
+        220
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -361,6 +482,11 @@
     "Read Inbox": {
       "main": [
         [
+          {
+            "node": "Heartbeat",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Map headers (alias table)",
             "type": "main",
@@ -487,6 +613,17 @@
         [
           {
             "node": "Shape Inbox status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Heartbeat": {
+      "main": [
+        [
+          {
+            "node": "Write heartbeat",
             "type": "main",
             "index": 0
           }

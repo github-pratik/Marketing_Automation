@@ -1,8 +1,8 @@
 # VisioneerIT Outbound — Google Sheet schema
 
 The Sheet is the data bus (every `VIO-` workflow reads/writes it), the dashboard, the pilot's
-cost meter, and — since 2026-08-21 — its targeting memory. **Six tabs** — `Inbox`, `Leads`,
-`Suppression`, `Events`, `Costs`, `Segments`. Header = row 1. Workflows key on exact column names — don't rename a
+cost meter, and — since 2026-08-21 — its targeting memory. **Seven tabs** — `Inbox`, `System`,
+`Leads`, `Suppression`, `Events`, `Costs`, `Segments`. Header = row 1. Workflows key on exact column names — don't rename a
 column without updating every workflow that reads/writes it.
 
 **LIVE since 2026-08-16.** Spreadsheet `VisioneerIT Outbound`, id `1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`, four tabs built
@@ -267,3 +267,38 @@ does not appear anywhere in the email address is **flagged, not corrected** — 
 SPEASE` against `Kevin.Spease@`, which is one person's name pasted next to another's address. The
 mapper will not guess which one is right; the `notes` column asks you to check.
 
+
+---
+
+## Tab 7 — `System` (is it alive?) — LIVE since 2026-08-30
+
+**One row per scheduled workflow, rewritten on every cycle.** It holds no lead data at all. It
+exists to answer one question a staff member cannot otherwise answer from inside the spreadsheet:
+*is anything actually running?*
+
+Both schedules are silent by design when there is nothing to do — the mapper's chain literally
+stops at the sheet read when no row is claimable — so **"working, nothing to do" and "dead" looked
+identical**. This tab separates them.
+
+| column | means |
+|---|---|
+| `workflow` | which poller, in plain words (`VIO-inbox-mapper (reads your Inbox)`) |
+| `last_run_at` | when it last looked, in local time — not UTC |
+| `checked` | how much it saw (`5 row(s) in Inbox`) |
+| `waiting` | how many rows are not yet processed |
+| `last_result` | what it concluded (`all rows imported, nothing waiting`) |
+| `every` | its interval (`2 min` / `3 min`) |
+| `next_check_at` | when the next look is due |
+
+**How to read it:** if `last_run_at` is within roughly one interval of now, the system is alive.
+If it is stale by several intervals, something is wrong — check the Slack error channel.
+
+**Two design points worth keeping.** The heartbeat hangs off the sheet READ, not the schedule
+trigger, so it reports what was actually seen rather than merely that a timer fired; and it is the
+FIRST branch off that read, so a failure further down the chain cannot swallow it. Its write is
+`onError: continueRegularOutput` — a status row must never be able to break the run it is only
+reporting on.
+
+**`waiting` counts rows not yet imported, not rows about to be.** A row still being typed (no email
+address yet) is counted here but deliberately skipped until it is finished, so the wording avoids
+promising to pick it up this cycle.
