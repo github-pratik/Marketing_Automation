@@ -155,7 +155,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -186,7 +189,10 @@
           "name": "VIO Google Sheets"
         }
       },
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -261,7 +267,10 @@
           "name": "VIO Google Sheets"
         }
       },
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -353,7 +362,23 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Drop routing keys before they can become sheet columns.\n//\n// `action` tells THIS workflow which branch to take; it is not lead data. The append below runs\n// with handlingExtraData:insertInNewColumn — which it must, because that is what bootstraps the\n// header row on an empty tab — so any stray key on the item becomes a permanent column on a tab\n// staff type into. It did: an `action` column appeared on Inbox, and the mapper then spent an\n// OpenAI call on every row trying to work out what it meant.\nconst { action, force, reason, ...row } = $input.item.json;\nreturn { json: row };"
+      },
+      "id": "vio-rp-strip",
+      "name": "Strip routing keys",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        120
+      ]
     }
   ],
   "connections": {
@@ -390,7 +415,7 @@
         ],
         [
           {
-            "node": "Seed Inbox row",
+            "node": "Strip routing keys",
             "type": "main",
             "index": 0
           }
@@ -435,6 +460,17 @@
         [
           {
             "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Strip routing keys": {
+      "main": [
+        [
+          {
+            "node": "Seed Inbox row",
             "type": "main",
             "index": 0
           }

@@ -38,7 +38,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Turn an Instantly event into the two things the sheet actually needs: an Events row (what\n// happened, when) and \u2014 only sometimes \u2014 a channel_state_email transition.\n//\n// A SEND IS NOT A STAGE CHANGE. The live sheet's channel_state_email dropdown is an engagement\n// ladder: needs_review > pending_approval > approved > enrolled > replied > positive > booked,\n// plus terminal rejected/dropped/unsubscribed/bounced. There is no 'sent' in it, and inventing one\n// would put an off-vocabulary value into a column staff filter on. Delivery is a FACT with a\n// timestamp, so it goes to Events and the stage stays 'enrolled' until the prospect does something.\n//\n// Replies are deliberately NOT handled here \u2014 VIO-inbound-reply-to-call already owns them,\n// including the OpenAI sentiment pass. Two workflows writing reply state would race.\nconst b = $input.first().json || {};\nconst clean = (v, n = 200) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, n) : '');\nconst ev = clean(b.event_type || b.event || b.type, 60).toLowerCase();\nconst email = clean(b.lead_email || b.email || b.contact_email || b.to_email, 160).toLowerCase();\nconst campaign = clean(b.campaign_id || b.campaign, 80);\nconst when = clean(b.timestamp || b.event_timestamp, 40) || new Date().toISOString();\n\nif (!/^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/.test(email)) {\n  throw new Error(`REFUSED: no usable lead email on this event (${ev || 'unknown type'}) \u2014 refusing to guess which row to change.`);\n}\n\n// stage: null means \"record the event, do not touch the ladder\".\nlet action = null, stage = null, suppress = null;\nif (/bounce/.test(ev))            { action = 'bounced';      stage = 'bounced';      suppress = 'bounced'; }\nelse if (/unsub|opt.?out/.test(ev)){ action = 'unsubscribed'; stage = 'unsubscribed'; suppress = 'opt_out'; }\nelse if (/sent|delivered/.test(ev)){ action = 'send'; }\nelse if (/open/.test(ev))          { action = 'open'; }\nelse if (/click|link/.test(ev))    { action = 'click'; }\nelse if (/repl/.test(ev))          { action = 'reply_seen'; }   // recorded only; the reply brain owns the stage\nelse                               { action = `other:${ev || 'unknown'}`; }\n\nreturn [{ json: { email, campaign, when, event_type: ev, action, stage, suppress } }];\n"
+        "jsCode": "// Turn an Instantly event into the two things the sheet actually needs: an Events row (what\n// happened, when) and — only sometimes — a channel_state_email transition.\n//\n// A SEND IS NOT A STAGE CHANGE. The live sheet's channel_state_email dropdown is an engagement\n// ladder: needs_review > pending_approval > approved > enrolled > replied > positive > booked,\n// plus terminal rejected/dropped/unsubscribed/bounced. There is no 'sent' in it, and inventing one\n// would put an off-vocabulary value into a column staff filter on. Delivery is a FACT with a\n// timestamp, so it goes to Events and the stage stays 'enrolled' until the prospect does something.\n//\n// Replies are deliberately NOT handled here — VIO-inbound-reply-to-call already owns them,\n// including the OpenAI sentiment pass. Two workflows writing reply state would race.\nconst b = $input.first().json || {};\nconst clean = (v, n = 200) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, n) : '');\nconst ev = clean(b.event_type || b.event || b.type, 60).toLowerCase();\nconst email = clean(b.lead_email || b.email || b.contact_email || b.to_email, 160).toLowerCase();\nconst campaign = clean(b.campaign_id || b.campaign, 80);\nconst when = clean(b.timestamp || b.event_timestamp, 40) || new Date().toISOString();\n\nif (!/^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/.test(email)) {\n  throw new Error(`REFUSED: no usable lead email on this event (${ev || 'unknown type'}) — refusing to guess which row to change.`);\n}\n\n// stage: null means \"record the event, do not touch the ladder\".\nlet action = null, stage = null, suppress = null;\nif (/bounce/.test(ev))            { action = 'bounced';      stage = 'bounced';      suppress = 'bounced'; }\nelse if (/unsub|opt.?out/.test(ev)){ action = 'unsubscribed'; stage = 'unsubscribed'; suppress = 'opt_out'; }\nelse if (/sent|delivered/.test(ev)){ action = 'send'; }\nelse if (/open/.test(ev))          { action = 'open'; }\nelse if (/click|link/.test(ev))    { action = 'click'; }\nelse if (/repl/.test(ev))          { action = 'reply_seen'; }   // recorded only; the reply brain owns the stage\nelse                               { action = `other:${ev || 'unknown'}`; }\n\nreturn [{ json: { email, campaign, when, event_type: ev, action, stage, suppress } }];\n"
       },
       "id": "vio-ie-class",
       "name": "Classify Event",
@@ -53,7 +53,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Fan out into the rows each tab needs. Only what actually happened is written.\nconst e = $input.first().json;\nconst out = [{ json: {\n  _kind: 'event',\n  timestamp: e.when, lead_email: e.email, tool: 'instantly', action: e.action, units: 1,\n  est_cost_usd: '',                       // measure, don't estimate \u2014 the webhook itself bills nothing\n  result: `instantly ${e.event_type || e.action}${e.campaign ? ' on ' + e.campaign : ''}`,\n  workflow: 'VIO-instantly-events',\n} }];\nif (e.stage) {\n  out.push({ json: { _kind: 'lead', contact_email: e.email,\n                     channel_state_email: e.stage, updated_at: e.when } });\n}\nif (e.suppress) {\n  // A bounce or an opt-out must reach Suppression, or the same person is contacted again on\n  // another channel. Append-only, matched later on ANY identifier.\n  out.push({ json: { _kind: 'suppress', identifier_type: 'email', identifier_value: e.email,\n                     reason: e.suppress, added_at: e.when, added_by: 'VIO-instantly-events' } });\n}\nreturn out;\n"
+        "jsCode": "// Fan out into the rows each tab needs. Only what actually happened is written.\nconst e = $input.first().json;\nconst out = [{ json: {\n  _kind: 'event',\n  timestamp: e.when, lead_email: e.email, tool: 'instantly', action: e.action, units: 1,\n  est_cost_usd: '',                       // measure, don't estimate — the webhook itself bills nothing\n  result: `instantly ${e.event_type || e.action}${e.campaign ? ' on ' + e.campaign : ''}`,\n  workflow: 'VIO-instantly-events',\n} }];\nif (e.stage) {\n  out.push({ json: { _kind: 'lead', contact_email: e.email,\n                     channel_state_email: e.stage, updated_at: e.when } });\n}\nif (e.suppress) {\n  // A bounce or an opt-out must reach Suppression, or the same person is contacted again on\n  // another channel. Append-only, matched later on ANY identifier.\n  out.push({ json: { _kind: 'suppress', identifier_type: 'email', identifier_value: e.email,\n                     reason: e.suppress, added_at: e.when, added_by: 'VIO-instantly-events' } });\n}\nreturn out;\n"
       },
       "id": "vio-ie-rows",
       "name": "Build Rows",
@@ -287,7 +287,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -356,7 +359,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -440,7 +446,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     }
   ],
   "connections": {

@@ -148,11 +148,26 @@ ok('an enrolled row uses the sheet vocabulary: enrolled',
 // and VIO-enrol-email refuses such a lead as a negative no human may override. Using it for
 // "enrolment did not land" locked a lead with a perfectly good address out permanently.
 ok('a NOT-enrolled row goes to needs_review, not dropped',
-   write({ leads: [{ status: 'already_in_another_campaign' }] }, src).channel_state_email === 'needs_review');
-ok('an empty result goes to needs_review',
-   write({}, src).channel_state_email === 'needs_review');
+   write({ enrolled: false }, src).channel_state_email === 'needs_review');
 ok('  and never to dropped, which would be a verified negative',
-   write({}, src).channel_state_email !== 'dropped');
+   write({ enrolled: false }, src).channel_state_email !== 'dropped');
+
+// ⚠️ THE ENROLMENT SHAPE. This node read `r.leads[].status` — VIO-agent-tool-push-instantly's
+// shape — while the call had been repointed to VIO-enrol-email, which emits a flat `enrolled`
+// boolean and no `leads` key. It silently evaluated false on EVERY successful send and wrote the
+// lead back as needs_review. A lead that looks unsent can be vouched for again and mailed twice.
+ok('the current target shape is read correctly',
+   write({ enrolled: true }, src).channel_state_email === 'enrolled');
+ok('the legacy gated-tool shape still works',
+   write({ leads: [{ status: 'enrolled' }] }, src).channel_state_email === 'enrolled');
+// An unknown shape must THROW, not default to "not enrolled" — defaulting is what hid this.
+// A throw strands the row where an operator can free it deliberately; a wrong needs_review
+// invites a duplicate send to a real person.
+for (const [label, r] of [['an empty result', {}], ['an unrecognised shape', { something: 'else' }]]) {
+  let threw = null;
+  try { write(r, src); } catch (e) { threw = e.message; }
+  ok(`${label} REFUSES rather than guessing`, threw !== null && /REFUSED/.test(threw), threw);
+}
 ok('the page url is written back', write({ leads: [{ status: 'enrolled' }] }, src).sendr_page_url === 'https://p');
 
 const badRow = new Function('$input', jsOf('Explain the bad row'))(

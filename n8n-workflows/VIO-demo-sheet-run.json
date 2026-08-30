@@ -55,7 +55,10 @@
           "name": "VIO Google Sheets"
         }
       },
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -233,7 +236,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Write the outcome back onto the row the human is watching. Uses Leads' own columns — there is\n// no invented schema here.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst r = $input.item.json;\nconst src = $('Shape for enrolment').first().json;\nconst enrolled = Array.isArray(r.leads) && r.leads.some((l) => l.status === 'enrolled');\nreturn { json: {\n  row_number: src._row,\n  // The sheet's own dropdown vocabulary — not the docs'. `not_sent` and `queued` are not valid\n  // values in the live column; writing them through the API bypassed data validation and put\n  // off-vocabulary strings in a column a human reads and filters on.\n  //   enrolled  — the lead is on the campaign and will be mailed when it runs\n  //   needs_review — the run completed but nothing landed (the address was already in another\n  //                    campaign, say). NOT 'dropped'.\n  //\n  // ⚠️ 'dropped' is VERIFICATION's word for \"Reoon says this address is not real\", and\n  // VIO-enrol-email now refuses a dropped address outright as a verified negative that no human\n  // may override. Writing it here for \"enrolment did not land\" collided with that meaning and\n  // permanently locked a perfectly good lead out of the pipeline — seen live 2026-08-30 on\n  // gavriel.legynd@visioneerit.com, whose address was fine. Two writers, one column, two\n  // vocabularies is the same bug class as the needs_review/blank handoff.\n  channel_state_email: enrolled ? 'enrolled' : 'needs_review',\n  opener: scrub(src._opener || ''),\n  email_draft: scrub(src._email_draft || ''),\n  sendr_page_url: src._page || '',\n  // Which product pitched this person, and the claim they were told. source_config cannot carry\n  // this: the live sheet repurposed that column to mean HOW the lead arrived (Apollo / Referral /\n  // Manual), which is a different question from WHO pitched them.\n  Product: src._product || '',\n  signal: src._signal || '',\n  updated_at: new Date().toISOString(),\n} };\n"
+        "jsCode": "// Write the outcome back onto the row the human is watching. Uses Leads' own columns — there is\n// no invented schema here.\nconst scrub = (v) => (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\nconst src = $('Shape for enrolment').first().json;\nconst r = $input.item.json;\n// ⚠️ READ THE SHAPE THE CURRENT TARGET ACTUALLY EMITS.\n//\n// This read `r.leads[].status`, which is VIO-agent-tool-push-instantly's shape. The enrolment call\n// was repointed to VIO-enrol-email on 2026-08-30 and that workflow emits a FLAT item with an\n// `enrolled` boolean and no `leads` key at all — so this silently evaluated false on every\n// successful send and wrote the lead back as needs_review.\n//\n// That is not a cosmetic mislabel: a lead that looks unsent can be vouched for again and mailed a\n// SECOND time. Which is why an unrecognised shape now throws instead of defaulting to false —\n// defaulting to false is precisely what hid this. A throw strands the row at pending_approval,\n// which the operator can free deliberately; a wrong 'needs_review' invites a duplicate send that\n// reaches a real person.\nlet enrolled;\nif (typeof r.enrolled === 'boolean') {\n  enrolled = r.enrolled;                                   // VIO-enrol-email\n} else if (Array.isArray(r.leads)) {\n  enrolled = r.leads.some((l) => l && l.status === 'enrolled');  // legacy gated tool\n} else {\n  throw new Error(`REFUSED: the enrolment step returned a shape this node does not recognise (keys: ${Object.keys(r || {}).join(', ') || 'none'}). Refusing to guess whether ${src._email || 'this lead'} was sent — guessing wrong either loses the record or mails them twice.`);\n}\nreturn { json: {\n  row_number: src._row,\n  // The sheet's own dropdown vocabulary — not the docs'. `not_sent` and `queued` are not valid\n  // values in the live column; writing them through the API bypassed data validation and put\n  // off-vocabulary strings in a column a human reads and filters on.\n  //   enrolled  — the lead is on the campaign and will be mailed when it runs\n  //   needs_review — the run completed but nothing landed (the address was already in another\n  //                    campaign, say). NOT 'dropped'.\n  //\n  // ⚠️ 'dropped' is VERIFICATION's word for \"Reoon says this address is not real\", and\n  // VIO-enrol-email now refuses a dropped address outright as a verified negative that no human\n  // may override. Writing it here for \"enrolment did not land\" collided with that meaning and\n  // permanently locked a perfectly good lead out of the pipeline — seen live 2026-08-30 on\n  // gavriel.legynd@visioneerit.com, whose address was fine. Two writers, one column, two\n  // vocabularies is the same bug class as the needs_review/blank handoff.\n  channel_state_email: enrolled ? 'enrolled' : 'needs_review',\n  opener: scrub(src._opener || ''),\n  email_draft: scrub(src._email_draft || ''),\n  sendr_page_url: src._page || '',\n  // Which product pitched this person, and the claim they were told. source_config cannot carry\n  // this: the live sheet repurposed that column to mean HOW the lead arrived (Apollo / Referral /\n  // Manual), which is a different question from WHO pitched them.\n  Product: src._product || '',\n  signal: src._signal || '',\n  updated_at: new Date().toISOString(),\n} };\n"
       },
       "id": "vio-wfd-write",
       "name": "Shape row update",
@@ -365,7 +368,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -503,7 +509,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -585,7 +594,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -705,7 +717,10 @@
           "name": "VIO Google Sheets"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     }
   ],
   "connections": {

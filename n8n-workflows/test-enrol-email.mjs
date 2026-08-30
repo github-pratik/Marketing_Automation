@@ -73,6 +73,33 @@ for (const [label, id] of [['the exact address', 'dana@northgate.com'], ['the co
 ok('suppression matching ignores case and whitespace',
    /REFUSED/.test(refuses(REQ(), [{ identifier_value: '  DANA@NORTHGATE.COM ' }])));
 ok('an unrelated suppression entry does not block', run(REQ(), [{ identifier_value: 'someone@else.com' }]).length === 1);
+
+// ⚠️ SUPPRESSION MATCHES THE PERSON, NOT THE STRING. All three of these bypassed exact-string
+// matching and reached the Instantly POST body for someone who had asked us to stop (red team,
+// 2026-08-30). This is the check with legal weight, so each bypass gets its own assertion.
+const SUPP_EMAIL = [{ identifier_value: 'dana@northgate.com' }];
+for (const [label, addr] of [
+  ['plus-addressing', 'dana+newsletter@northgate.com'],
+  ['plus-addressing with junk', 'dana+a+b+c@northgate.com'],
+  ['uppercase', 'DANA@NORTHGATE.COM'],
+  ['surrounding whitespace', '  dana@northgate.com  '],
+  ['a zero-width space mid-address', 'da​na@northgate.com'],
+  ['a soft hyphen mid-address', 'da­na@northgate.com'],
+  ['a zero-width joiner', 'dana‍@northgate.com'],
+]) ok(`suppressed person cannot be reached via ${label}`,
+      /REFUSED/.test(refuses(REQ({ leads: [LEAD({ contact_email: addr })] }), SUPP_EMAIL)), addr);
+
+// Suppressing a DOMAIN must cover its subdomains — opting out of x.com and then being mailed at
+// mail.x.com is the same person receiving the same unwanted mail.
+const SUPP_DOMAIN = [{ identifier_value: 'northgate.com' }];
+for (const addr of ['d@mail.northgate.com', 'd@a.b.northgate.com', 'd@NORTHGATE.COM'])
+  ok(`domain suppression covers ${addr}`,
+     /REFUSED/.test(refuses(REQ({ leads: [LEAD({ contact_email: addr })] }), SUPP_DOMAIN)));
+// ...but must not over-reach onto a domain that merely ends similarly.
+ok('domain suppression does NOT block an unrelated domain',
+   run(REQ({ leads: [LEAD({ contact_email: 'd@notnorthgate.com' })] }), SUPP_DOMAIN).length === 1);
+ok('  nor a different company entirely',
+   run(REQ({ leads: [LEAD({ contact_email: 'd@other.com' })] }), SUPP_DOMAIN).length === 1);
 ok('the suppression list is READ from the sheet, not passed in',
    /\$\('Read Suppression'\)/.test(preCode));
 
@@ -96,6 +123,19 @@ for (const [label, opener] of [
   ['a one-word line', 'hello'],
 ]) ok(`opener with ${label} refuses`, /REFUSED/.test(refuses(REQ({ leads: [LEAD({ opener })] }))), opener);
 ok('an absurdly long opener refuses', /REFUSED/.test(refuses(REQ({ leads: [LEAD({ opener: 'x'.repeat(401) })] }))));
+
+// The opener lands in an HTML email body AND on a public page. The earlier check caught leaked
+// ARTEFACTS (merge tags, chatbot preambles) but let malicious-but-coherent text straight through —
+// a model talked into emitting a link is the difference between a bad sentence and us phishing our
+// own prospect. Every legitimate URL in this campaign is fixed copy or the {{sendrPageUrl}} tag.
+for (const [label, opener] of [
+  ['an anchor tag', 'Your recompete looks tough <a href="http://evil.tld">see this</a> before you bid.'],
+  ['any HTML tag', 'Your bids keep losing <b>badly</b> to the same incumbents every single year.'],
+  ['a bare http URL', 'Worth reviewing http://evil.tld/login before your next capture decision.'],
+  ['a www URL', 'Take a look at www.evil.tld for the incumbent analysis you keep missing.'],
+  ['a zero-width character', 'Most bids you lose go to the same primes​ every single year now.'],
+]) ok(`opener containing ${label} refuses`, /REFUSED/.test(refuses(REQ({ leads: [LEAD({ opener })] }))), opener);
+ok('a clean opener with no markup or links still passes', run(REQ()).length === 1);
 ok('a normal opener passes', run(REQ()).length === 1);
 
 // ---------- CHECK 5: the daily cap, counted from what actually sent ----------

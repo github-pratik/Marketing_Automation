@@ -54,7 +54,10 @@
           "name": "VIO Google Sheets"
         }
       },
-      "alwaysOutputData": true
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -308,7 +311,10 @@
           "id": "VIOgsheetcred01",
           "name": "VIO Google Sheets"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -464,7 +470,10 @@
           "name": "VIO Google Sheets"
         }
       },
-      "onError": "continueRegularOutput"
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
     }
   ],
   "connections": {
