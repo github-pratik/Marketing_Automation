@@ -750,8 +750,21 @@ def check_email_shape(state):
                 "  omission cannot be checked against the sentence that actually sends — declare\n"
                 "  the missing line or fill it.")
         else:
+            # Splice the omitted CTA back in AT ITS REAL POSITION — immediately before the
+            # sign-off. This used to insert before the LAST block, which was fine while the
+            # sign-off was last; a CAN-SPAM footer now sits after it, so "before the last block"
+            # started meaning "between the sign-off and the footer" and reported a false
+            # ordering mismatch. Anchor on the sender itself, not on a position.
             blocks = re.split(r"\n{2,}", got)
-            got = "\n\n".join(blocks[:-1] + [pending] + blocks[-1:])
+            want_sender = norm_sender(cfg["sender"])
+            # The extracted template holds the sign-off as the PLACEHOLDER `<sender>` (merge tags
+            # are slotted before comparison), so matching only the literal name silently never
+            # fires and the splice quietly falls back to the old position.
+            def _is_sender(b):
+                nb = norm_text(b)
+                return nb == "<sender>" or want_sender in norm_sender(b)
+            at = next((i for i, b in enumerate(blocks) if _is_sender(b)), len(blocks) - 1)
+            got = "\n\n".join(blocks[:at] + [pending] + blocks[at:])
             r.notes.append(f"  '{AGENT_ASSEMBLE_NODE}' declares email_complete:false; spliced "
                            "cta_line_pending back in before comparing")
     state["js_shape"] = got
@@ -820,7 +833,9 @@ def check_instantly_copy(state):
         want_sender = norm_sender(cfg["sender"])
         for si, step in enumerate(texts, start=1):
             for vi, t in enumerate(step, start=1):
-                tail = norm_sender("\n".join(t.splitlines()[-2:]))
+                # Widened from 2 to 8 lines: a CAN-SPAM footer (postal address + opt-out) now sits
+                # AFTER the sign-off, so a two-line window no longer contains it.
+                tail = norm_sender("\n".join(t.splitlines()[-8:]))
                 if want_sender not in tail:
                     r.drift.append(
                         f"  {key}: {fname} step {si} variant {vi} does not sign off with the "
@@ -839,6 +854,37 @@ def check_instantly_copy(state):
 # --------------------------------------------------------------------------------------------
 # CHECK 6 — where the prospect is actually sent
 # --------------------------------------------------------------------------------------------
+def check_compliance(state):
+    """Every sendable body must carry a physical postal address and a working opt-out.
+
+    CAN-SPAM 15 U.S.C. 7704(a)(5) names both, liability is per message, and neither existed in any
+    of the 10 bodies across both campaigns until 2026-08-30. This is the one drift that cannot be
+    caught by reading a diff later — a body that loses its footer looks completely normal.
+    """
+    r = Result("compliance", "postal address + opt-out in every sendable body",
+               refuse_reason="a legal requirement, not a value to auto-rewrite")
+    for key, cfg in state["cfgs"].items():
+        addr = str(cfg.get("postal_address") or "").strip()
+        opt = str(cfg.get("opt_out_line") or "").strip()
+        if not addr:
+            r.drift.append(f"  {key}: config has no `postal_address`. A commercial email may not "
+                           f"send without one.")
+        if not opt:
+            r.drift.append(f"  {key}: config has no `opt_out_line`.")
+        texts = state.get("campaign_texts", {}).get(key)
+        if not texts:
+            r.notes.append(f"  {key}: no readable campaign file — nothing to check")
+            continue
+        for si, step in enumerate(texts, 1):
+            for vi, t in enumerate(step, 1):
+                flat = " ".join(str(t).split())
+                if addr and " ".join(addr.split()) not in flat:
+                    r.drift.append(f"  {key}: step {si} variant {vi} carries NO postal address.")
+                if opt and not re.search(r"unsubscrib|opt.?out|remove you|take you off", flat, re.I):
+                    r.drift.append(f"  {key}: step {si} variant {vi} offers NO way to opt out.")
+    return r
+
+
 def check_cta_sentence(state):
     """The words that put the link in front of the prospect. Canonical here is the DEPLOYED
     Instantly step 1, not the config and not engine.py — it is the only one a prospect reads, so
@@ -904,7 +950,8 @@ def check_cta_sentence(state):
 
 # --------------------------------------------------------------------------------------------
 CHECKS = [check_routes, check_agent_v1_config, check_agent_v2_config,
-          check_email_shape, check_instantly_copy, check_cta_sentence]
+          check_email_shape, check_instantly_copy, check_cta_sentence,
+          check_compliance]
 
 
 def main():

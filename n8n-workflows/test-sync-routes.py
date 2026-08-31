@@ -353,8 +353,8 @@ case("rewording the n8n CTA sentence away from the deployed one -> `cta-sentence
 case("reordering the n8n email blocks -> `email-shape`",
      lambda sb: sb.sub_node_js(
          "n8n-workflows/VIO-operator-agent.json", "Assemble + Report",
-         "`Hi ${cfg.first_name},\\n\\n${opener}\\n\\n${cfg.offer}\\n\\n${ask}\\n\\n${cfg.sender}`",
-         "`Hi ${cfg.first_name},\\n\\n${cfg.offer}\\n\\n${opener}\\n\\n${ask}\\n\\n${cfg.sender}`"),
+         "`Hi ${cfg.first_name},\\n\\n${opener}\\n\\n${cfg.offer}\\n\\n${ask}\\n\\n${cfg.sender}\\n\\n${footer}`",
+         "`Hi ${cfg.first_name},\\n\\n${cfg.offer}\\n\\n${opener}\\n\\n${ask}\\n\\n${cfg.sender}\\n\\n${footer}`"),
      1, expect_checks=("email-shape",))
 
 case("declaring the email incomplete WITHOUT carrying the omitted sentence is drift",
@@ -406,12 +406,23 @@ def new_subject(sb):
 case("changing a subject line is not drift", new_subject, 0, forbid_checks=NO_DRIFT)
 
 
+def _footer_html(sb, key="oryoniq"):
+    """The compliance footer every sendable body must carry, taken from the config.
+
+    A fixture that synthesises a body has to include it: since 2026-08-30 a body without a postal
+    address and an opt-out is non-compliant, and `check_compliance` correctly refuses it. Derived,
+    not retyped, so these fixtures follow the config if the wording ever changes."""
+    cfg = sb.json(f"reach-engine/config-{key}.json")
+    return ('<div><br></div><div style="font-size:12px;color:#666">'
+            f'{cfg["postal_address"]}<br>{cfg["opt_out_line"]}</div>')
+
+
 def rewrite_touch3(sb):
     c = sb.json("reach-engine/campaign-oryoniq-pilot.json")
     v = c["sequences"][0]["steps"][2]["variants"][0]
     v["body"] = ("<div>Hi {{firstName}},</div><div><br></div><div>A completely different argument "
                  "that shares not one word with the config.</div><div><br></div>"
-                 "<div>" + _signoff_html(sb) + "</div>")
+                 "<div>" + _signoff_html(sb) + "</div>" + _footer_html(sb))
     sb.put_json("reach-engine/campaign-oryoniq-pilot.json", c)
 
 
@@ -426,7 +437,7 @@ def extra_variant(sb):
         "subject": "variant C",
         "body": ("<div>Hi {{firstName}},</div><div><br></div><div>{{personalization}}</div>"
                  "<div><br></div><div>An entirely new angle with none of the config copy in it.</div>"
-                 "<div><br></div><div>" + _signoff_html(sb) + "</div>"),
+                 "<div><br></div><div>" + _signoff_html(sb) + "</div>" + _footer_html(sb)),
     })
     sb.put_json("reach-engine/campaign-oryoniq-pilot.json", c)
 

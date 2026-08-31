@@ -231,7 +231,14 @@ def assemble_email(lead, opener, cfg, page_url=None):
     # cold email went out with nothing to reply to. A mail with no ask cannot produce a reply no
     # matter how good the paragraphs above it are.
     ask = "Worth fifteen minutes to see whether it tells you anything you do not already have?"
-    return f"Hi {fn},\n\n{opener}\n\n{cfg['offer']}\n\n{ask}\n\n{cta_line}\n\n{cfg['sender']}"
+    # CAN-SPAM 7704(a)(5): every commercial message needs a valid physical postal address and a
+    # working opt-out. Read from the config so the preview cannot drift from what actually sends.
+    footer = f"{cfg.get('postal_address', '')}\n{cfg.get('opt_out_line', '')}".strip()
+    if not footer:
+        raise ValueError("REFUSED: config has no postal_address/opt_out_line — a commercial email "
+                         "may not be assembled without them")
+    return (f"Hi {fn},\n\n{opener}\n\n{cfg['offer']}\n\n{ask}\n\n{cta_line}\n\n"
+            f"{cfg['sender']}\n\n{footer}")
 
 
 def main():

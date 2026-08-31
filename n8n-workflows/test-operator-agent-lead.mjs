@@ -274,12 +274,22 @@ const lines = asm.email.split('\n\n');
 // The ASK was added 2026-08-29. Step 1 previously ended on a link and a signature, so a cold
 // email went out with nothing to reply to — no amount of good copy above can produce a reply
 // when the mail never asks for one.
-ok('email has five blocks (page line deliberately absent)', lines.length === 5, `${lines.length}`);
+// SIX blocks since 2026-08-30: a CAN-SPAM footer (postal address + opt-out) now closes every
+// commercial message. Both were absent from all 10 sendable bodies until then.
+ok('email has six blocks (page line deliberately absent)', lines.length === 6, `${lines.length}`);
 ok('block 1 is the greeting', lines[0] === 'Hi Dana,', lines[0]);
 ok('block 2 is the AI opener', lines[1] === 'A grounded opener about capture reality.', lines[1]);
 ok('block 3 is the config offer verbatim', lines[2] === cfg.offer, lines[2]);
 ok('block 4 asks for something', /\?$/.test(lines[3]) && lines[3].length > 20, JSON.stringify(lines[3]));
 ok('block 5 is the sender block', lines[4] === cfg.sender, JSON.stringify(lines[4]));
+ok('block 6 carries the postal address', lines[5].includes(cfg.postal_address), JSON.stringify(lines[5]));
+ok('  and a way to opt out', /unsubscrib/i.test(lines[5]), JSON.stringify(lines[5]));
+// The config is the single source of truth; a hardcoded address here could drift from what sends.
+ok('the footer comes from the config, not a literal',
+   /cfg\.postal_address/.test(jsOf('Assemble + Report')));
+// A config missing either field must fail VALIDATION, not silently assemble a non-compliant email.
+ok('validate_config requires both compliance fields',
+   /'postal_address', 'opt_out_line'/.test(jsOf('validate_config')));
 
 // The ask must precede the page link, not follow it. sync-routes.py splices the omitted page
 // sentence in immediately before the sign-off, so an ask placed after the link cannot be
