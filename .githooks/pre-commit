@@ -1,0 +1,37 @@
+#!/bin/sh
+# Refuse to commit an archive that contains secrets or prospect data.
+#
+# .gitignore blocks .secrets.env by PATH, and an archive containing one is just a binary blob to
+# git — it sails past every rule. oryoniq-reach-engine.zip did exactly that: three live production
+# keys plus 61 rows of prospect PII, in the very first commit. Path rules cannot see inside a
+# container, so this looks inside.
+#
+# NOTE: unzip needs a SEEKABLE file. `git show :f | unzip -l /dev/stdin` silently lists nothing and
+# the hook passes everything — which is how the first version of this hook let a leaky zip through
+# on its own test. Always materialise to a temp file.
+fail=0
+tmp=$(mktemp -t precommit-archive) || exit 0
+trap 'rm -f "$tmp"' EXIT
+
+# --diff-filter must include R. Git reports a byte-identical copy under a new name as a RENAME,
+# not an add — and ACM silently excludes those, so the hook inspected an EMPTY list and passed a
+# leaky archive twice during its own test. A filter that quietly matches nothing is the same class
+# of failure as the path rules this hook exists to backstop.
+for f in $(git diff --cached --name-only --diff-filter=ACMRT); do
+  case "$f" in
+    *.zip|*.tar|*.tar.gz|*.tgz|*.7z)
+      git show ":$f" > "$tmp" 2>/dev/null || continue
+      listing=$(unzip -l "$tmp" 2>/dev/null || tar -tf "$tmp" 2>/dev/null)
+      if [ -z "$listing" ]; then
+        echo "BLOCKED: $f is an archive this hook could not read, so it cannot be cleared."
+        fail=1
+        continue
+      fi
+      if printf '%s\n' "$listing" | grep -qiE '(^|/)\.secrets\.env$|leads\.csv|leads\.json|\.pem$|id_rsa|credentials\.json'; then
+        echo "BLOCKED: $f contains a secrets file or prospect data."
+        echo "         Rebuild it without those files. Inspect with: unzip -l $f"
+        fail=1
+      fi ;;
+  esac
+done
+exit $fail

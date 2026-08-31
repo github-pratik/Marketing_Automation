@@ -124,3 +124,16 @@ reach-engine/gifs/
 # webfonts) — they are hand-built assets referenced by the docs:
 !sendr-hero-video/deliverables/*.gif
 !sendr-hero-video/deliverables/*.jpg
+
+# ARCHIVES ARE NEVER COMMITTED.
+# .secrets.env is ignored above, but an archive CONTAINING one is just a binary blob to git and
+# sails straight past every path rule here. oryoniq-reach-engine.zip did exactly that: it carried
+# reach-engine/.secrets.env with three live production keys, plus 61 rows of prospect PII in
+# leads.csv, and was committed in the very first commit (2026-08-22) — and handed to a third party
+# weeks before that. Inspect any archive with `unzip -l` before it goes near this repo.
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
