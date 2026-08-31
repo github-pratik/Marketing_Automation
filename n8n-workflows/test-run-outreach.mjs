@@ -483,6 +483,30 @@ for (const [src, v] of Object.entries(wf.connections))
     ok(`'${f}' is both sent and read`, f in page && new RegExp(`lead\\.${f}\\b`).test(build));
 }
 
+// A failed sheet read must not silence the heartbeat. When Read Leads died on a Google quota
+// error the whole chain stopped, so the System tab quietly stopped updating — the exact failure
+// the heartbeat exists to make visible (seen live 2026-08-30).
+{
+  const beat = (rows) => new Function('$input', jsOf('Heartbeat'))(
+    { all: () => rows.map((j) => ({ json: j })) }).json;
+  const read = wf.nodes.find((n) => n.name === 'Read Leads');
+  ok('a failed read does not stop the chain', read.onError === 'continueRegularOutput');
+  ok('  and it still emits, so the heartbeat runs', read.alwaysOutputData === true);
+
+  const failed = beat([{ error: { message: 'The service is receiving too many requests from you' } }]);
+  ok('the heartbeat reports the read failure in plain words', /COULD NOT READ THE SHEET/.test(failed.last_result));
+  ok('  and reassures that nothing is lost', /no lead is lost/i.test(failed.last_result));
+  ok('  and does not count the error item as a lead', failed.waiting === 0);
+
+  const okRead = beat([{ row_number: 2, source_config: 'Manual', channel_state_email: 'not_sent', contact_email: 'a@b.com' }]);
+  ok('a normal read still reports normally', /ready to run|no leads ready/.test(okRead.last_result));
+
+  // The trigger's NAME must match its interval, or the status row lies about when to expect it.
+  const trig = wf.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
+  const mins = trig.parameters.rule.interval[0].minutesInterval;
+  ok('the trigger name matches its real interval', trig.name === `Every ${mins} minutes`, trig.name);
+}
+
 console.log(`\n[run-outreach] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
 

@@ -27,7 +27,11 @@ for (const file of files) {
     ok(`${file} / ${n.name} retries`, n.retryOnFail === true);
     ok(`  ${n.name} tries more than twice`, (n.maxTries || 0) >= 3, `maxTries=${n.maxTries}`);
     // The quota is per MINUTE, so retrying instantly just burns the same budget again.
-    ok(`  ${n.name} waits between tries`, (n.waitBetweenTries || 0) >= 2000, `wait=${n.waitBetweenTries}`);
+    // The quota is per MINUTE. 4 tries x 5s spans only 20s and a real burst still killed the run
+    // (VIO-run-outreach, 2026-08-30). 5 x 15s spans ~75s, which outlasts a saturated minute.
+    ok(`  ${n.name} waits long enough to outlast a quota minute`,
+       (n.maxTries || 0) * (n.waitBetweenTries || 0) >= 60000,
+       `${n.maxTries} x ${n.waitBetweenTries}ms = ${(n.maxTries||0)*(n.waitBetweenTries||0)}ms`);
   }
 }
 ok('there are Sheets nodes to check', sheetNodes > 20, `${sheetNodes}`);

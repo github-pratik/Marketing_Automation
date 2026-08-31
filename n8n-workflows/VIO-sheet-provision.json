@@ -65,8 +65,8 @@
       "notes": "Fails with a 400 when the tab already exists — the NORMAL case on every run after the first. onError:continueRegularOutput alone was not enough: the failed node emitted ZERO items, so the chain stopped here and the header row was never written while the execution still reported success. alwaysOutputData makes it emit an empty item so the header write always runs. Found live 2026-08-29.",
       "alwaysOutputData": true,
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -194,8 +194,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -228,8 +228,8 @@
       "alwaysOutputData": true,
       "notes": "400s when the tab exists — the normal case. Both flags needed: continueRegularOutput alone still emits zero items and stops the chain.",
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -347,8 +347,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     }
   ],
   "connections": {

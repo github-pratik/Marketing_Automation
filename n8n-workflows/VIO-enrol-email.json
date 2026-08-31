@@ -52,8 +52,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -87,8 +87,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -333,8 +333,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -466,8 +466,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -613,8 +613,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000,
+      "maxTries": 5,
+      "waitBetweenTries": 15000,
       "notes": "Must succeed BEFORE the send. No onError:continue here on purpose — if we cannot record the intent, we must not send, because a send we cannot record is a send we might repeat."
     }
   ],

@@ -14,7 +14,7 @@
         }
       },
       "id": "vio-wfd-cron",
-      "name": "Every minute",
+      "name": "Every 3 minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -57,8 +57,10 @@
       },
       "alwaysOutputData": true,
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000,
+      "onError": "continueRegularOutput",
+      "notes": "onError:continueRegularOutput + alwaysOutputData so a transient Sheets quota failure still lets the Heartbeat branch run. Without it the read dies, nothing downstream executes, and the System tab silently stops updating — the exact failure the heartbeat exists to make visible."
     },
     {
       "parameters": {
@@ -370,8 +372,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -511,8 +513,8 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
@@ -596,13 +598,13 @@
         }
       },
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// HEARTBEAT — so a human can tell \"working, nothing to do\" from \"dead\".\n//\n// Staff type into this spreadsheet and nothing on screen tells them the poller is alive. Both\n// scheduled workflows are silent by design when there is nothing to pick up: the mapper's chain\n// literally stops at the sheet read when no row is claimable, so an idle system and a broken one\n// look identical from the sheet. This writes one row per workflow into the `System` tab on EVERY\n// cycle, whether or not it found work.\n//\n// It hangs off the sheet READ rather than the schedule trigger, so it reports what was actually\n// seen, not merely that a timer fired. It is a parallel branch and the first one connected, so it\n// records the check even if the work that follows throws.\nconst EVERY_MIN = 3;\nconst rows = $input.all().map((i) => i.json || {});\nconst real = rows.filter((r) => Object.keys(r).some((k) => k !== 'row_number' && String(r[k] ?? '').trim()));\nconst waiting = real.filter((r) => ['', 'not_sent', 'approved'].includes(String(r.channel_state_email ?? '').trim().toLowerCase()) && String(r.source_config ?? '').trim().toLowerCase() === 'manual').length;\nconst now = new Date();\nconst next = new Date(now.getTime() + EVERY_MIN * 60000);\n// Local time, not UTC. This row exists to be glanced at by staff mid-typing — \"17:48\" is a thing\n// a person can compare to the clock on their wall; \"21:48 UTC\" needs arithmetic first, which is\n// exactly the friction that makes a status row go unread.\nconst TZ = 'America/Detroit';\nconst local = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true,\n  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });\nconst hhmm = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true, hour: 'numeric', minute: '2-digit' });\nreturn { json: {\n  workflow: \"VIO-run-outreach (sends the email)\",\n  last_run_at: local(now),\n  checked: `${real.length} lead(s) in Leads`,\n  waiting: waiting,\n  last_result: waiting ? `${waiting} lead(s) ready to run` : 'no leads ready',\n  every: `${EVERY_MIN} min`,\n  next_check_at: hhmm(next),\n} };"
+        "jsCode": "// HEARTBEAT — so a human can tell \"working, nothing to do\" from \"dead\".\n//\n// Staff type into this spreadsheet and nothing on screen tells them the poller is alive. Both\n// scheduled workflows are silent by design when there is nothing to pick up: the mapper's chain\n// literally stops at the sheet read when no row is claimable, so an idle system and a broken one\n// look identical from the sheet. This writes one row per workflow into the `System` tab on EVERY\n// cycle, whether or not it found work.\n//\n// It hangs off the sheet READ rather than the schedule trigger, so it reports what was actually\n// seen, not merely that a timer fired. It is a parallel branch and the first one connected, so it\n// records the check even if the work that follows throws.\nconst EVERY_MIN = 3;\nconst raw = $input.all().map((i) => i.json || {});\n// A failed sheet read arrives as a single item carrying an error. Report that plainly instead of\n// counting it as a lead — \"could not read the sheet\" is the single most useful thing this row can\n// say, and it used to say nothing at all because the failure stopped the chain before this node.\nconst readFailed = raw.length === 1 && raw[0] && typeof raw[0].error !== 'undefined';\nconst rows = readFailed ? [] : raw;\nconst real = rows.filter((r) => Object.keys(r).some((k) => k !== 'row_number' && String(r[k] ?? '').trim()));\nconst waiting = real.filter((r) => ['', 'not_sent', 'approved'].includes(String(r.channel_state_email ?? '').trim().toLowerCase()) && String(r.source_config ?? '').trim().toLowerCase() === 'manual').length;\nconst now = new Date();\nconst next = new Date(now.getTime() + EVERY_MIN * 60000);\n// Local time, not UTC. This row exists to be glanced at by staff mid-typing — \"17:48\" is a thing\n// a person can compare to the clock on their wall; \"21:48 UTC\" needs arithmetic first, which is\n// exactly the friction that makes a status row go unread.\nconst TZ = 'America/Detroit';\nconst local = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true,\n  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });\nconst hhmm = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true, hour: 'numeric', minute: '2-digit' });\nreturn { json: {\n  workflow: \"VIO-run-outreach (sends the email)\",\n  last_run_at: local(now),\n  checked: `${real.length} lead(s) in Leads`,\n  waiting: waiting,\n  last_result: readFailed\n    ? 'COULD NOT READ THE SHEET — Google rate-limited us. It retries on the next cycle; no lead is lost.'\n    : (waiting ? `${waiting} lead(s) ready to run` : 'no leads ready'),\n  every: `${EVERY_MIN} min`,\n  next_check_at: hhmm(next),\n} };"
       },
       "id": "vio-run-beat",
       "name": "Heartbeat",
@@ -719,22 +721,11 @@
       },
       "onError": "continueRegularOutput",
       "retryOnFail": true,
-      "maxTries": 4,
-      "waitBetweenTries": 5000
+      "maxTries": 5,
+      "waitBetweenTries": 15000
     }
   ],
   "connections": {
-    "Every minute": {
-      "main": [
-        [
-          {
-            "node": "Read Leads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Read Leads": {
       "main": [
         [
@@ -911,6 +902,17 @@
         [
           {
             "node": "Write heartbeat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 3 minutes": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
             "type": "main",
             "index": 0
           }
