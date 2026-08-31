@@ -27,11 +27,11 @@ const ok = (l, c, d = '') => { if (c) pass++; else { console.error(`  FAIL  ${l}
 // Nodes whose input genuinely IS the sheet rows.
 const CONSUMES_ROWS = {
   'VIO-inbox-mapper.json / Map headers (alias table)': 'the Inbox rows are the subject — it maps their headers',
-  'VIO-demo-sheet-run.json / Pick demo rows': 'the Leads rows are the subject — it selects runnable ones',
+  'VIO-run-outreach.json / Pick demo rows': 'the Leads rows are the subject — it selects runnable ones',
   'VIO-costs-rollup.json / Build Rollup Rows': 'the Events rows are the subject — it aggregates them',
   'VIO-sheet-repair.json / Report': 'the Inbox rows are the subject — it reports what the tab holds',
   'VIO-inbox-mapper.json / Heartbeat': 'counts the Inbox rows it was just handed, to report liveness',
-  'VIO-demo-sheet-run.json / Heartbeat': 'counts the Leads rows it was just handed, to report liveness',
+  'VIO-run-outreach.json / Heartbeat': 'counts the Leads rows it was just handed, to report liveness',
 };
 
 const SHEETS = 'n8n-nodes-base.googleSheets';

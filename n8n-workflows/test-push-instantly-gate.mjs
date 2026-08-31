@@ -450,7 +450,9 @@ for (const n of wf.nodes.filter((x) => x.type === 'n8n-nodes-base.googleSheets')
 // ---------------------------------------------------------------------------
 // RE-CONTACT: opt-in, and the human must be able to see it in what they approve
 // ---------------------------------------------------------------------------
-const rcBase = { product: 'demo', leads: [{ first_name: 'P', company: 'V',
+// Was product:'demo'. That entry pointed at a throwaway campaign carrying OryonIQ's copy verbatim
+// and was removed 2026-08-30 — nothing routes to it any more, so the real product is used here.
+const rcBase = { product: 'oryoniq', leads: [{ first_name: 'P', company: 'V',
   contact_email: 'p@v.com', sendr_page_url: 'https://x', opener: 'o', verify_action: 'pass' }] };
 const rcOff = runNode('Build Proposal', { input: [rcBase] })[0];
 const rcOn  = runNode('Build Proposal', { input: [{ ...rcBase, allow_recontact: true }] })[0];
@@ -527,6 +529,20 @@ eq('report counts failures', report.failed, 1);
 ok('report restates that nothing was started', /not started/i.test(report.note));
 ok('report is JSON-clean (no raw control characters)',
    !/[\u0000-\u001f\u007f]/.test(JSON.stringify(report)));
+
+// The throwaway 'demo' campaign key is gone. It carried OryonIQ's copy verbatim, so anything
+// routed to it was pitched by OryonIQ regardless of the lead's real product — the cross-product
+// leak this build has already made once. Removed 2026-08-30.
+{
+  const build = nodeByName('Build Proposal').parameters.jsCode;
+  ok('the demo campaign key is gone', !/^\s*demo:\s*\{/m.test(build));
+  ok('  and only the two real products remain',
+     /oryoniq:\s*\{/.test(build) && /visioneerit:/.test(build));
+  let threw = null;
+  try { runNode('Build Proposal', { input: [{ product: 'demo', leads: [{ first_name: 'P', company: 'V', contact_email: 'a@b.com', sendr_page_url: 'https://x', opener: 'o', verify_action: 'pass' }] }] }); }
+  catch (e) { threw = e.message; }
+  ok('asking for the demo product now REFUSES', threw !== null && /unknown product/.test(threw), threw);
+}
 
 console.log(`\n[push-instantly gate] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

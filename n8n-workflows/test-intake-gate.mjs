@@ -252,7 +252,7 @@ console.log('\n== Sheets row shapes (autoMapInputData matches on header text) ==
        unsure.channel_state_email !== 'not_sent', unsure.channel_state_email);
     // The runner's definition of ready and this writer's vocabulary have to agree, or leads
     // silently pile up in Leads exactly as they did before the handoff was fixed.
-    const runner = JSON.parse(readFileSync(new URL('./VIO-demo-sheet-run.json', import.meta.url)))
+    const runner = JSON.parse(readFileSync(new URL('./VIO-run-outreach.json', import.meta.url)))
       .nodes.find((n) => n.name === 'Pick demo rows').parameters.jsCode;
     ok('the runner treats not_sent as ready', /'not_sent'/.test(runner));
     for (const st of ['dropped', 'needs_review'])

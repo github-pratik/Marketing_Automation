@@ -6,7 +6,7 @@
 // writes to — which would be a feedback loop against real spend.
 import { readFileSync } from 'node:fs';
 
-const wf = JSON.parse(readFileSync(new URL('./VIO-demo-sheet-run.json', import.meta.url)));
+const wf = JSON.parse(readFileSync(new URL('./VIO-run-outreach.json', import.meta.url)));
 const jsOf = (name) => {
   const n = wf.nodes.find(x => x.name === name);
   if (!n) throw new Error(`no node "${name}"`);
@@ -418,7 +418,7 @@ for (const [src, v] of Object.entries(wf.connections))
      wf.nodes.find((n) => n.name === readNode).alwaysOutputData === true);
 
   const b = beat([{ row_number: 2, status: '', junk: 'x' }]);
-  ok('it names the workflow in words a human recognises', /VIO-demo-sheet-run/.test(b.workflow));
+  ok('it names the workflow in words a human recognises', /VIO-run-outreach/.test(b.workflow));
   ok('it records when it last ran', typeof b.last_run_at === 'string' && b.last_run_at.length > 5);
   ok('  in local time, not UTC arithmetic', !/UTC/.test(b.last_run_at));
   ok('it says when the next check is due', typeof b.next_check_at === 'string' && b.next_check_at.length > 3);
@@ -434,7 +434,7 @@ for (const [src, v] of Object.entries(wf.connections))
   ok('  and writes to the System tab', w.parameters.sheetName.value === 'System');
 }
 
-console.log(`\n[demo-sheet-run] ${pass} passed, ${fail} failed`);
+console.log(`\n[run-outreach] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
 
 

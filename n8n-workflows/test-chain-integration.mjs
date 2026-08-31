@@ -41,7 +41,7 @@ const ok = (label, cond, detail = '') => {
 
 const mapperWf = loadWf('VIO-inbox-mapper.json');
 const intakeWf = loadWf('VIO-intake-verify-curate.json');
-const demoWf = loadWf('VIO-demo-sheet-run.json');
+const demoWf = loadWf('VIO-run-outreach.json');
 const agentWf = loadWf('VIO-operator-agent.json');
 
 // ============================================================================================
@@ -120,7 +120,7 @@ ok("but Batch In's own output still carries inbox_row, for 'Intake Result' to re
 // 'Classify' node, not by re-deriving my own idea of what Reoon status should mean.
 const classifyCode = jsOf(intakeWf, 'Classify (pass / drop / needs_review)', 'VIO-intake-verify-curate.json');
 const shapeLeadRowCode = jsOf(intakeWf, 'Shape Lead Row', 'VIO-intake-verify-curate.json');
-const pickDemoRowsCode = jsOf(demoWf, 'Pick demo rows', 'VIO-demo-sheet-run.json');
+const pickDemoRowsCode = jsOf(demoWf, 'Pick demo rows', 'VIO-run-outreach.json');
 
 // Fakes just enough of n8n's $() node-reference API for 'Classify' to run standalone.
 const runClassify = (reoonResponse, gateLead) => {
@@ -228,7 +228,7 @@ ok('setup: at least one product column schema was actually found and checked (no
 // travels as lowercase `source_config` on the way in; the agent's own `validate_config` must
 // resolve it to the SAME product it was drafted for, or a VisioneerIT lead gets OryonIQ copy
 // again (the exact bug this build has already shipped once, per CLAUDE.md's own commit history).
-const draftingCode = jsOf(demoWf, 'Shape for drafting', 'VIO-demo-sheet-run.json');
+const draftingCode = jsOf(demoWf, 'Shape for drafting', 'VIO-run-outreach.json');
 const validateConfigCode = jsOf(agentWf, 'validate_config', 'VIO-operator-agent.json');
 const runShapeForDrafting = (row) => new Function('$input', draftingCode)({ item: { json: row } }).json;
 const runValidateConfig = (item) =>
@@ -345,7 +345,7 @@ const READY = new Set(((readyMatch && readyMatch[1].match(/'([^']*)'/g)) || []).
 // check would treat as still-unclaimed. If 'Shape row update' or 'Claim row ...' in
 // VIO-demo-sheet-run ever regresses to writing '', 'not_sent' or 'approved' by mistake (a
 // copy-paste from the wrong branch), this goes red — that is bug-class (a)/(b), generalised.
-const demoWriterValues = vocabByFile.get('VIO-demo-sheet-run.json') || new Set();
+const demoWriterValues = vocabByFile.get('VIO-run-outreach.json') || new Set();
 ok('setup: demo-sheet-run itself was found writing at least one channel_state_email value',
    demoWriterValues.size > 0, `got ${[...demoWriterValues]}`);
 for (const v of demoWriterValues) {
