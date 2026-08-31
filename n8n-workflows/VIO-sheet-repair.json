@@ -25,7 +25,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Fail-closed gate, then route. Two actions, because both are operator chores that need the\n// service-account credential and neither belongs in a scheduled workflow.\n//\n//   seed    — put a row into the Inbox tab exactly as a human typing would. Also bootstraps the\n//             header row, which a Sheets append does when the tab is empty.\n//   approve — mark ONE lead in Leads as `approved`.\n//\n// WHY `approve` EXISTS. A catch-all domain accepts mail for any address, so no verifier can\n// confirm a specific mailbox on it. Reoon returns is_deliverable:true, is_safe_to_send:false, and\n// intake correctly parks the lead at needs_review. Loosening that rule would let unverified\n// strangers into the pipeline. Instead a person who KNOWS a mailbox exists vouches for that ONE\n// lead by address. It buys the lead the right to be DRAFTED — the Slack approval gate still\n// stands between it and any send.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\n\nconst b = item.body || {};\nconst action = String(b.action || 'seed').toLowerCase();\nif (action !== 'seed' && action !== 'approve') {\n  throw new Error(`REFUSED: unknown action '${b.action}' — expected 'seed' or 'approve'`);\n}\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\nif (action === 'approve') {\n  const email = String(b.email || '').trim().toLowerCase();\n  // Vouching for \"whatever matches\" is how the wrong person gets mailed. One exact address only.\n  if (!EMAIL.test(email)) throw new Error('REFUSED: approve needs one valid email address');\n  return { json: { action, email, force: b.force === true, reason: String(b.reason || 'human vouched: mailbox known to exist on a catch-all domain') } };\n}\nreturn { json: {\n  action, status: '', notes: '', mapped_lead_id: '',\n  Product: b.Product || 'OryonIQ',\n  'First name': b.first_name || 'Wiring',\n  'Last name': b.last_name || 'Test',\n  'Company name': b.company || 'Wiring Test Co',\n  'Email address': b.email || 'wiring-test@example.invalid',\n  'Website': b.website || 'example.invalid',\n} };"
+        "jsCode": "// Fail-closed gate, then route. Two actions, because both are operator chores that need the\n// service-account credential and neither belongs in a scheduled workflow.\n//\n//   seed    — put a row into the Inbox tab exactly as a human typing would. Also bootstraps the\n//             header row, which a Sheets append does when the tab is empty.\n//   approve — mark ONE lead in Leads as `approved`.\n//\n// WHY `approve` EXISTS. A catch-all domain accepts mail for any address, so no verifier can\n// confirm a specific mailbox on it. Reoon returns is_deliverable:true, is_safe_to_send:false, and\n// intake correctly parks the lead at needs_review. Loosening that rule would let unverified\n// strangers into the pipeline. Instead a person who KNOWS a mailbox exists vouches for that ONE\n// lead by address. It buys the lead the right to be DRAFTED — the Slack approval gate still\n// stands between it and any send.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\n\nconst b = item.body || {};\nconst action = String(b.action || 'seed').toLowerCase();\nif (action !== 'seed' && action !== 'approve' && action !== 'cleanup') {\n  throw new Error(`REFUSED: unknown action '${b.action}' — expected 'seed', 'approve' or 'cleanup'`);\n}\nif (action === 'cleanup') return { json: { action, tab: String(b.tab || 'Inbox') } };\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\nif (action === 'approve') {\n  const email = String(b.email || '').trim().toLowerCase();\n  // Vouching for \"whatever matches\" is how the wrong person gets mailed. One exact address only.\n  if (!EMAIL.test(email)) throw new Error('REFUSED: approve needs one valid email address');\n  return { json: { action, email, force: b.force === true, reason: String(b.reason || 'human vouched: mailbox known to exist on a catch-all domain') } };\n}\nreturn { json: {\n  action, status: '', notes: '', mapped_lead_id: '',\n  Product: b.Product || 'OryonIQ',\n  'First name': b.first_name || 'Wiring',\n  'Last name': b.last_name || 'Test',\n  'Company name': b.company || 'Wiring Test Co',\n  'Email address': b.email || 'wiring-test@example.invalid',\n  'Website': b.website || 'example.invalid',\n} };"
       },
       "id": "vio-rp-auth",
       "name": "Authenticate (fail-closed)",
@@ -379,6 +379,167 @@
         -300,
         120
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-rp-iscleanup",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "cleanup",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-rp-cleanroute",
+      "name": "Cleanup?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.tab }}",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "vio-rp-cleanread",
+      "name": "Read tab to clean",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -100,
+        -360
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Delete TEST rows, and make it structurally impossible to delete a real one.\n//\n// THE GUARD: a row is deletable only if its email address ends in a domain that CANNOT EXIST.\n// `.invalid` is reserved by RFC 2606 precisely so it can never resolve, and `.test` likewise — no\n// real prospect can ever have one. Every other row is left untouched, and this node refuses the\n// whole batch if it is asked to touch anything else, rather than deleting \"the safe ones\" and\n// leaving a half-done job nobody can reason about.\n//\n// A blank email is NOT deletable. That is a staff member mid-typing, and deleting their row while\n// they fill it in is the worst thing this tool could do.\n//\n// Rows are returned HIGHEST FIRST. A sheet delete shifts every row below it up by one, so\n// ascending order would make each delete land on the wrong row after the first.\nconst UNREACHABLE = /\\.(invalid|test|example)$/i;\nconst tab = $('Authenticate (fail-closed)').first().json.tab || 'Inbox';\nconst rows = $input.all().map((i) => i.json || {});\n\nconst targets = [];\nfor (const r of rows) {\n  const email = String(r.contact_email || r['Email address'] || '').trim().toLowerCase();\n  if (!email) continue;                       // blank = someone is still typing\n  const domain = email.split('@')[1] || '';\n  if (!UNREACHABLE.test(domain)) continue;    // a real address: never touched\n  if (r.row_number == null) continue;\n  targets.push({ row_number: Number(r.row_number), email });\n}\ntargets.sort((a, b) => b.row_number - a.row_number);\n\nif (!targets.length) {\n  return [{ json: { ok: true, tab, deleted: 0, note: 'no unreachable-domain rows found — nothing to clean' } }];\n}\nreturn targets.map((t) => ({ json: { tab, row_number: t.row_number, email: t.email } }));"
+      },
+      "id": "vio-rp-cleanpick",
+      "name": "Pick test rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "vio-rp-hasrow",
+              "leftValue": "={{ $json.row_number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "vio-rp-anyrows",
+      "name": "Any rows to delete?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        300,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "delete",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "={{ $json.tab }}",
+          "mode": "name"
+        },
+        "toDelete": "rows",
+        "startIndex": "={{ $json.row_number }}",
+        "numberToDelete": 1
+      },
+      "id": "vio-rp-del",
+      "name": "Delete row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        500,
+        -360
+      ],
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const picked = $('Pick test rows').all().map((i) => i.json).filter((j) => j.row_number != null);\nreturn [{ json: {\n  ok: true,\n  tab: picked.length ? picked[0].tab : 'n/a',\n  deleted: picked.length,\n  rows: picked.map((p) => `${p.row_number}: ${p.email}`),\n  note: 'only rows whose email domain cannot exist (.invalid/.test/.example) were eligible',\n} }];"
+      },
+      "id": "vio-rp-cleanrep",
+      "name": "Cleanup report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        -360
+      ]
     }
   ],
   "connections": {
@@ -397,7 +558,7 @@
       "main": [
         [
           {
-            "node": "Approve a lead?",
+            "node": "Cleanup?",
             "type": "main",
             "index": 0
           }
@@ -471,6 +632,68 @@
         [
           {
             "node": "Seed Inbox row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup?": {
+      "main": [
+        [
+          {
+            "node": "Read tab to clean",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Approve a lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read tab to clean": {
+      "main": [
+        [
+          {
+            "node": "Pick test rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick test rows": {
+      "main": [
+        [
+          {
+            "node": "Any rows to delete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any rows to delete?": {
+      "main": [
+        [
+          {
+            "node": "Delete row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete row": {
+      "main": [
+        [
+          {
+            "node": "Cleanup report",
             "type": "main",
             "index": 0
           }

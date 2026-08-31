@@ -38,9 +38,13 @@ const LEAD = (o = {}) => ({
   sendr_page_url: 'https://sendrpage.com/abc123', ...o,
 });
 const REQ = (o = {}) => ({ product: 'oryoniq', leads: [LEAD()], ...o });
-const today = new Date().toISOString().slice(0, 10);
-const sends = (n, day = today) => Array.from({ length: n },
-  () => ({ tool: 'instantly', action: 'enroll', timestamp: `${day}T10:00:00Z` }));
+// Stamped with the actual current instant, so the event lands in whatever Detroit day it is right
+// now. Using the UTC date here silently put every fixture event into TOMORROW for the several
+// hours each evening when UTC has rolled over and Detroit has not — which is exactly the bug the
+// cap fix addresses, and it made these assertions pass or fail depending on the time of day.
+const NOW_ISO = new Date().toISOString();
+const sends = (n, iso = NOW_ISO) => Array.from({ length: n },
+  () => ({ tool: 'instantly', action: 'enroll', timestamp: iso }));
 
 // ---------- the happy path still works ----------
 ok('a verified lead is authorised', run(REQ()).length === 1);
@@ -145,9 +149,13 @@ ok('at the cap refuses', /daily cap/.test(refuses(REQ(), [], sends(20))));
 ok('over the cap refuses', /daily cap/.test(refuses(REQ(), [], sends(25))));
 ok('a batch that would CROSS the cap refuses whole, not partially',
    /daily cap/.test(refuses(REQ({ leads: [LEAD(), LEAD({ contact_email: 'b@northgate.com' })] }), [], sends(19))));
-ok("yesterday's sends do not count", run(REQ(), [], sends(50, '2020-01-01')).length === 1);
+ok("yesterday's sends do not count", run(REQ(), [], sends(50, '2020-01-01T10:00:00Z')).length === 1);
+// The UTC day rolls over ~5 hours before the Detroit day. A send made this evening must still
+// count against today's cap even though UTC already calls it tomorrow.
+ok('the cap follows the sending team\'s day, not UTC',
+   /daily cap/.test(refuses(REQ(), [], sends(20, new Date().toISOString()))));
 ok('non-enrolment events do not count against the cap',
-   run(REQ(), [], Array.from({ length: 50 }, () => ({ tool: 'reoon', action: 'verify', timestamp: `${today}T10:00:00Z` }))).length === 1);
+   run(REQ(), [], Array.from({ length: 50 }, () => ({ tool: 'reoon', action: 'verify', timestamp: NOW_ISO }))).length === 1);
 ok('the cap is read from the Events log', /\$\('Read Events'\)/.test(preCode));
 
 // ---------- the request itself ----------
@@ -176,8 +184,13 @@ const post = wf.nodes.find((n) => n.type === 'n8n-nodes-base.httpRequest');
 ok('the HTTP node has no URL of its own', post.parameters.url === '={{ $json.instantly_url }}');
 ok('  and no body of its own', post.parameters.jsonBody === '={{ JSON.stringify($json.instantly_body) }}');
 ok('there is NO campaign-activation endpoint anywhere', !/\/campaigns\//.test(JSON.stringify(wf)));
-ok('the precondition node sits directly in front of the send',
-   wf.connections['Preconditions (fail closed)'].main[0][0].node === 'Enroll Lead (Instantly)');
+// The send hangs off the preconditions directly (so it receives the URL and body they build), but
+// the write-ahead intent branch is connected FIRST so it lands before anything irreversible.
+{
+  const b = wf.connections['Preconditions (fail closed)'].main[0].map((c) => c.node);
+  ok('the send hangs off the precondition node', b.includes('Enroll Lead (Instantly)'), b.join(', '));
+  ok('  with the intent record written first', b.indexOf('Log intent (before send)') < b.indexOf('Enroll Lead (Instantly)'));
+}
 
 // ---------- reporting ----------
 const repCode = jsOf('Report');
@@ -220,6 +233,46 @@ ok('workflow id stable', wf.id === 'VIOwfLenrolmail');
 // The request must be read from the TRIGGER by name. Two Sheets reads sit between them, and a
 // Sheets node's output is its rows — reading $input here refused every call with "no leads
 // supplied" (found live 2026-08-30, the third instance of this shape in one day).
+// ---------- the write-ahead checkpoint ----------
+// There was no record between "Instantly accepted the send" and "the sheet recorded it". An n8n
+// restart in that window — and a restart happens on every deploy — left the lead enrolled with
+// nothing saying so: the row stayed pending_approval, the cap undercounted, and freeing the row
+// invited a SECOND send to a real person.
+{
+  const ev = (action, n = 1, email = 'dana@northgate.com') => Array.from({ length: n },
+    () => ({ tool: 'instantly', action, lead_email: email, timestamp: new Date().toISOString() }));
+
+  ok('a clean history (attempt + outcome) is allowed',
+     run(REQ(), [], [...ev('enroll_attempt'), ...ev('enroll')]).length === 1);
+  ok('  a no-op outcome closes the attempt too',
+     run(REQ(), [], [...ev('enroll_attempt'), ...ev('enroll_noop')]).length === 1);
+
+  // The ambiguous state: we started a send and never recorded finishing it.
+  ok('an attempt with NO outcome refuses the address',
+     /recorded send attempt/.test(refuses(REQ(), [], ev('enroll_attempt'))));
+  ok('  two attempts and one outcome also refuses',
+     /recorded send attempt/.test(refuses(REQ(), [], [...ev('enroll_attempt', 2), ...ev('enroll')])));
+  ok('  and the message tells a human how to resolve it',
+     /Instantly.*Events row|Events row/.test(refuses(REQ(), [], ev('enroll_attempt'))));
+  // Another lead's orphan must not block this one.
+  ok("someone else's orphan does not block this address",
+     run(REQ(), [], ev('enroll_attempt', 1, 'other@x.com')).length === 1);
+
+  // The cap must count attempts, or every crashed run quietly raises the ceiling.
+  ok('the daily cap counts attempts, not just confirmed outcomes',
+     /daily cap/.test(refuses(REQ(), [], ev('enroll_attempt', 20, 'other@x.com'))));
+
+  // Structure: the intent must be written BEFORE the POST, on its own branch so the POST still
+  // receives the precondition output that carries the URL and body.
+  const branch = wf.connections['Preconditions (fail closed)'].main[0].map((c) => c.node);
+  ok('the intent branch runs before the send', branch[0] === 'Log intent (before send)', branch.join(' then '));
+  ok('  and the send still hangs off the preconditions directly', branch.includes('Enroll Lead (Instantly)'));
+  const w = wf.nodes.find((n) => n.name === 'Write intent');
+  // No onError:continue here on purpose: a send we cannot record is a send we might repeat.
+  ok('the intent write is NOT allowed to fail silently', w.onError === undefined);
+  ok('  and it retries', w.retryOnFail === true);
+}
+
 ok('the request is read from the trigger by name, not from $input',
    /\$\('Called by Workflow'\)/.test(preCode));
 ok('  so a Sheets read between them cannot replace it',
