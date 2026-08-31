@@ -370,6 +370,26 @@ for (const rejected of ['dropped', 'needs_review']) {
 
 // The other end of the same override checked in SEAM 2: whichever file writes 'approved' as a
 // human-vouch marker, demo-sheet-run's READY set must actually honour it.
+// A writer may assign the value through a VARIABLE constrained by an allow-list rather than as a
+// bare literal — VIO-sheet-repair does exactly that, so it can record `enrolled` for a send
+// Instantly confirmed but the sheet missed. Extracting only direct assignments made this invariant
+// silently unsatisfiable the moment that refactor landed, so it also reads allow-list literals
+// from any workflow that writes the Leads tab.
+const writesLeads = (wf) => wf.nodes.some((n) => n.type === 'n8n-nodes-base.googleSheets'
+  && (n.parameters?.sheetName?.value === 'Leads')
+  && n.parameters?.operation && n.parameters.operation !== 'read');
+for (const [f, wf] of allWfs) {
+  if (!writesLeads(wf)) continue;
+  const code = stripLineComments(wf.nodes.map((n) => n.parameters?.jsCode || '').join('\n\n'));
+  // an allow-list guarding what may be written into the lifecycle column
+  for (const m of code.matchAll(/new Set\(\[([^\]]*)\]\)/g)) {
+    if (!/channel_state_email/.test(code)) continue;
+    for (const lit of m[1].matchAll(/'([a-z_]+)'/g)) {
+      if (!vocabByFile.has(f)) vocabByFile.set(f, new Set());
+      vocabByFile.get(f).add(lit[1]);
+    }
+  }
+}
 const approvedWriters = [...vocabByFile.entries()].filter(([, v]) => v.has('approved')).map(([f]) => f);
 ok('setup: some workflow was found writing the human-override value "approved"', approvedWriters.length > 0,
    `writers checked: ${[...vocabByFile.keys()].join(', ')}`);
