@@ -434,6 +434,55 @@ for (const [src, v] of Object.entries(wf.connections))
   ok('  and writes to the System tab', w.parameters.sheetName.value === 'System');
 }
 
+// ---------- one lead per cycle, and WHY ----------
+// Four nodes downstream read their lead with $('Shape for drafting').first(). In a multi-item run
+// .first() is always item ZERO, so a second lead in the same cycle is built from the FIRST lead's
+// identity — proven by running the real node code: processing "Bob" produced Alice's company,
+// Alice's address and no product. A page branded with the wrong company, aimed at the wrong person.
+// Capping here fixes all four call sites at once and cannot be partially applied.
+{
+  const many = (n) => Array.from({ length: n }, (_, i) =>
+    row({ row_number: 2 + i, contact_email: `p${i}@x.com`, first_name: `P${i}` }));
+  ok('three ready leads yield ONE this cycle', pick(many(3)).length === 1);
+  ok('ten ready leads yield ONE this cycle', pick(many(10)).length === 1);
+  ok('one ready lead still runs', pick(many(1)).length === 1);
+  ok('no ready leads yield nothing', pick([]).length === 0);
+  ok('the deferral is explained, not silent', /batch_note|leads were ready/.test(jsOf('Pick demo rows')));
+  ok('the reason is recorded where the next editor will see it',
+     /ALWAYS item/i.test(jsOf('Pick demo rows')) && /never by lifting this cap/i.test(jsOf('Pick demo rows')));
+
+  // The guard rail: if anyone lifts the cap, these four .first() readers must be revisited first.
+  // Strip comments first — 'Pick demo rows' quotes the pattern in its own explanation, and a check
+  // that counts a comment as a call site would drift the moment anyone edits the prose.
+  const codeOnly = (js) => js.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+  const firstReaders = wf.nodes
+    .filter((n) => /\$\('[^']+'\)\.first\(\)/.test(codeOnly(n.parameters?.jsCode || '')))
+    .map((n) => n.name);
+  ok('the .first() readers are still exactly the four the cap protects',
+     firstReaders.length === 4, firstReaders.join(', '));
+  for (const nm of ['Shape for page', 'Shape for enrolment', 'Shape row update', 'Claim row (pending_approval)'])
+    ok(`  ${nm} is one of them`, firstReaders.includes(nm));
+}
+
+// ---------- the Sendr page must receive the AI opener, not the template placeholder ----------
+// VIO-sendr-generate-page's 'Build Page Request' reads lead.opener and lead.contact_email. Only
+// _opener/_email were sent, so every personalized page rendered the TEMPLATE's placeholder line
+// with no address attached — the per-lead opener is the entire point of the page.
+{
+  const src = { _row: 2, _email: 'bob@b.com', _first_name: 'Bob', _company: 'Beta', _title: 'CTO',
+                _opener: 'the AI written line', _product: 'oryoniq', _domain: 'b.com',
+                source_config: 'oryoniq' };
+  const page = new Function('$input', '$', jsOf('Shape for page'))(
+    { item: { json: { opener: 'ignored' } } }, () => ({ first: () => ({ json: src }) })).json;
+  ok('the page receives the AI opener under the name the reader uses', page.opener === 'the AI written line');
+  ok('the page receives the address for attribution', page.contact_email === 'bob@b.com');
+  // Cross-check against what the sub-workflow actually reads, so a rename on either side fails here.
+  const sendr = JSON.parse(readFileSync(new URL('./VIO-sendr-generate-page.json', import.meta.url)));
+  const build = sendr.nodes.find((n) => n.name === 'Build Page Request').parameters.jsCode;
+  for (const f of ['opener', 'contact_email', 'first_name', 'company'])
+    ok(`'${f}' is both sent and read`, f in page && new RegExp(`lead\\.${f}\\b`).test(build));
+}
+
 console.log(`\n[run-outreach] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
 
