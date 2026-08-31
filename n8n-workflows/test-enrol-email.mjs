@@ -286,5 +286,38 @@ for (const [src, v] of Object.entries(wf.connections))
   for (const g of v.main) for (const c of g)
     ok(`connection ${src} -> ${c.node} resolves`, names.has(c.node));
 
+// ---------- the workflow must RETURN something its caller can read ----------
+// Its terminal nodes are two Sheets writes, so without a join an Execute Workflow call gets back
+// whichever ROW was written last — an Events row. The caller then cannot tell whether the lead was
+// enrolled: before it refused loudly it guessed wrong and wrote every successful send back as
+// needs_review, where the lead could be sent a SECOND time. Same fix as intake's result node.
+{
+  const res = wf.nodes.find((n) => n.name === 'Enrolment Result (to caller)');
+  ok('there is a single result node', Boolean(res));
+  const feeders = Object.entries(wf.connections)
+    .filter(([, v]) => v.main.some((g) => g.some((c) => c.node === 'Enrolment Result (to caller)')))
+    .map(([k]) => k);
+  ok('every terminal write feeds it', feeders.length === 2, feeders.join(', '));
+  ok('  including the Leads write', feeders.includes('Write Lead Row (Leads)'));
+  ok('  and the Events write', feeders.includes('Log Enrolment (Events)'));
+  ok('it is terminal itself', !('Enrolment Result (to caller)' in wf.connections));
+
+  const code = res.parameters.jsCode;
+  // Reading $input here would get the sheet rows again — the exact mistake it exists to correct.
+  ok('it reads Report by name, not $input', /\$\('Report'\)/.test(code) && !/\$input\.all\(\)/.test(code));
+
+  const run = (reports) => new Function('$input', '$', code)(
+    { all: () => [] }, () => ({ all: () => reports.map((j) => ({ json: j })) }));
+  const out = run([{ email: 'a@b.com', enrolled: true, product: 'oryoniq', note: 'ok', at: 'T' }]);
+  ok('a success returns enrolled:true the caller can read', out[0].json.enrolled === true);
+  ok('  and carries the address', out[0].json.email === 'a@b.com');
+  const noop = run([{ email: 'a@b.com', enrolled: false, note: 'already existed', at: 'T' }]);
+  ok('a no-op returns enrolled:false, not a silent success', noop[0].json.enrolled === false);
+  // Returning nothing would let the caller assume success.
+  let threw = null;
+  try { run([]); } catch (e) { threw = e.message; }
+  ok('an empty report REFUSES rather than returning nothing', threw !== null && /REFUSED/.test(threw));
+}
+
 console.log(`\n[enrol-email] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -616,6 +616,20 @@
       "maxTries": 5,
       "waitBetweenTries": 15000,
       "notes": "Must succeed BEFORE the send. No onError:continue here on purpose — if we cannot record the intent, we must not send, because a send we cannot record is a send we might repeat."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Tell the CALLER what happened. This is the workflow's RETURN VALUE.\n//\n// Without it the terminal nodes are two Google Sheets writes, so an Execute Workflow call gets back\n// whichever ROW was written last — an Events row shaped {timestamp, lead_email, tool, action, ...}.\n// VIO-run-outreach then cannot tell whether the lead was enrolled, and (since 2026-08-30) refuses\n// loudly rather than guessing, which strands the row. Before that refusal existed it guessed\n// wrong and wrote every successful send back as needs_review, where it could be sent a second time.\n//\n// Same fix, same reason, as VIO-intake-verify-curate's 'Intake Result (to caller)': a sub-workflow\n// whose last node is a side effect has no return value worth the name.\n//\n// Read from 'Report' by NAME. Reading $input here would get the sheet rows again — the exact\n// mistake this node exists to correct.\nconst out = [];\nfor (const it of $('Report').all()) {\n  const r = it.json || {};\n  out.push({ json: {\n    email: r.email,\n    enrolled: r.enrolled === true,\n    product: r.product,\n    campaign_id: r.campaign_id,\n    campaign_name: r.campaign_name,\n    instantly_lead_id: r.instantly_lead_id || '',\n    note: r.note,\n    sendr_page_url: r.sendr_page_url || '',\n    daily_cap: r.daily_cap,\n    sent_today_before: r.sent_today_before,\n    at: r.at,\n  }});\n}\nif (!out.length) {\n  throw new Error('REFUSED: the enrolment produced no report. Returning nothing would let the caller assume success.');\n}\nreturn out;"
+      },
+      "id": "vio-em-result",
+      "name": "Enrolment Result (to caller)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        0
+      ]
     }
   ],
   "connections": {
@@ -733,6 +747,28 @@
         [
           {
             "node": "Write intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Lead Row (Leads)": {
+      "main": [
+        [
+          {
+            "node": "Enrolment Result (to caller)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Enrolment (Events)": {
+      "main": [
+        [
+          {
+            "node": "Enrolment Result (to caller)",
             "type": "main",
             "index": 0
           }
