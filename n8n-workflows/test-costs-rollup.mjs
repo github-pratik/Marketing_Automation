@@ -12,6 +12,7 @@
 //      report a cost of 0 (that reads as "free") when the truth is "unknown". The same discipline
 //      applies to units: a row with no units value must not be silently assumed to be 1.
 import { readFileSync } from 'node:fs';
+import { schemaViolations } from './sheets-schema-invariant.mjs';
 
 const wf = JSON.parse(readFileSync(new URL('./VIO-costs-rollup.json', import.meta.url)));
 const nodeNamed = (name) => {
@@ -188,9 +189,9 @@ ok('the Events read has alwaysOutputData (does not stall on an empty tab)',
 ok('the Events read continues past its own errors (onError: continueRegularOutput)',
    readNode.onError === 'continueRegularOutput');
 
-const writeNodes = sheetNodes.filter((n) => n.parameters.operation !== 'read');
-ok('every Sheets WRITE declares a schema',
-   writeNodes.length > 0 && writeNodes.every((n) => (n.parameters.columns?.schema || []).length > 0));
+const schemaBad = schemaViolations(wf);
+ok('Sheets caches obey the schema rule (empty on appendOrUpdate+autoMap, present on defineBelow)',
+   schemaBad.length === 0, schemaBad.join(' | '));
 
 const writeNode = nodeNamed('Write Rollup (Costs)');
 ok('the Costs write uses appendOrUpdate, never plain append (idempotency)',
@@ -199,10 +200,20 @@ ok('the Costs write matches on date+tool+metric+source_config',
    JSON.stringify((writeNode.parameters.columns?.matchingColumns || []).slice().sort())
      === JSON.stringify(['date', 'metric', 'source_config', 'tool'].sort()));
 ok('the Costs write targets the Costs tab', writeNode.parameters.sheetName?.value === 'Costs');
-const writeSchemaIds = (writeNode.parameters.columns?.schema || []).map((c) => c.id).sort();
-ok('the Costs write declares exactly the columns setup-google-sheets.py creates for Costs',
-   JSON.stringify(writeSchemaIds) ===
-   JSON.stringify(['count', 'date', 'est_cost_usd', 'metric', 'notes', 'source_config', 'tool'].sort()));
+// autoMapInputData writes whatever keys the input item carries, so the shaping
+// node — not the cached schema — decides the columns. Assert it there.
+const rollupJs = jsOf('Build Rollup Rows');
+// `_`-prefixed keys are internal routing markers (`_kind` splits cost rows from the
+// run summary). They must never become sheet columns — which holds only because the
+// write is `handlingExtraData: ignoreIt`. Assert that too, or the guard is a wish.
+const emitted = [...new Set([...rollupJs.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]))];
+const written = emitted.filter((k) => !k.startsWith('_')).sort();
+ok('Build Rollup Rows emits exactly the columns setup-google-sheets.py creates for Costs',
+   JSON.stringify(written) ===
+   JSON.stringify(['count', 'date', 'est_cost_usd', 'metric', 'notes', 'source_config', 'tool'].sort()),
+   `emitted ${JSON.stringify(written)}`);
+ok('the Costs write ignores extra keys, so _kind cannot become a column',
+   writeNode.parameters.options?.handlingExtraData === 'ignoreIt');
 
 ok('no A1 range anywhere', !/"[A-Z]{1,2}[0-9]{1,4}:[A-Z]{1,2}/.test(JSON.stringify(wf)));
 

@@ -7,6 +7,7 @@
 //
 // Makes NO network call of any kind. Everything runs against fixtures.
 import { readFileSync } from 'node:fs';
+import { schemaViolations } from './sheets-schema-invariant.mjs';
 
 const wf = JSON.parse(readFileSync(new URL('./VIO-agent-tool-push-instantly.json', import.meta.url)));
 
@@ -435,12 +436,16 @@ ok(`end-to-end: ${e2e} approval shapes, only the boolean-true one enrols anybody
 // The Sheets writes run AFTER the enrolment. A misconfigured one throws "Could not get
 // parameter" once the lead has already landed — so the enrolment succeeds and the execution still
 // reports error. Found live 2026-08-29. The proven shape (VIO-inbound-reply-to-call) is
-// typeVersion 4.7 with an explicit `schema`; 4.5 with autoMapInputData + matchingColumns and no
-// schema is what failed.
+// typeVersion 4.7; 4.5 with autoMapInputData + matchingColumns is what failed, because at 4.5 the
+// `columns.schema` parameter does not exist and getNodeParameter throws. That was a TYPEVERSION
+// fault, not an empty-cache fault — an empty `schema: []` at 4.7 reads back fine. Corrected
+// 2026-09-01, when a cached schema on appendOrUpdate turned out to be the thing breaking sends.
+{ const schemaBad = schemaViolations(wf);
+  ok('Sheets caches obey the schema rule', schemaBad.length === 0, schemaBad.join(' | ')); }
 for (const n of wf.nodes.filter((x) => x.type === 'n8n-nodes-base.googleSheets')) {
   ok(`${n.name} is typeVersion 4.7`, n.typeVersion === 4.7, `got ${n.typeVersion}`);
-  ok(`${n.name} declares a column schema`,
-     Array.isArray(n.parameters.columns?.schema) && n.parameters.columns.schema.length > 0);
+  ok(`${n.name} has a columns.schema key (absent at 4.5, which threw)`,
+     Array.isArray(n.parameters.columns?.schema));
   ok(`${n.name} pins the Sheets credential by id`,
      n.credentials?.googleApi?.id === 'VIOgsheetcred01');
   if (n.parameters.operation === 'appendOrUpdate')

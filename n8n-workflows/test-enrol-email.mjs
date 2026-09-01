@@ -7,6 +7,7 @@
 // throwing, unreviewed mail goes out — so every check gets a test, and the tests read jsCode
 // straight out of the workflow JSON so they cannot drift from what deploys.
 import { readFileSync } from 'node:fs';
+import { schemaViolations } from './sheets-schema-invariant.mjs';
 
 const wf = JSON.parse(readFileSync(new URL('./VIO-enrol-email.json', import.meta.url)));
 const jsOf = (name) => {
@@ -211,9 +212,9 @@ const sheets = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
 ok('every Sheets node pins the credential by id',
    sheets.every((n) => n.credentials?.googleApi?.id === 'VIOgsheetcred01'));
 ok('every Sheets node is typeVersion 4.7', sheets.every((n) => n.typeVersion === 4.7));
-ok('every Sheets WRITE declares a schema',
-   sheets.filter((n) => n.parameters.operation && n.parameters.operation !== 'read')
-         .every((n) => (n.parameters.columns?.schema || []).length > 0));
+const schemaBad = schemaViolations(wf);
+ok('Sheets caches obey the schema rule (empty on appendOrUpdate+autoMap, present on defineBelow)',
+   schemaBad.length === 0, schemaBad.join(' | '));
 ok('reads never stall an empty tab',
    sheets.filter((n) => !n.parameters.operation).every((n) => n.alwaysOutputData === true));
 ok('no A1 range anywhere', !/"[A-Z]{1,2}[0-9]{1,4}:[A-Z]{1,2}/.test(JSON.stringify(wf)));

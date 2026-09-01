@@ -5,6 +5,7 @@
 // dropping a row the human is watching, calling the model when a lookup table would do, and
 // choking on a 49,000-row upload.
 import { readFileSync } from 'node:fs';
+import { schemaViolations } from './sheets-schema-invariant.mjs';
 
 const wf = JSON.parse(readFileSync(new URL('./VIO-inbox-mapper.json', import.meta.url)));
 const jsOf = (name) => {
@@ -252,10 +253,9 @@ const sheetNodes = wf.nodes.filter(n => n.type === 'n8n-nodes-base.googleSheets'
 ok('every Sheets node pins the credential by id',
    sheetNodes.every(n => n.credentials?.googleApi?.id === 'VIOgsheetcred01'));
 ok('every Sheets node is typeVersion 4.7', sheetNodes.every(n => n.typeVersion === 4.7));
-// Only WRITES map columns; a read has no schema and needs none.
-const writeNodes = sheetNodes.filter(n => n.parameters.operation !== 'read');
-ok('every Sheets WRITE declares a schema',
-   writeNodes.length > 0 && writeNodes.every(n => (n.parameters.columns?.schema || []).length > 0));
+const schemaBad = schemaViolations(wf);
+ok('Sheets caches obey the schema rule (empty on appendOrUpdate+autoMap, present on defineBelow)',
+   schemaBad.length === 0, schemaBad.join(' | '));
 ok('no A1 range anywhere', !/"[A-Z]{1,2}[0-9]{1,4}:[A-Z]{1,2}/.test(JSON.stringify(wf)));
 ok('an error workflow is set', wf.settings?.errorWorkflow === 'VIOwfEerroralert');
 
