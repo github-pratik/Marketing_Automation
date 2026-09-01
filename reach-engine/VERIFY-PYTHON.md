@@ -395,7 +395,7 @@ against the two named elements.
 | Source | Unsubscribe / opt-out language | Physical postal address |
 |---|---|---|
 | `engine.py` `assemble_email()` (lines 213-234) | **Absent** | **Absent** |
-| `config-oryoniq.json` → `sender` (line 29) | `"Ellen\nOryonIQ (a VisioneerIT company)"` — **absent** | **Absent** |
+| `config-oryoniq.json` → `sender` (line 29) | `"Ellen\nOryonIQ"` — **absent** | **Absent** |
 | `config-visioneerit.json` → `sender` (line 25) | `"Ellen\nVisioneerIT"` — **absent** | **Absent** |
 | `campaign-oryoniq-pilot.json`, all 4 steps × both variants | **Absent** | **Absent** |
 | `campaign-visioneerit-pilot.json`, all 4 steps × both variants | **Absent** | **Absent** |
@@ -426,7 +426,7 @@ delivery platform adds one on top is a separate question this repo's files can't
 
 **Copy signs "Ellen":** both configs' `sender` field (`config-oryoniq.json:29`,
 `config-visioneerit.json:25`) and the sign-off of all 4 email steps in both campaign JSON files
-end `Ellen<br>OryonIQ (a VisioneerIT company)` / `Ellen<br>VisioneerIT`. Both LinkedIn message
+end `Ellen<br>OryonIQ` / `Ellen<br>VisioneerIT`. Both LinkedIn message
 templates also sign off as Ellen:
 ```
 reach-engine/sendr-linkedin-message.md:32:            > Ellen, OryonIQ / VisioneerIT
