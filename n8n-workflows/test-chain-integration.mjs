@@ -404,5 +404,45 @@ ok('setup: more than one workflow was found writing "enrolled" (push-instantly /
 ok('"enrolled" is excluded from demo-sheet-run\'s READY set everywhere it is written (an enrolled lead must never restart)',
    !READY.has('enrolled'));
 
+// ---------------------------------------------------------------------------
+// A CALLABLE WORKFLOW MUST HAVE EXACTLY ONE TERMINAL NODE.
+//
+// n8n returns the output of whichever terminal node finishes LAST. A workflow
+// that ends on a side effect therefore has no return value worth the name — and
+// a Google Sheets node's output is the ROW IT WROTE, so the caller silently
+// receives {timestamp, lead_email, tool, action, ...} instead of a verdict.
+//
+// This has now bitten twice:
+//   * VIO-intake-verify-curate ended on four separate branches; a caller got
+//     whichever one happened to run last. Fixed with 'Intake Result (to caller)'.
+//   * VIO-enrol-email had TWO terminals — the real result AND `Write intent`, the
+//     write-ahead checkpoint, dangling as a parallel dead end. VIO-run-outreach
+//     got the Events row on 2026-09-01 and refused the whole send record.
+//
+// Both were invisible to the per-workflow suites because each workflow was fine
+// on its own. It is a SEAM defect, so it is tested here.
+for (const f of ['VIO-intake-verify-curate', 'VIO-enrol-email', 'VIO-sendr-generate-page',
+                 'VIO-operator-agent', 'VIO-source-leads']) {
+  const w = JSON.parse(readFileSync(new URL(`./${f}.json`, import.meta.url)));
+  const callable = (w.nodes || []).some((n) => n.type === 'n8n-nodes-base.executeWorkflowTrigger');
+  if (!callable) continue;
+  const hasOutgoing = new Set(Object.keys(w.connections || {}));
+  const terminals = (w.nodes || [])
+    .filter((n) => !hasOutgoing.has(n.name))
+    .filter((n) => !/stickyNote/i.test(n.type));
+  // The rule that actually matters is NOT "exactly one terminal" — two Code nodes on the
+  // two arms of an IF are a legitimate either/or result, and `VIO-operator-agent` and
+  // `VIO-sendr-generate-page` are both shaped that way on purpose.
+  //
+  // The rule is: NO TERMINAL MAY BE A SIDE EFFECT. A Sheets/HTTP/Slack node's output is the
+  // row it wrote or the response it got, which is data-shaped and passes for a verdict — so
+  // it corrupts the caller silently instead of failing. Both real occurrences of this bug
+  // (`Write intent`, `Log Reoon Call (Events)`) were dangling Sheets writes.
+  const sideEffects = terminals.filter((n) => /googleSheets|httpRequest|slack/i.test(n.type));
+  ok(`${f}: no terminal node is a side effect (its output would pass for a verdict)`,
+     sideEffects.length === 0,
+     `dangling: ${sideEffects.map((n) => `${n.name} [${n.type.split('.').pop()}]`).join(', ')}`);
+}
+
 console.log(`\n[chain-integration] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

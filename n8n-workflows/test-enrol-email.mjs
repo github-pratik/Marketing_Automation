@@ -298,9 +298,20 @@ for (const [src, v] of Object.entries(wf.connections))
   const feeders = Object.entries(wf.connections)
     .filter(([, v]) => v.main.some((g) => g.some((c) => c.node === 'Enrolment Result (to caller)')))
     .map(([k]) => k);
-  ok('every terminal write feeds it', feeders.length === 2, feeders.join(', '));
+  // Computed, not counted. This asserted `length === 2` and so went green while
+  // `Write intent` — the write-ahead checkpoint — dangled as a SECOND terminal. On
+  // 2026-09-01 VIO-run-outreach got that Events row back and refused the whole send
+  // record. Every Sheets node must land here, however many there turn out to be.
+  const sheetWrites = wf.nodes
+    .filter((n) => n.type === 'n8n-nodes-base.googleSheets' && n.parameters.operation
+                   && n.parameters.operation !== 'read')
+    .map((n) => n.name);
+  const missing = sheetWrites.filter((n) => !feeders.includes(n));
+  ok('every Sheets write feeds the result node, so none of them can be the terminal',
+     missing.length === 0, `dangling: ${missing.join(', ')}`);
   ok('  including the Leads write', feeders.includes('Write Lead Row (Leads)'));
   ok('  and the Events write', feeders.includes('Log Enrolment (Events)'));
+  ok('  and the write-ahead intent checkpoint', feeders.includes('Write intent'));
   ok('it is terminal itself', !('Enrolment Result (to caller)' in wf.connections));
 
   const code = res.parameters.jsCode;

@@ -719,6 +719,17 @@
           }
         ]
       ]
+    },
+    "Write intent": {
+      "main": [
+        [
+          {
+            "node": "Enrolment Result (to caller)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   }
 }

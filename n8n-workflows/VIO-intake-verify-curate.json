@@ -1065,6 +1065,17 @@
           }
         ]
       ]
+    },
+    "Log Reoon Call (Events)": {
+      "main": [
+        [
+          {
+            "node": "Intake Result (to caller)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
