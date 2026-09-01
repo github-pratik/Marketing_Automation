@@ -268,9 +268,37 @@ Google support can use it. This is why the `Product` **dropdown** is still manua
 is a `setDataValidation` batchUpdate with no Sheets-node equivalent. The column itself exists and
 works; the dropdown is a typo-guard only, and the mapper already refuses bad values by name.
 
-**Next:** rewrite the email copy — the user read a real send and said it did not communicate the
-offer (market commentary first, the point buried third, no clear ask); this is the highest-value
-open item and has not been acted on → create a VisioneerIT Instantly campaign so the two products
+**⚠️ A cached column list on a Sheets `appendOrUpdate` node is a live grenade (fixed 2026-09-01).**
+`VIO-enrol-email :: Write Lead Row` threw `Column names were updated after the node's setup` on
+EVERY execution from 2026-08-29 — the day `Product` was inserted at position 3 of `Leads` — until
+2026-09-01. That is why two real sends left Instantly and were never recorded. n8n's
+`checkForSchemaChanges` compares the node's cached `columns.schema` to the live header **by index,
+never by name**, and only two operations call it, inconsistently:
+`append.operation.js:211` guards with `&& dataMode !== 'autoMapInputData'` (so it is skipped),
+`appendOrUpdate.operation.js:272` has no such guard (so it runs), and `update` never calls it at
+all. That asymmetry is why `Claim row in sheet` (update, equally stale cache) ran 477 times a day
+clean. **In `autoMapInputData` the cache is used for nothing else** — the row is built from the
+input item's keys and the match column resolves against the live header — so the fix is to EMPTY
+it, not realign it: `if (schemaEntry === undefined) break` then exits on index 0 and the error
+becomes impossible rather than merely absent until the next column is added.
+**`n8n-workflows/check-sheet-schema.py` enforces this; run it before every import.** An earlier
+note here credited intake's survival to declaring the full 34-column schema — that was a
+coincidence, the reason is that intake uses `append`. Two other guesses were also wrong and cost
+days: the Sheets read quota, and "partial schemas are unsafe".
+
+**`n8n-workflows/diagnose.py` is the first thing to run on any "it's not working".** One command:
+decodes n8n's flattened execution data into real error messages, and splits them three ways —
+DEFECT (mail is not moving), TRANSIENT (Google wobbled; every Sheets node already retries 5x/15s
+and the next poll picks it up), GUARD (a check refused on purpose; a red instance where every line
+is a guard is an instance that is working). Diagnoses had been repeatedly wrong because the error
+message was never actually read.
+
+**Next:** prove one clean end-to-end send now that the Sheets writer is fixed — it needs an address
+on a NON-catch-all domain that is not already anywhere in the Instantly workspace
+(`skip_if_in_campaign` is workspace-wide across all 14 campaigns, and `@visioneerit.com` is
+catch-all so it can only ever park at `needs_review`) → rewrite the email copy — the user read a
+real send and said it did not communicate the offer (market commentary first, the point buried
+third, no clear ask) → create a VisioneerIT Instantly campaign so the two products
 can actually market separately → add `cta` to template 8462 (now blocking, not cosmetic) → name the three pursuits from
 SAM.gov (`reach-engine/sendr-page-template.md` Part 2 — the highest-leverage conversion idea left)
 → wire Sheet writes into the three workflows that still don't do them → the remaining operator-agent
