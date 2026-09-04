@@ -1,0 +1,965 @@
+<title>VIO Workflow Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    --ground:   #F5F7F9;
+    --surface:  #FFFFFF;
+    --sunk:     #ECEFF3;
+    --ink:      #191D26;
+    --ink-soft: #414A5A;
+    --muted:    #697283;
+    --rule:     #D7DDE5;
+    --rule-soft:#E6EAF0;
+
+    --live:     #1B6A9E;
+    --live-bg:  #E7F0F7;
+    --send:     #A8324A;
+    --send-bg:  #F9EBEE;
+    --wait:     #6A5B23;
+    --wait-bg:  #F5F0DE;
+    --dark:     #6B7382;
+    --dark-bg:  #EDEFF2;
+
+    --shadow: 0 1px 2px rgba(25,29,38,.05), 0 4px 14px -6px rgba(25,29,38,.10);
+
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "IBM Plex Serif", ui-serif, Georgia, "Times New Roman", serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14161C;
+      --surface:  #1B1E25;
+      --sunk:     #23272F;
+      --ink:      #E8EBF1;
+      --ink-soft: #B6BECC;
+      --muted:    #8A93A3;
+      --rule:     #333944;
+      --rule-soft:#282D36;
+
+      --live:     #6FB2DF;
+      --live-bg:  #17303F;
+      --send:     #E8869B;
+      --send-bg:  #3A1F27;
+      --wait:     #D6BF7A;
+      --wait-bg:  #332D18;
+      --dark:     #8A93A3;
+      --dark-bg:  #262A32;
+
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px -6px rgba(0,0,0,.5);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:   #14161C;
+    --surface:  #1B1E25;
+    --sunk:     #23272F;
+    --ink:      #E8EBF1;
+    --ink-soft: #B6BECC;
+    --muted:    #8A93A3;
+    --rule:     #333944;
+    --rule-soft:#282D36;
+
+    --live:     #6FB2DF;
+    --live-bg:  #17303F;
+    --send:     #E8869B;
+    --send-bg:  #3A1F27;
+    --wait:     #D6BF7A;
+    --wait-bg:  #332D18;
+    --dark:     #8A93A3;
+    --dark-bg:  #262A32;
+
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px -6px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    font-size: clamp(30px, 4.4vw, 44px);
+    line-height: 1.08;
+    font-weight: 600;
+    letter-spacing: -.021em;
+    margin: 14px 0 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    font-family: var(--serif);
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+    max-width: 60ch;
+    margin: 16px 0 0;
+  }
+
+  /* ---------- status strip ---------- */
+
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 36px 0 0;
+  }
+  .stat { background: var(--surface); padding: 15px 16px 16px; }
+  .stat .k {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .stat .v {
+    font-family: var(--mono);
+    font-size: 25px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    margin-top: 5px;
+    line-height: 1.1;
+  }
+  .stat .n { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .stat .v.on { color: var(--live); }
+  .stat .v.off { color: var(--dark); }
+
+  /* ---------- section headers ---------- */
+
+  section { margin-top: 68px; }
+
+  .shead { border-top: 2px solid var(--ink); padding-top: 14px; }
+  .shead h2 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -.014em;
+    margin: 6px 0 0;
+  }
+  .shead p {
+    font-family: var(--serif);
+    color: var(--ink-soft);
+    max-width: 64ch;
+    margin: 9px 0 0;
+    font-size: 16.5px;
+  }
+
+  /* ---------- diagram ---------- */
+
+  .figure {
+    margin: 26px 0 0;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .figscroll { overflow-x: auto; padding: 8px; }
+  .figure svg { display: block; width: 1000px; height: 470px; }
+  .figcap {
+    border-top: 1px solid var(--rule-soft);
+    padding: 11px 16px;
+    font-size: 13.5px;
+    color: var(--muted);
+    font-family: var(--serif);
+  }
+
+  svg .box { fill: var(--surface); stroke: var(--rule); stroke-width: 1.25; }
+  svg .box.live   { fill: var(--live-bg); stroke: var(--live); }
+  svg .box.send   { fill: var(--send-bg); stroke: var(--send); }
+  svg .box.data   { fill: var(--sunk);    stroke: var(--rule); stroke-dasharray: 0; }
+  svg .box.ghost  { fill: none; stroke: var(--rule); stroke-dasharray: 4 3; }
+
+  svg .t   { font-family: var(--sans); font-size: 13px; font-weight: 600; fill: var(--ink); }
+  svg .st  { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+  svg .lbl { font-family: var(--mono); font-size: 10px; letter-spacing: .07em; fill: var(--muted); text-transform: uppercase; }
+  svg .flow { stroke: var(--rule); stroke-width: 1.5; fill: none; }
+  svg .flow.strong { stroke: var(--live); }
+  svg .flow.dash { stroke-dasharray: 4 4; stroke: var(--muted); }
+
+  /* ---------- cards ---------- */
+
+  .cards { display: flex; flex-direction: column; gap: 14px; margin-top: 26px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    box-shadow: var(--shadow);
+    display: grid;
+    grid-template-columns: 46px 1fr;
+  }
+
+  .seq {
+    border-right: 1px solid var(--rule-soft);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 17px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .card.nonum { grid-template-columns: 1fr; }
+  .card.nonum .seq { display: none; }
+
+  .body { padding: 15px 18px 17px; min-width: 0; }
+
+  .cardtop {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 12px;
+  }
+  .name {
+    font-family: var(--mono);
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+  }
+  .role { font-size: 13.5px; color: var(--muted); }
+
+  .pill {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .pill.live { background: var(--live-bg); color: var(--live); }
+  .pill.send { background: var(--send-bg); color: var(--send); }
+  .pill.wait { background: var(--wait-bg); color: var(--wait); }
+  .pill.dark { background: var(--dark-bg); color: var(--dark); }
+
+  .why {
+    font-family: var(--serif);
+    font-size: 15.5px;
+    line-height: 1.58;
+    color: var(--ink-soft);
+    margin: 10px 0 0;
+    max-width: 72ch;
+  }
+  .why b { color: var(--ink); font-weight: 500; }
+
+  .wires {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 3px 22px;
+    margin-top: 13px;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-soft);
+  }
+  .wire { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
+  .wire .wk {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    flex: 0 0 52px;
+    padding-top: 2px;
+  }
+  .wire .wv { font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft); min-width: 0; word-break: break-word; }
+  .wire .wv.none { color: var(--muted); font-style: italic; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .9em;
+    background: var(--sunk);
+    padding: 1px 4px;
+    border-radius: 2px;
+  }
+
+  /* ---------- findings ---------- */
+
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--send);
+    border-radius: 3px;
+    padding: 16px 20px 18px;
+    margin-top: 14px;
+  }
+  .finding.neutral { border-left-color: var(--live); }
+  .finding h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -.008em;
+  }
+  .finding p {
+    font-family: var(--serif);
+    font-size: 15.5px;
+    line-height: 1.58;
+    color: var(--ink-soft);
+    margin: 8px 0 0;
+    max-width: 72ch;
+  }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+  }
+
+  @media (max-width: 620px) {
+    .wrap { padding: 40px 18px 72px; }
+    .card { grid-template-columns: 1fr; }
+    .seq {
+      border-right: 0;
+      border-bottom: 1px solid var(--rule-soft);
+      justify-content: flex-start;
+      padding: 9px 18px;
+    }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">VisioneerIT outbound engine · n8n</div>
+    <h1>Twenty workflows, and what each one is for</h1>
+    <p class="standfirst">Six of them carry every lead that has ever been sent. The other fourteen are
+    listeners, operator tools, and parts that are built and tested but not currently wired into the
+    path. This map separates them and shows where each one hands off.</p>
+
+    <div class="strip">
+      <div class="stat"><div class="k">On the instance</div><div class="v">20</div><div class="n">all <code>VIO-</code> prefixed</div></div>
+      <div class="stat"><div class="k">Active</div><div class="v on">19</div><div class="n">1 off: costs-rollup</div></div>
+      <div class="stat"><div class="k">In the send path</div><div class="v">6</div><div class="n">2 pollers, 4 sub-calls</div></div>
+      <div class="stat"><div class="k">Runs / 24h</div><div class="v">1,273</div><div class="n">1,262 clean</div></div>
+      <div class="stat"><div class="k">Dormant</div><div class="v off">7</div><div class="n">no live traffic</div></div>
+    </div>
+  </header>
+
+  <!-- ================= DIAGRAM ================= -->
+
+  <section>
+    <div class="shead">
+      <div class="eyebrow">The shape of it</div>
+      <h2>The two halves join only through the Sheet</h2>
+      <p>Nothing calls across from intake to outreach. Intake finishes by writing a row to the
+      <b>Leads</b> tab; outreach starts by reading one. That row is the entire interface between them —
+      which is why the <code>channel_state_email</code> column disagreeing once meant every staff-typed
+      lead landed correctly and was never picked up.</p>
+    </div>
+
+    <div class="figure">
+      <div class="figscroll">
+        <svg viewBox="0 0 1000 470" role="img" aria-label="Flow diagram: the Inbox tab is polled every two minutes by inbox-mapper, which calls intake-verify-curate, which writes to the Leads tab. The Leads tab is polled every three minutes by run-outreach, which calls operator-agent, sendr-generate-page and enrol-email in turn, which pushes to Instantly and reaches the prospect. The prospect's reply returns through three webhook listeners.">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,1 L9,5 L0,9" fill="none" stroke="context-stroke" stroke-width="1.6"/>
+            </marker>
+          </defs>
+
+          <!-- band A -->
+          <text class="lbl" x="18" y="26">Band A — intake · a human types</text>
+
+          <rect class="box data" x="18" y="40" width="168" height="56" rx="3"/>
+          <text class="t"  x="34" y="66">Sheet · Inbox tab</text>
+          <text class="st" x="34" y="83">staff paste any shape</text>
+
+          <path class="flow strong" d="M186,68 L246,68" marker-end="url(#ah)"/>
+          <text class="st" x="192" y="60">2 min</text>
+
+          <rect class="box live" x="252" y="40" width="200" height="56" rx="3"/>
+          <text class="t"  x="268" y="66">VIO-inbox-mapper</text>
+          <text class="st" x="268" y="83">normalise · claim · heartbeat</text>
+
+          <path class="flow strong" d="M452,68 L512,68" marker-end="url(#ah)"/>
+
+          <rect class="box live" x="518" y="40" width="228" height="56" rx="3"/>
+          <text class="t"  x="534" y="66">VIO-intake-verify-curate</text>
+          <text class="st" x="534" y="83">dedupe → suppress → Reoon</text>
+
+          <!-- drop into Leads -->
+          <path class="flow strong" d="M632,96 L632,150" marker-end="url(#ah)"/>
+          <text class="st" x="642" y="128">writes row</text>
+
+          <!-- the shared table -->
+          <rect class="box data" x="18" y="156" width="964" height="54" rx="3"/>
+          <text class="t"  x="36" y="180">Sheet · Leads tab</text>
+          <text class="st" x="36" y="197">the only join between the two halves — 34 columns, one row per lead</text>
+
+          <path class="flow strong" d="M112,210 L112,262" marker-end="url(#ah)"/>
+          <text class="st" x="122" y="252">reads READY</text>
+
+          <!-- band B -->
+          <text class="lbl" x="206" y="232">Band B — outreach · the clock spends money</text>
+
+          <rect class="box live" x="18" y="268" width="186" height="56" rx="3"/>
+          <text class="t"  x="34" y="294">VIO-run-outreach</text>
+          <text class="st" x="34" y="311">3 min · 1 lead / cycle</text>
+
+          <path class="flow strong" d="M204,296 L240,296" marker-end="url(#ah)"/>
+
+          <rect class="box" x="246" y="268" width="176" height="56" rx="3"/>
+          <text class="t"  x="262" y="294">operator-agent</text>
+          <text class="st" x="262" y="311">OpenAI writes the email</text>
+
+          <path class="flow strong" d="M422,296 L458,296" marker-end="url(#ah)"/>
+
+          <rect class="box" x="464" y="268" width="176" height="56" rx="3"/>
+          <text class="t"  x="480" y="294">sendr-generate-page</text>
+          <text class="st" x="480" y="311">personal page URL</text>
+
+          <path class="flow strong" d="M640,296 L676,296" marker-end="url(#ah)"/>
+
+          <rect class="box send" x="682" y="268" width="176" height="56" rx="3"/>
+          <text class="t"  x="698" y="294">enrol-email</text>
+          <text class="st" x="698" y="311">5 checks, then send</text>
+
+          <path class="flow strong" d="M858,296 L900,296" marker-end="url(#ah)"/>
+
+          <rect class="box send" x="906" y="268" width="76" height="56" rx="3"/>
+          <text class="t"  x="922" y="290">Instantly</text>
+          <text class="st" x="922" y="307">outbox</text>
+
+          <!-- to prospect and back -->
+          <path class="flow strong" d="M944,324 L944,376" marker-end="url(#ah)"/>
+
+          <rect class="box ghost" x="836" y="382" width="146" height="52" rx="3"/>
+          <text class="t"  x="852" y="406">The prospect</text>
+          <text class="st" x="852" y="423">opens · clicks · replies</text>
+
+          <path class="flow dash" d="M836,408 L246,408" marker-end="url(#ah)"/>
+          <text class="st" x="440" y="399">replies, bounces, page views come back as webhooks</text>
+
+          <rect class="box ghost" x="18" y="382" width="222" height="52" rx="3"/>
+          <text class="t"  x="34" y="406">3 webhook listeners</text>
+          <text class="st" x="34" y="423">instantly · reply · sendr events</text>
+        </svg>
+      </div>
+      <div class="figcap">Solid lines are direct workflow calls. The dashed line is the outside world
+      calling in. Everything in Band B can spend money or reach a real person.</div>
+    </div>
+  </section>
+
+  <!-- ================= SEND PATH ================= -->
+
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Shelf 1 of 4 · 6 workflows</div>
+      <h2>The send path</h2>
+      <p>Numbered because it genuinely is a sequence — each one hands to the next. Only two of the six
+      have their own clock; the other four run only when called, once per lead.</p>
+    </div>
+
+    <div class="cards">
+
+      <article class="card">
+        <div class="seq">01</div>
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-inbox-mapper</span>
+            <span class="pill live">every 2 min</span>
+            <span class="role">the front door for human-typed leads</span>
+          </div>
+          <p class="why">Reads the <b>Inbox</b> tab and normalises whatever shape staff pasted onto the
+          Leads schema, using a deterministic table of about sixty header spellings. OpenAI is called
+          <b>only</b> when a required field is still missing <b>and</b> there are unrecognised columns
+          that might hold it — so a row still being typed is left alone, but a sheet whose email column
+          is named <code>Contact Point</code> still gets read. Blank <code>status</code> is the claim
+          marker. Also stamps the <b>System</b> tab so staff can see the poller is alive.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">schedule · 2 min</span></div>
+            <div class="wire"><span class="wk">Calls</span><span class="wv">VIO-intake-verify-curate <em>(batch)</em></span></div>
+            <div class="wire"><span class="wk">Reads</span><span class="wv">Inbox</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Inbox · System</span></div>
+            <div class="wire"><span class="wk">24h</span><span class="wv">718 runs · 716 clean</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">typed leads sit forever</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="seq">02</div>
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-intake-verify-curate</span>
+            <span class="pill wait">called</span>
+            <span class="role">the only gate every lead must pass</span>
+          </div>
+          <p class="why">Dedupe and suppression run <b>before</b> Reoon, so a duplicate or a suppressed
+          address costs zero verification credits. Four verdicts come out — pass, needs_review, dedupe
+          hit, suppression hit — and <b>Intake Result</b> joins all four into one return value, because
+          before it existed a caller got whichever branch happened to finish last. It echoes
+          <code>inbox_row</code> back, since identity does not survive an Execute Workflow call.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">callable + manual</span></div>
+            <div class="wire"><span class="wk">Called by</span><span class="wv">VIO-inbox-mapper</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">Reoon</span></div>
+            <div class="wire"><span class="wk">Reads</span><span class="wv">Leads · Suppression</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Leads · Events</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">nothing verifies — nothing sends</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="seq">03</div>
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-run-outreach</span>
+            <span class="pill send">every 3 min · can send</span>
+            <span class="role">the conductor</span>
+          </div>
+          <p class="why">Reads <b>Leads</b> for a ready row — <code>''</code>, <code>not_sent</code> or
+          <code>approved</code> — takes <b>one lead per cycle</b>, resolves which product is pitching,
+          and calls the next three in order, per lead. This is the workflow that decides anything gets
+          sent at all. It was called <code>VIO-demo-sheet-run</code> until it stopped being a demo; the
+          id still reads <code>VIOwfDsheetdemo1</code>.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">schedule · 3 min</span></div>
+            <div class="wire"><span class="wk">Calls</span><span class="wv">operator-agent → sendr-generate-page → enrol-email <em>(each)</em></span></div>
+            <div class="wire"><span class="wk">Reads</span><span class="wv">Leads</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Leads · System</span></div>
+            <div class="wire"><span class="wk">24h</span><span class="wv">477 runs · 471 clean</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">the machine goes quiet, safely</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="seq">04</div>
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-operator-agent</span>
+            <span class="pill wait">called per lead</span>
+            <span class="role">this is what writes the email</span>
+          </div>
+          <p class="why">The answer to "who drafts the copy". It validates the product config, sends the
+          lead to OpenAI for a personalised opening line, and assembles the body from that config —
+          which is how OryonIQ and VisioneerIT get different pitches from one engine. Runs in
+          <code>mode: each</code>, one call per lead, because <code>$('Node').first()</code> is always
+          item zero and a batch call gave lead two lead one's identity.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">callable + test webhook</span></div>
+            <div class="wire"><span class="wk">Called by</span><span class="wv">VIO-run-outreach · VIO-run-campaign</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">OpenAI</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">no copy, so no send</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="seq">05</div>
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-sendr-generate-page</span>
+            <span class="pill wait">called per lead</span>
+            <span class="role">the personalised landing page</span>
+          </div>
+          <p class="why">Turns a lead plus a product into a Sendr page URL that the email links to. It
+          <b>fails closed on an unknown product</b> before spending Sendr quota. Its ROUTES map holds a
+          hand-copy of each product's <code>signal</code>, <code>offer</code> and <code>cta</code> — when
+          the config changes, run <code>sync-routes.py</code> or the page and the email will argue
+          different cases to the same prospect.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">callable + webhook</span></div>
+            <div class="wire"><span class="wk">Called by</span><span class="wv">VIO-run-outreach</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">Sendr</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">email sends without its page</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="seq">06</div>
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-enrol-email</span>
+            <span class="pill send">the irreversible one</span>
+            <span class="role">last stop before a real person</span>
+          </div>
+          <p class="why">The only place mail actually leaves. Five checks throw rather than warn:
+          verified-or-vouched, a fresh suppression read with canonicalisation (so plus-addressing and
+          subdomains cannot slip past), the product resolves, the opener is sane, and the 20-a-day cap
+          measured in <b>Detroit time</b> — measuring it in UTC quietly made it forty. It writes
+          <code>enroll_attempt</code> to Events <b>before</b> calling Instantly, which is why the night
+          the Sheets write failed after a successful send, nobody got mailed twice.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">callable</span></div>
+            <div class="wire"><span class="wk">Called by</span><span class="wv">VIO-run-outreach</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">Instantly</span></div>
+            <div class="wire"><span class="wk">Reads</span><span class="wv">Suppression · Events</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Leads · Events</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">nothing sends — the safe failure</span></div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ================= LISTENERS ================= -->
+
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Shelf 2 of 4 · 4 workflows</div>
+      <h2>Listeners — the outside world calling in</h2>
+      <p>No clock. Each sits on an authenticated webhook and does nothing until something happens out
+      there. Together they are the only way the system learns what its mail did.</p>
+    </div>
+
+    <div class="cards">
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-instantly-events</span>
+            <span class="pill live">webhook</span>
+            <span class="role">delivery truth</span>
+          </div>
+          <p class="why">Instantly reports opens, bounces and unsubscribes here. Bounces and unsubs are
+          appended to <b>Suppression</b>, which is append-only and matches on any identifier — so a
+          person who opts out is out across every product, permanently.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-instantly-events</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Events · Leads · Suppression</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">you keep mailing people who said stop</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-inbound-reply-to-call</span>
+            <span class="pill live">webhook</span>
+            <span class="role">a human replied</span>
+          </div>
+          <p class="why">Classifies the reply's sentiment with OpenAI, passes it through the dedup gate,
+          and posts Approve / Decline to Slack. Since voice was dropped, those buttons mean <b>"I'm
+          taking this follow-up"</b> and <b>"not a real lead"</b> — the name is historical. The TCPA gate
+          inside it is a leftover guard, not permission to dial anyone.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-inbound-reply</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">OpenAI · Slack</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Leads · Suppression · Events</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">interested replies go unnoticed</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-sendr-events</span>
+            <span class="pill live">webhook</span>
+            <span class="role">page heat</span>
+          </div>
+          <p class="why">Sendr reports page views and booking events. Classifies heat and pings Slack on
+          hot, booked or failed. It deliberately splits <code>asset_warning</code> from <code>error</code>,
+          because a <code>page:failed</code> event does not mean the page is unusable.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-sendr-events</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">Slack</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">you miss the warm ones</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-error-alert</span>
+            <span class="pill live">error trigger</span>
+            <span class="role">the smoke alarm</span>
+          </div>
+          <p class="why">Not a webhook — an n8n error trigger that fires when <b>any</b> VIO workflow
+          fails, and posts it to Slack. It went off eleven times in the last day; the last one was this
+          morning and everything has been clean since.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">errorTrigger · any VIO failure</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">Slack</span></div>
+            <div class="wire"><span class="wk">If dead</span><span class="wv">failures become silent</span></div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ================= OPS ================= -->
+
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Shelf 3 of 4 · 3 workflows</div>
+      <h2>Operator tools — you run these by hand</h2>
+      <p>They exist so the Sheet can be inspected and corrected without opening n8n. Nothing calls them;
+      they wait on a webhook until you do.</p>
+    </div>
+
+    <div class="cards">
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-sheet-audit</span>
+            <span class="pill wait">on demand</span>
+            <span class="role">what does the sheet actually look like</span>
+          </div>
+          <p class="why">Reads all nine tabs and reports their shape. Two things to remember when reading
+          its output: it derives headers from <b>data rows</b>, so an empty tab reports zero headers
+          whether or not a header row exists — that is how a completely unprovisioned Inbox went
+          unnoticed — and a throttled read can look like a missing tab.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-sheet-audit</span></div>
+            <div class="wire"><span class="wk">Reads</span><span class="wv">all 9 tabs</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-sheet-provision</span>
+            <span class="pill wait">on demand</span>
+            <span class="role">creates tabs and their header rows</span>
+          </div>
+          <p class="why">Needs <code>alwaysOutputData</code> on the create step, because creating a tab
+          that already exists returns 400, emits zero items, and stops the chain — while still reporting
+          success. And an <code>append</code> cannot bootstrap a header row: it reads the existing header
+          to decide where values go, so on a bare tab it matches nothing and returns 200.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-sheet-provision</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">creates tabs · Inbox · System</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-sheet-repair</span>
+            <span class="pill wait">on demand</span>
+            <span class="role">the manual override</span>
+          </div>
+          <p class="why">Three actions. <code>seed</code> puts a test row in. <code>approve</code> moves a
+          lead's state — and now takes an optional <code>state</code>, restricted to the sheet's own
+          vocabulary, which is how last night's confirmed-but-unrecorded sends were written back as
+          <code>enrolled</code>. <code>cleanup</code> deletes test rows, guarded to
+          <code>.invalid</code> / <code>.test</code> / <code>.example</code> domains so it can never
+          reach a real prospect.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-sheet-repair</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Inbox · Leads · any named tab</span></div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ================= DORMANT ================= -->
+
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Shelf 4 of 4 · 7 workflows</div>
+      <h2>Built and tested, but nothing calls them</h2>
+      <p>All are active on the instance except the last. Being active is not the same as being reachable
+      — six of these have no caller and no clock, so they sit at their webhook doing nothing.</p>
+    </div>
+
+    <div class="cards">
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-source-leads</span>
+            <span class="pill dark">no live caller</span>
+            <span class="role">Apollo sourcing</span>
+          </div>
+          <p class="why">Free search, pre-filter on <code>has_email</code> / <code>has_direct_phone</code>,
+          reveal only survivors. The credit-conserving design is done. Its only caller is
+          VIO-run-campaign, which nothing invokes — so <b>today no lead enters this system except by a
+          human typing it</b>.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Called by</span><span class="wv">VIO-run-campaign only</span></div>
+            <div class="wire"><span class="wk">API</span><span class="wv">Apollo</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-run-campaign</span>
+            <span class="pill dark">orphan entry</span>
+            <span class="role">the Apollo-sourced runner</span>
+          </div>
+          <p class="why">The parallel conductor to run-outreach: source from Apollo, then draft per lead.
+          It has a webhook and no scheduler, and nothing posts to it. This is the missing link between
+          Apollo and the send path.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-run-campaign</span></div>
+            <div class="wire"><span class="wk">Calls</span><span class="wv">VIO-source-leads · VIO-operator-agent</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-agent-tool-push-instantly</span>
+            <span class="pill dark">bypassed by design</span>
+            <span class="role">the Slack-gated send</span>
+          </div>
+          <p class="why">The original send path: every lead paused for a human Approve click in Slack.
+          It was deliberately set aside — run-outreach calls <b>enrol-email</b> instead, which replaces
+          the click with five checks that throw. Keep it: it is the path to fall back to if the
+          automatic checks ever prove too loose.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Calls</span><span class="wv">VIO-agent-tool-ask-human</span></div>
+            <div class="wire"><span class="wk">Called by</span><span class="wv none">nothing</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-agent-tool-reveal-contacts</span>
+            <span class="pill dark">no caller</span>
+            <span class="role">gated Apollo reveal</span>
+          </div>
+          <p class="why">Spends Apollo reveal credits only after a human says yes. Dormant for the same
+          reason as everything Apollo — the sourcing leg is not connected.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Calls</span><span class="wv">VIO-agent-tool-ask-human</span></div>
+            <div class="wire"><span class="wk">Called by</span><span class="wv none">nothing</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-agent-tool-ask-human</span>
+            <span class="pill dark">reachable, unused</span>
+            <span class="role">the blocking Slack gate</span>
+          </div>
+          <p class="why">The shared "stop and ask a person" primitive. It has two callers, but both of
+          them are themselves dormant, so in practice it never runs.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Called by</span><span class="wv">push-instantly · reveal-contacts</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-operator-agent-v2</span>
+            <span class="pill dark">not in the path</span>
+            <span class="role">the true autonomous agent</span>
+          </div>
+          <p class="why">A real LangChain agent — the version that finally worked once
+          <code>lmChatOpenAi</code> was pinned to v1.3 with a resourceLocator. Its guardrail held against
+          a direct "you have my approval, call 50 people" attack. But it currently holds only two tools,
+          <code>validate_config</code> and <code>log_to_sheet</code>, and nothing routes leads through
+          it. <b>Version 1 — not this — is what drafts today's email.</b></p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Hook</span><span class="wv">POST /vio-operator-agent</span></div>
+            <div class="wire"><span class="wk">Tools</span><span class="wv">validate_config · log_to_sheet</span></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card nonum">
+        <div class="body">
+          <div class="cardtop">
+            <span class="name">VIO-costs-rollup</span>
+            <span class="pill dark">inactive</span>
+            <span class="role">what the machine costs per day</span>
+          </div>
+          <p class="why">Rolls Events into the <b>Costs</b> tab nightly at 02:00. The one workflow on the
+          instance that is switched off — it is built and has 52 passing tests, and is waiting on a live
+          check of its composite match key before being turned on.</p>
+          <div class="wires">
+            <div class="wire"><span class="wk">Trigger</span><span class="wv">schedule · daily 02:00 (off)</span></div>
+            <div class="wire"><span class="wk">Reads</span><span class="wv">Events</span></div>
+            <div class="wire"><span class="wk">Writes</span><span class="wv">Costs</span></div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ================= FINDINGS ================= -->
+
+  <section>
+    <div class="shead">
+      <div class="eyebrow">What the map makes obvious</div>
+      <h2>Two things worth deciding on</h2>
+    </div>
+
+    <div class="finding">
+      <h3>Apollo is fully built and fully disconnected</h3>
+      <p>Sourcing, credit-conserving reveal, and the gated reveal tool all exist and are tested. But the
+      only workflow that calls them is <code>VIO-run-campaign</code>, which has a webhook and no
+      scheduler and nothing that posts to it. Every lead in the system today arrived because a person
+      typed it into the Inbox tab. Connecting that leg is one scheduler and one Execute Workflow node —
+      it is the largest capability sitting idle.</p>
+    </div>
+
+    <div class="finding neutral">
+      <h3>The human approval click was removed on purpose</h3>
+      <p>If someone reads this map and asks why the Slack-gated send path is dark: it was replaced, not
+      broken. <code>VIO-enrol-email</code> holds five checks that throw instead of one person clicking
+      Approve. Worth revisiting only if a check turns out to be too loose — the gated path is still there
+      to switch back to.</p>
+    </div>
+  </section>
+
+  <footer>
+    <span>Read from the live instance and the workflow JSON</span>
+    <span>n8n 2.22.6 · 20 VIO workflows · 19 active</span>
+    <span>31 Aug 2026</span>
+  </footer>
+
+</div>

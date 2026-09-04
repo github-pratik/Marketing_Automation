@@ -1,0 +1,373 @@
+<title>OryonIQ Outreach Build Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root {
+    --ground:#F5F7F9; --surface:#FFFFFF; --sunk:#ECEFF3; --ink:#191D26; --ink-soft:#414A5A;
+    --muted:#697283; --rule:#D7DDE5; --rule-soft:#E6EAF0;
+    --live:#1B6A9E; --live-bg:#E7F0F7; --send:#A8324A; --send-bg:#F9EBEE;
+    --wait:#6A5B23; --wait-bg:#F5F0DE; --dark:#6B7382; --dark-bg:#EDEFF2;
+    --done:#1F6B44; --done-bg:#E4F2EA;
+    --shadow:0 1px 2px rgba(25,29,38,.05),0 4px 14px -6px rgba(25,29,38,.10);
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --ground:#14161C; --surface:#1B1E25; --sunk:#23272F; --ink:#E8EBF1; --ink-soft:#B6BECC;
+    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
+    --live:#6FB2DF; --live-bg:#17303F; --send:#E8869B; --send-bg:#3A1F27;
+    --wait:#D6BF7A; --wait-bg:#332D18; --dark:#8A93A3; --dark-bg:#262A32;
+    --done:#7CCB9C; --done-bg:#183024;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);
+  } }
+  :root[data-theme="dark"] {
+    --ground:#14161C; --surface:#1B1E25; --sunk:#23272F; --ink:#E8EBF1; --ink-soft:#B6BECC;
+    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
+    --live:#6FB2DF; --live-bg:#17303F; --send:#E8869B; --send-bg:#3A1F27;
+    --wait:#D6BF7A; --wait-bg:#332D18; --dark:#8A93A3; --dark-bg:#262A32;
+    --done:#7CCB9C; --done-bg:#183024;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font-family:var(--sans); font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .wrap { max-width:1040px; margin:0 auto; padding:56px 28px 96px; }
+
+  .eyebrow { font-family:var(--mono); font-size:11.5px; font-weight:500; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); }
+  h1 { font-size:clamp(30px,4.4vw,44px); line-height:1.08; font-weight:600; letter-spacing:-.021em; margin:14px 0 0; text-wrap:balance; }
+  .standfirst { font-family:var(--serif); font-size:18px; line-height:1.6; color:var(--ink-soft); max-width:62ch; margin:16px 0 0; }
+
+  .strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:3px; overflow:hidden; margin:36px 0 0; }
+  .stat { background:var(--surface); padding:15px 16px 16px; }
+  .stat .k { font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+  .stat .v { font-family:var(--mono); font-size:25px; font-weight:500; font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin-top:5px; line-height:1.1; }
+  .stat .n { font-size:12.5px; color:var(--muted); margin-top:3px; }
+  .stat .v.on { color:var(--live); } .stat .v.ok { color:var(--done); } .stat .v.warn { color:var(--wait); }
+
+  section { margin-top:68px; }
+  .shead { border-top:2px solid var(--ink); padding-top:14px; }
+  .shead h2 { font-size:22px; font-weight:600; letter-spacing:-.014em; margin:6px 0 0; }
+  .shead p { font-family:var(--serif); color:var(--ink-soft); max-width:66ch; margin:9px 0 0; font-size:16.5px; }
+
+  table { width:100%; border-collapse:collapse; margin-top:22px; font-size:14.5px; }
+  .tablewrap { overflow-x:auto; border:1px solid var(--rule); border-radius:4px; background:var(--surface); margin-top:24px; }
+  .tablewrap table { margin:0; min-width:640px; }
+  th { text-align:left; font-family:var(--mono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); padding:11px 14px; border-bottom:1px solid var(--rule); font-weight:500; }
+  td { padding:12px 14px; border-bottom:1px solid var(--rule-soft); vertical-align:top; }
+  tr:last-child td { border-bottom:0; }
+  td.k { font-family:var(--mono); font-size:13px; white-space:nowrap; }
+  td .why { font-family:var(--serif); color:var(--ink-soft); font-size:14px; margin-top:3px; }
+
+  .pill { font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.07em; text-transform:uppercase; padding:3px 7px; border-radius:2px; white-space:nowrap; display:inline-block; }
+  .pill.live{background:var(--live-bg);color:var(--live);} .pill.send{background:var(--send-bg);color:var(--send);}
+  .pill.wait{background:var(--wait-bg);color:var(--wait);} .pill.dark{background:var(--dark-bg);color:var(--dark);}
+  .pill.done{background:var(--done-bg);color:var(--done);}
+
+  /* event model diagram */
+  .figure { margin:26px 0 0; border:1px solid var(--rule); border-radius:4px; background:var(--surface); overflow:hidden; }
+  .figscroll { overflow-x:auto; padding:8px; }
+  .figure svg { display:block; width:960px; height:400px; }
+  .figcap { border-top:1px solid var(--rule-soft); padding:11px 16px; font-size:13.5px; color:var(--muted); font-family:var(--serif); }
+  svg .box { fill:var(--surface); stroke:var(--rule); stroke-width:1.25; }
+  svg .box.live{fill:var(--live-bg);stroke:var(--live);} svg .box.send{fill:var(--send-bg);stroke:var(--send);}
+  svg .box.data{fill:var(--sunk);stroke:var(--rule);} svg .box.done{fill:var(--done-bg);stroke:var(--done);}
+  svg .box.ghost{fill:none;stroke:var(--rule);stroke-dasharray:4 3;}
+  svg .t{font-family:var(--sans);font-size:13px;font-weight:600;fill:var(--ink);}
+  svg .st{font-family:var(--mono);font-size:10.5px;fill:var(--muted);}
+  svg .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.07em;fill:var(--muted);text-transform:uppercase;}
+  svg .flow{stroke:var(--rule);stroke-width:1.5;fill:none;} svg .flow.strong{stroke:var(--live);} svg .flow.dash{stroke-dasharray:4 4;stroke:var(--muted);}
+
+  /* phases */
+  .phases { display:flex; flex-direction:column; gap:16px; margin-top:26px; }
+  .phase { background:var(--surface); border:1px solid var(--rule); border-radius:4px; box-shadow:var(--shadow); display:grid; grid-template-columns:52px 1fr; }
+  .seq { border-right:1px solid var(--rule-soft); display:flex; align-items:flex-start; justify-content:center; padding-top:18px; font-family:var(--mono); font-size:13px; font-weight:600; color:var(--muted); }
+  .body { padding:16px 20px 18px; min-width:0; }
+  .ptop { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 12px; }
+  .pname { font-size:17px; font-weight:600; letter-spacing:-.01em; }
+  .prole { font-size:13.5px; color:var(--muted); }
+  .pwhy { font-family:var(--serif); font-size:15.5px; line-height:1.58; color:var(--ink-soft); margin:9px 0 0; max-width:72ch; }
+  .steps { list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:9px; }
+  .steps li { display:grid; grid-template-columns:40px 1fr; gap:10px; align-items:baseline; font-size:14.5px; }
+  .steps .n { font-family:var(--mono); font-size:11.5px; color:var(--muted); padding-top:2px; }
+  .steps b { font-weight:600; }
+  .steps .d { color:var(--ink-soft); }
+  .donewhen { margin-top:14px; padding-top:12px; border-top:1px solid var(--rule-soft); font-size:13.5px; display:flex; gap:10px; align-items:baseline; }
+  .donewhen .wk { font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--done); flex:0 0 78px; }
+  .donewhen .wv { font-family:var(--serif); color:var(--ink-soft); }
+  .blocked { margin-top:8px; font-size:13px; color:var(--send); font-family:var(--mono); }
+
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin-top:24px; }
+  .card { background:var(--surface); border:1px solid var(--rule); border-radius:4px; padding:16px 18px 17px; }
+  .card h3 { font-size:15px; font-weight:600; margin:0; letter-spacing:-.008em; }
+  .card p { font-family:var(--serif); font-size:14.5px; line-height:1.55; color:var(--ink-soft); margin:7px 0 0; }
+  .card.ask { border-left:3px solid var(--wait); }
+  .card.dec { border-left:3px solid var(--live); }
+  code { font-family:var(--mono); font-size:.9em; background:var(--sunk); padding:1px 4px; border-radius:2px; }
+
+  footer { margin-top:72px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 20px; }
+  @media (max-width:620px) { .wrap{padding:40px 18px 72px;} .phase{grid-template-columns:1fr;} .seq{border-right:0;border-bottom:1px solid var(--rule-soft);justify-content:flex-start;padding:9px 20px;} }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">OryonIQ · standalone outreach · build plan</div>
+    <h1>From a sheet nobody can read to one screen everybody can</h1>
+    <p class="standfirst">The sending machine works. What it lacks is a place where a boss or a
+    staff member can see what happened to a lead, act on it, and trust the record. This is the
+    plan to get there — what broke, what is fixed, and the four phases to one database and one
+    interface.</p>
+
+    <div class="strip">
+      <div class="stat"><div class="k">Send path</div><div class="v ok">live</div><div class="n">proven end to end 1 Sep</div></div>
+      <div class="stat"><div class="k">Clean runs since fix</div><div class="v on">3,300+</div><div class="n">zero defects</div></div>
+      <div class="stat"><div class="k">Sending accounts</div><div class="v on">4</div><div class="n">rotating · 120/day cap</div></div>
+      <div class="stat"><div class="k">Instantly → us</div><div class="v ok">3 hooks</div><div class="n">reply · bounce · unsub</div></div>
+      <div class="stat"><div class="k">Target volume</div><div class="v warn">50–100</div><div class="n">per day</div></div>
+    </div>
+  </header>
+
+  <!-- ================= WHAT BROKE ================= -->
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Part 1 · where we are</div>
+      <h2>What broke, why, and what stops it happening again</h2>
+      <p>Five separate failures in a week, all found by reading what actually ran rather than what
+      the config claimed. Every one is fixed. Three of them share a root cause that no fix removes:
+      a spreadsheet is being asked to be a database.</p>
+    </div>
+
+    <div class="tablewrap"><table>
+      <thead><tr><th>What you saw</th><th>What it actually was</th><th>State</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">Emails sent,<br>sheet never updated</td>
+          <td>The sheet writer threw on every run from 29 Aug — the day a column was inserted. n8n compares its cached column list to the sheet <b>by position</b>, and only on one of its three write operations. Two real sends left Instantly and were recorded nowhere.
+            <div class="why">Fixed by emptying the cache so the check cannot run. A guard script now fails the build on any node that could regress.</div></td>
+          <td><span class="pill done">fixed</span></td>
+        </tr>
+        <tr>
+          <td class="k">Send succeeded,<br>runner errored anyway</td>
+          <td>Two workflows each had a Sheets write dangling as a second exit point. n8n returns whichever exit finishes last, so the caller sometimes got a spreadsheet row instead of a verdict.
+            <div class="why">Both rewired. The cross-workflow test now forbids any exit that is a side effect.</div></td>
+          <td><span class="pill done">fixed</span></td>
+        </tr>
+        <tr>
+          <td class="k">Fix deployed,<br>nothing changed</td>
+          <td>n8n's command-line importer writes the database, but the running server never reloads a scheduled workflow. The mapper ran old code for hours while every check said the new code was there.
+            <div class="why">Restart reloads. Documented, with the one query that tells the truth. Phase 1 removes the problem entirely — a database trigger has no cached copy to go stale.</div></td>
+          <td><span class="pill done">fixed</span></td>
+        </tr>
+        <tr>
+          <td class="k">Staff corrected a row,<br>nothing happened</td>
+          <td>A flagged row was never read again, even after the address it complained about was fixed. The note explained the problem and then sealed the row.
+            <div class="why">A corrected row now re-enters automatically. Proven live: the fixed address was re-verified and correctly refused.</div></td>
+          <td><span class="pill done">fixed</span></td>
+        </tr>
+        <tr>
+          <td class="k">Follow-up arrived<br>9 minutes after the opener</td>
+          <td>Instantly's delay on a step governs the gap <b>after</b> it, not before. Step 1 carried zero. A real prospect would have received two emails in ten minutes.
+            <div class="why">Delays shifted to 3 / 4 / 6 days as declared.</div></td>
+          <td><span class="pill done">fixed</span></td>
+        </tr>
+      </tbody>
+    </table></div>
+
+    <div class="tablewrap"><table>
+      <thead><tr><th>Still fragile</th><th>Why it matters at 50–100 a day</th><th>Resolved by</th></tr></thead>
+      <tbody>
+        <tr><td class="k">Sheet as database</td><td>60 reads a minute, positional columns, no transactions, no events. Every failure above except one traces here.</td><td><span class="pill live">Phase 1</span></td></tr>
+        <tr><td class="k">Sheet as interface</td><td>Nobody on the team can read it. A record nobody can read is not a record.</td><td><span class="pill live">Phase 2</span></td></tr>
+        <tr><td class="k">Bookings invisible</td><td>A prospect who books keeps getting follow-ups, and the conversion is never counted.</td><td><span class="pill wait">Phase 0 · needs HubSpot</span></td></tr>
+        <tr><td class="k">Reply stops at Slack</td><td>A yes gets an Approve button and nothing else. No booking link, no context, no next step.</td><td><span class="pill live">Phase 0</span></td></tr>
+        <tr><td class="k">Copy buries the offer</td><td>You read a real send and said so. Unchanged.</td><td><span class="pill live">Phase 0</span></td></tr>
+        <tr><td class="k">No lead supply</td><td>The machine is idle. Every lead is typed by hand.</td><td><span class="pill dark">Phase 3</span></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <!-- ================= THE MODEL ================= -->
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Part 2 · the target</div>
+      <h2>How an action gets recorded, and how one gets taken</h2>
+      <p>One rule replaces the whole sheet: <b>every action is a row in one table.</b> The pipeline
+      writes them, the outside world writes them, and a person clicking a button writes them.
+      A lead's status is never edited — it is read off the latest row. The interface is a view
+      of that table. n8n reacts to new rows instead of polling.</p>
+    </div>
+
+    <div class="figure">
+      <div class="figscroll">
+        <svg viewBox="0 0 960 400" role="img" aria-label="Four sources write events into one table; the interface and n8n both read from it.">
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9" fill="none" stroke="context-stroke" stroke-width="1.6"/></marker></defs>
+
+          <text class="lbl" x="18" y="26">Who writes an action</text>
+
+          <rect class="box live" x="18" y="40" width="200" height="54" rx="3"/>
+          <text class="t" x="34" y="64">n8n pipeline</text>
+          <text class="st" x="34" y="81">verified · drafted · sent</text>
+
+          <rect class="box" x="18" y="108" width="200" height="54" rx="3"/>
+          <text class="t" x="34" y="132">Instantly webhooks</text>
+          <text class="st" x="34" y="149">opened · bounced · replied</text>
+
+          <rect class="box" x="18" y="176" width="200" height="54" rx="3"/>
+          <text class="t" x="34" y="200">HubSpot webhook</text>
+          <text class="st" x="34" y="217">meeting booked</text>
+
+          <rect class="box done" x="18" y="244" width="200" height="54" rx="3"/>
+          <text class="t" x="34" y="268">A person, in the interface</text>
+          <text class="st" x="34" y="285">approved · parked · suppressed</text>
+
+          <path class="flow strong" d="M218,67 L330,190" marker-end="url(#ah)"/>
+          <path class="flow" d="M218,135 L330,196" marker-end="url(#ah)"/>
+          <path class="flow" d="M218,203 L330,204" marker-end="url(#ah)"/>
+          <path class="flow" d="M218,271 L330,214" marker-end="url(#ah)"/>
+
+          <rect class="box data" x="336" y="150" width="270" height="110" rx="3"/>
+          <text class="t" x="352" y="176">events</text>
+          <text class="st" x="352" y="196">when · lead · actor · action · outcome</text>
+          <text class="st" x="352" y="214">one row per thing that happened</text>
+          <text class="st" x="352" y="232">append only — nothing is ever edited</text>
+          <text class="st" x="352" y="250">Supabase · Postgres</text>
+
+          <text class="lbl" x="660" y="26">Who reads it</text>
+
+          <path class="flow strong" d="M606,185 L720,110" marker-end="url(#ah)"/>
+          <rect class="box done" x="726" y="80" width="216" height="62" rx="3"/>
+          <text class="t" x="742" y="104">The interface</text>
+          <text class="st" x="742" y="121">timeline per lead · board · inbox</text>
+          <text class="st" x="742" y="135">boss and staff, one screen</text>
+
+          <path class="flow strong" d="M606,225 L720,290" marker-end="url(#ah)"/>
+          <rect class="box live" x="726" y="262" width="216" height="62" rx="3"/>
+          <text class="t" x="742" y="286">n8n, by trigger</text>
+          <text class="st" x="742" y="303">a new row fires the next step</text>
+          <text class="st" x="742" y="317">no more 2-minute polling</text>
+
+          <path class="flow dash" d="M834,324 C834,370 400,370 340,262" marker-end="url(#ah)"/>
+          <text class="st" x="470" y="366">…which writes the next action</text>
+        </svg>
+      </div>
+      <div class="figcap">A lead's status is derived from its newest event. "Where is this lead?" and
+      "who did what?" are the same question with the same answer.</div>
+    </div>
+  </section>
+
+  <!-- ================= PHASES ================= -->
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Part 3 · the work</div>
+      <h2>Four phases, in the order they can actually happen</h2>
+      <p>Numbered because each depends on the one before. Phase 0 runs on today's infrastructure
+      so the loop is closed before anything moves. Phase 1 gives Phase 2 something to be built on.</p>
+    </div>
+
+    <div class="phases">
+
+      <article class="phase">
+        <div class="seq">0</div>
+        <div class="body">
+          <div class="ptop"><span class="pname">Close the loop</span><span class="pill live">this week</span><span class="prole">on the current sheet — nothing moves yet</span></div>
+          <p class="pwhy">The send path works. What is missing is everything after a prospect says yes.
+          None of this waits for a database.</p>
+          <ol class="steps">
+            <li><span class="n">0.1</span><span><b>Copy.</b> <span class="d">Lead with the offer, name Gavriel as who they will meet ("fifteen minutes with Gavriel, who runs OryonIQ"), keep Ellen as the sender. Re-sync to Instantly, the page, and both agents.</span></span></li>
+            <li><span class="n">0.2</span><span><b>Reply automation.</b> <span class="d">Positive → Ellen replies in-thread with the HubSpot link, Slack gets the thread with context. Negative → suppressed. Out-of-office → parked with a date. Every branch writes an event.</span></span></li>
+            <li><span class="n">0.3</span><span><b>Booking webhook.</b> <span class="d">HubSpot "meeting created" → lead marked <code>meeting_booked</code>, sequence stopped, Slack told. This is the conversion event and the number the boss will ask for.</span></span></li>
+            <li><span class="n">0.4</span><span><b>Boss's spreadsheet.</b> <span class="d">One-off import into Inbox. The alias table already reads any column shape; his rows go through the same verify → draft → send path as everything else.</span></span></li>
+          </ol>
+          <div class="blocked">0.3 is blocked on HubSpot access — see Part 5.</div>
+          <div class="donewhen"><span class="wk">done when</span><span class="wv">A test reply produces the right action with nobody touching it, and a test booking stops the sequence and lands in Slack.</span></div>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="seq">1</div>
+        <div class="body">
+          <div class="ptop"><span class="pname">One database</span><span class="pill live">next</span><span class="prole">Supabase becomes the record; the sheet retires</span></div>
+          <p class="pwhy">This is the phase that removes the root cause of most of Part 1. A real
+          schema, real transactions, and triggers that fire on a new row instead of a clock.</p>
+          <ol class="steps">
+            <li><span class="n">1.1</span><span><b>New Supabase project</b> <span class="d">— separate from IndustrialBriefs'. Tables: <code>leads</code>, <code>events</code>, <code>suppression</code>, <code>replies</code>, <code>campaigns</code>, <code>staff</code>. Suppression stays append-only and matches on any identifier, exactly as now.</span></span></li>
+            <li><span class="n">1.2</span><span><b>Migrate</b> <span class="d">the current Leads, Events and Suppression tabs. Every historical send becomes an event row.</span></span></li>
+            <li><span class="n">1.3</span><span><b>Repoint n8n.</b> <span class="d">Sheets nodes → Postgres nodes, one workflow at a time, each verified from its execution snapshot before the next. A database webhook on <code>leads</code> insert replaces the 2-minute poller.</span></span></li>
+            <li><span class="n">1.4</span><span><b>Sheet as mirror</b> <span class="d">for one week, read-only, then off. Instantly's own events (open, bounce, reply) sync in so the database knows everything Instantly knows.</span></span></li>
+          </ol>
+          <div class="donewhen"><span class="wk">done when</span><span class="wv">A lead inserted into the table is verified, drafted, and sent with no poller involved, and every step of that is a row in <code>events</code>.</span></div>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="seq">2</div>
+        <div class="body">
+          <div class="ptop"><span class="pname">One screen</span><span class="pill live">then</span><span class="prole">the interface, on the DigitalOcean droplet</span></div>
+          <p class="pwhy">Everything the boss and staff currently need Instantly, the sheet, and Slack
+          for, in one place they can read. Every button writes an event, so a click is a record.</p>
+          <ol class="steps">
+            <li><span class="n">2.1</span><span><b>Logins.</b> <span class="d">Supabase Auth. Boss and staff each have a name, so "who approved this" has an answer.</span></span></li>
+            <li><span class="n">2.2</span><span><b>Leads board.</b> <span class="d">Status, product, source, last action. Filter and search. Open a lead: the full timeline from <code>events</code> — verified, drafted, sent, opened, replied, booked.</span></span></li>
+            <li><span class="n">2.3</span><span><b>Add and upload.</b> <span class="d">Type one lead, or drop a CSV or Excel. Goes into staging, then the same intake path. Bad rows are shown with the reason, and fixing one re-submits it.</span></span></li>
+            <li><span class="n">2.4</span><span><b>Reply inbox.</b> <span class="d">Read the reply, see the sentiment, one click to book, park, or suppress. No Instantly login.</span></span></li>
+            <li><span class="n">2.5</span><span><b>Dashboard.</b> <span class="d">Sent, opened, replied, booked — today and this week. Sending-account health. Suppression count. The screen the boss opens.</span></span></li>
+          </ol>
+          <div class="donewhen"><span class="wk">done when</span><span class="wv">Nobody on the team opens Instantly or the sheet for a full working day.</span></div>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="seq">3</div>
+        <div class="body">
+          <div class="ptop"><span class="pname">Volume</span><span class="pill dark">after</span><span class="prole">supply, then scale</span></div>
+          <p class="pwhy">Only now does it make sense to turn the tap on. The path is proven, the
+          record is real, and a person can see what is happening.</p>
+          <ol class="steps">
+            <li><span class="n">3.1</span><span><b>Apollo → the same intake.</b> <span class="d">Sourced leads land in the same table with <code>source = apollo</code> and pass the same verification and suppression checks as a typed one. The workflows exist; this is wiring.</span></span></li>
+            <li><span class="n">3.2</span><span><b>Raise the cap</b> <span class="d">toward 100 a day, watching bounce rate and warmup scores in the dashboard. Add sending accounts before raising, never after.</span></span></li>
+            <li><span class="n">3.3</span><span><b>Ask the data.</b> <span class="d">The agent already exists. Pointed at this table, "show me everyone who replied this week and hasn't booked" becomes a sentence, not a filter.</span></span></li>
+          </ol>
+          <div class="donewhen"><span class="wk">done when</span><span class="wv">A week runs at target volume with no one typing a lead and no one asking where a lead went.</span></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ================= DECISIONS ================= -->
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Part 4 · settled</div>
+      <h2>Decisions already made</h2>
+    </div>
+    <div class="grid2">
+      <div class="card dec"><h3>OryonIQ markets alone</h3><p>No parent-company mention anywhere a prospect reads. Sender, signature, postal line and page are done and live.</p></div>
+      <div class="card dec"><h3>Ellen sends, Gavriel meets</h3><p>Outreach stays under the Ellen persona; the calendar and the meeting are Gavriel's. The copy names him, so the handoff reads as an SDR booking for the founder — normal, not jarring.</p></div>
+      <div class="card dec"><h3>Four accounts, not new ones</h3><p>Rotation across the four warmed <code>@getoryoniq.com</code> mailboxes. No new domains, no warmup wait, 120/day capacity.</p></div>
+      <div class="card dec"><h3>Supabase, new project</h3><p>Separate from IndustrialBriefs'. Postgres, auth, and database webhooks in one place n8n already speaks to.</p></div>
+      <div class="card dec"><h3>DigitalOcean hosting</h3><p>The interface lives on the existing droplet. One place to look, no new vendor.</p></div>
+      <div class="card dec"><h3>Nothing deleted</h3><p>All twenty workflows stay; the Apollo leg is the supply for Phase 3. Note that the live sender's id still reads <code>VIOwfDsheetdemo1</code> — it is not a demo.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= NEEDS ================= -->
+  <section>
+    <div class="shead">
+      <div class="eyebrow">Part 5 · needed from you</div>
+      <h2>Two things unblock everything above</h2>
+    </div>
+    <div class="grid2">
+      <div class="card ask"><h3>HubSpot access</h3><p>A private-app token, or Super Admin on the account. Without it the pipeline cannot see a booking — a booked prospect keeps getting follow-ups and the conversion is never counted. Blocks 0.3.</p></div>
+      <div class="card ask"><h3>Supabase authorisation</h3><p>Authorise the Supabase connector in claude.ai settings, or create the project and put its URL and service key in <code>.secrets.env</code>. Blocks Phase 1.</p></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>OryonIQ outreach · build plan</span>
+    <span>state read from the live instance</span>
+    <span>4 Sep 2026</span>
+  </footer>
+</div>
