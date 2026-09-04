@@ -9,6 +9,30 @@
 # Notes:
 #   - Workflow JSON MUST carry a top-level "id" (same id = update in place; new id = new workflow).
 #   - Imports arrive DEACTIVATED. Activate in the n8n UI when ready.
+#
+#   - ⚠️ THE CLI CANNOT RELOAD A RUNNING TRIGGER. `n8n import:workflow` and
+#     `n8n update:workflow` run in a SEPARATE process: they write the database, and
+#     the running server never finds out. With EXECUTIONS_MODE=regular the main
+#     process holds every ACTIVE trigger workflow (schedule + webhook) in memory, so
+#     it keeps executing the OLD code indefinitely while every database query you
+#     use to verify the deploy shows the NEW code. Proven 2026-09-04: VIO-inbox-mapper
+#     ran at 15:12 on a 10,141-char copy of a node the database had at 11,954 chars,
+#     20 minutes and a full deactivate/activate cycle after the import.
+#
+#     SUB-WORKFLOWS ARE FINE. Anything invoked by Execute Workflow (VIO-enrol-email,
+#     VIO-intake-verify-curate, VIO-operator-agent, VIO-sendr-generate-page) is read
+#     from the database per call, so those deploy instantly. It is only the workflows
+#     with their own trigger that go stale.
+#
+#     To actually reload one: toggle it Inactive -> Active in the n8n WEB UI (goes
+#     through the running server), or restart the n8n container. The CLI
+#     --active=true is NOT enough, and on an already-active workflow it is a no-op.
+#
+#     TO VERIFY A DEPLOY, NEVER READ workflow_entity. Read what the run actually used:
+#       select ed."workflowData" from execution_data ed
+#       join execution_entity e on e.id = ed."executionId"
+#       join workflow_entity w on w.id = e."workflowId"
+#       where w.name = 'VIO-...' order by e."startedAt" desc limit 1;
 #   - JSON is secret-free: credentials referenced by name, tokens read from env at runtime.
 set -euo pipefail
 

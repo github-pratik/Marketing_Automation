@@ -293,6 +293,25 @@ and the next poll picks it up), GUARD (a check refused on purpose; a red instanc
 is a guard is an instance that is working). Diagnoses had been repeatedly wrong because the error
 message was never actually read.
 
+**⚠️ THE CLI CANNOT RELOAD A RUNNING TRIGGER — and every database check says it did (2026-09-04).**
+`n8n import:workflow` / `n8n update:workflow` run in a SEPARATE process from the server. They write
+the DB; the running server never finds out. With `EXECUTIONS_MODE=regular` the main process holds
+every ACTIVE trigger workflow in memory and keeps executing the OLD code indefinitely. Proven:
+`VIO-inbox-mapper` ran at 15:12 on a 10,141-char copy of a node the DB held at 11,954 chars —
+20 minutes and a full CLI deactivate/activate cycle after the import. `--active=true` on an
+already-active workflow is a plain no-op.
+**Sub-workflows are exempt**: anything called by Execute Workflow (`VIO-enrol-email`,
+`VIO-intake-verify-curate`, `VIO-operator-agent`, `VIO-sendr-generate-page`) is read from the DB
+per call and deploys instantly. That asymmetry is why the 2026-09-01 fixes appeared to work — they
+were all sub-workflows.
+**To reload a trigger workflow:** toggle it Inactive → Active in the n8n **web UI** (that request
+goes through the running server), or restart the container. There is no CLI path.
+**To verify ANY deploy, never read `workflow_entity`** — it is the thing that lies. Read what the
+run actually used:
+`select ed."workflowData" from execution_data ed join execution_entity e on e.id=ed."executionId" join workflow_entity w on w.id=e."workflowId" where w.name='VIO-...' order by e."startedAt" desc limit 1;`
+This is the third member of the same family as the inert-`parameters.text` trap and
+`webhook_entity` under-reporting: **"successfully imported" has never once been evidence.**
+
 **Next:** prove one clean end-to-end send now that the Sheets writer is fixed — it needs an address
 on a NON-catch-all domain that is not already anywhere in the Instantly workspace
 (`skip_if_in_campaign` is workspace-wide across all 14 campaigns, and `@visioneerit.com` is
