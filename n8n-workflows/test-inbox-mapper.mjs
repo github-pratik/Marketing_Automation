@@ -121,8 +121,28 @@ ok('a matching name is not flagged',
    one({ 'First name': 'Nick', 'Email address': 'nick.marteney@u.com', 'Company name': 'C' })._warnings.length === 0);
 
 // ---------- claim marker and blanks ----------
-for (const s of ['mapped', 'needs_review', 'anything'])
-  ok(`status "${s}" means already handled`, map([{ row_number: 2, status: s, 'Email address': 'a@b.com' }]).length === 0);
+for (const s of ['mapped', 'dropped', 'anything'])
+  ok(`status "${s}" is final — never read again`,
+     map([{ row_number: 2, status: s, 'Email address': 'a@b.com' }]).length === 0);
+
+// needs_review is the ONE state a human is expected to act on, so a corrected row must get a
+// second look. Staff were previously told "address rejected by verification", fixed the address,
+// and nothing happened — the note explained the problem and then the row was unreachable.
+{
+  const flagged = (email, lastTried) => ({
+    row_number: 2, status: 'needs_review', mapped_lead_id: lastTried,
+    'Email address': email, 'First name': 'Dana', 'Company name': 'Cardinal', Product: 'OryonIQ',
+  });
+  ok('a needs_review row whose address was CORRECTED is picked up again',
+     map([flagged('dana@cardinalfederal.com', 'dana@cardinalfederal.invalid')]).length === 1);
+  ok('  and an UNCHANGED needs_review row is left alone (no rework, no OpenAI call)',
+     map([flagged('dana@cardinalfederal.invalid', 'dana@cardinalfederal.invalid')]).length === 0);
+  ok('  the comparison ignores case, so re-casing an address is not a "change"',
+     map([flagged('Dana@Cardinal.com', 'dana@cardinal.com')]).length === 0);
+  ok('  a row whose email column was never recognised stays quiet until a human edits it',
+     map([{ row_number: 3, status: 'needs_review', mapped_lead_id: '',
+            'Contact Point': '', 'First name': 'Dana' }]).length === 0);
+}
 ok('a blank row is ignored', map([{ row_number: 9, status: '', 'Email address': '', 'First name': '' }]).length === 0);
 ok('control columns are never treated as data',
    (one({ 'Email address': 'a@b.com', 'First name': 'A', 'Company name': 'C' })._unmapped_headers || []).length === 0);
