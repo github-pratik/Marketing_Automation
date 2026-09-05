@@ -140,5 +140,26 @@ for (const [impl, chain] of [['js', deployed.domainChain], ['sql', sqlDomainChai
      !chain('cardinalfederal.com.evil.com').includes('cardinalfederal.com'));
 }
 
+// ---- the ONE place the two sides deliberately differ ------------------------
+// A single-label suppression value (`invalid`, `localhost`, a bare TLD) produces
+// no keys from either chain, so in the JavaScript it is a SILENT NO-OP: the row
+// looks like a suppression and stops nothing. Postgres now REFUSES to store it
+// (supabase/002), because the alternative — emitting bare TLDs as lookup keys —
+// would let one row saying `com` suppress the entire internet.
+//
+// This is asserted rather than fixed in the JavaScript on purpose. The live
+// Suppression tab holds only `example.com`, so the hole is unreachable today,
+// and the sender is the one workflow where an unnecessary change costs the most.
+// Phase 1 closes it structurally by moving the list into Postgres.
+//
+// If either of these assertions starts failing, the two sides have moved and one
+// of them is now wrong — do not "fix" the failing side in isolation.
+for (const label of ['invalid', 'localhost', 'com']) {
+  ok(`js: a single label (${label}) still yields no keys — known no-op`,
+     deployed.domainChain(label).length === 0);
+  ok(`sql port: same, which is why Postgres refuses to store it`,
+     sqlDomainChain(label).length === 0);
+}
+
 console.log(`\n[suppression-parity] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
