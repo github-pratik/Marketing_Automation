@@ -342,6 +342,65 @@ per-lead timeline, upload, reply inbox, dashboard) so nobody opens Instantly or 
 sourcing lands in the same intake path after that. **Blocked on:** HubSpot access (booking webhook,
 phase 0.3) and Supabase authorisation (phase 1).
 
+**The staff console is LIVE on the droplet (2026-09-05) — `console/`, and it reads Supabase, not
+the Sheet.** `https://vio-console.104-248-119-152.sslip.io`. A dependency-free Node service
+(`console/server.mjs`) behind the n8n stack's existing Caddy, deployed by `console/deploy.sh` as its
+**own container** on `n8n-stack_default` — never a service in the shared compose file, so an
+unrelated edit can't recreate n8n as a side effect. Facts worth keeping:
+- **The browser never touches Supabase.** The `service_role` key bypasses RLS entirely, so it lives
+  only in `/root/vio-console/.env` (mode 600) and the page talks to this process instead. The
+  process **exits on boot** if any of the four env vars is missing — proven when a shell-quoting
+  slip shipped an empty key and it refused to serve rather than showing an empty dashboard.
+  `docker restart` does NOT re-read `--env-file`; the container must be recreated.
+- **Every staff action writes an `events` row**, so the ledger rule holds through the UI. Suppression
+  is written BEFORE the lead's state changes: if it dies between the two, the address is already
+  blocked and only the row looks stale.
+- **The five sheet leads are migrated** (`console/migrate-leads.mjs`, source `console/sheet-rows.json`
+  = the rows the last good `VIO-run-outreach` execution actually read). Backfilled events carry
+  `payload.backfilled` and render as **reconstructed** in the timeline, because the sheet never kept
+  a ledger and a reconstruction must not read as an observation. Send times come from Instantly's
+  `last_contact`, not the sheet, whose timestamp stopped at a failed write.
+- **A banner on every tab says n8n still sends from the Sheet.** Releasing a lead in the console
+  records the decision; it does not queue mail. Removing that banner before the cutover would be the
+  single most misleading change available.
+- **⚠️ A lead cannot be deleted.** `events.lead_id` is `on delete set null`, but that null-out is an
+  UPDATE and the append-only trigger refuses it, so `on delete set null` is unreachable and every row
+  ever created is permanent. `supabase/003_allow_lead_delete_to_orphan_events.sql` fixes it by
+  permitting exactly that one UPDATE (whole-row jsonb compare minus `lead_id`, so a future column is
+  covered without anyone remembering) and self-checks that edits and deletes are still refused.
+  **Not applied yet** — the Supabase MCP needs auth and the pooler region is unknown, so it wants a
+  paste into the SQL editor. Until then a `Console Selftest` row at `vio-console-selftest.invalid`
+  sits in the table, dropped and suppressed, from the write-path test.
+- **The reserved test domains are all suppressed** (`example.com/.invalid/.test/.org`), which is why
+  a test add against them is refused. Use a unique `.invalid` host to exercise the write paths.
+- The prototype's Apollo "Find leads" tab is deliberately **not** in the live console: sample rows
+  that look real are the exact failure this console exists to end.
+
+**Apollo sourcing is wired and live (2026-09-05).** Two workflows, split on the thing that
+matters — **searching is free, addresses cost**:
+- **`VIO-source-leads`** — the free search, now driven by CALLER-SUPPLIED filters instead of a
+  hardcoded ICP. Titles, seniority, company size, US location, keywords, paging. The gate refuses
+  anything that changes **who** is contacted (unknown seniority, non-US location, backwards size
+  band) and forgives anything that only changes **how many** come back. Live: 490 matching people,
+  5/5 emailable, 0 credits. `test-apollo-search.mjs` 54/54.
+- **`VIO-apollo-reveal`** (NEW, id `VIOwfApolloRev1`) — the paid pull. Takes an explicit list of at
+  most 25 Apollo person ids, never filters; de-duplicates against `Leads` BEFORE spending; logs every
+  attempt to `Events` including the ones that returned nothing; hands revealed leads to
+  `VIO-intake-verify-curate` so a pulled lead passes the same gates as a typed one. One terminal, and
+  every branch reaches it. `test-apollo-reveal.mjs` 73/73. **A reveal of a real person has not been
+  run yet** — that spends a credit and puts a real stranger into outreach.
+
+**Three things measured live that day, all in `INTEGRATIONS.md`:**
+1. **`q_keywords` is a literal text match, not an industry filter.** The old ICP default
+   `government contracting` cut 168,759 matching people to **seven** — the hardcoded search had been
+   returning almost nobody since it was written, and it read as a narrow market. Now empty by default.
+2. **`people/match` does not fail on an unknown id — it returns a DIFFERENT person, HTTP 200.** A
+   substituted person is now discarded entirely rather than turned into a lead.
+3. **`import:workflow` DEACTIVATES the workflow it imports**, and adding `"active": true` to the JSON
+   does not help — the importer ignores it. Every import needs `update:workflow --active=true` plus a
+   restart and a state check. **20 of the 21 backup JSONs in `n8n-workflows/` are still tripwires for
+   this.** See `n8n-workflows/README.md`.
+
 **Next:** prove one clean end-to-end send — that is the only thing that will prove the 2026-09-01
 writeback fix. Needs an address on a NON-catch-all domain that is not already anywhere in the
 Instantly workspace (`skip_if_in_campaign` is workspace-wide across all 14 campaigns, and

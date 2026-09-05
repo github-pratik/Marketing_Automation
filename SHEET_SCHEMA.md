@@ -1,14 +1,16 @@
 # VisioneerIT Outbound — Google Sheet schema
 
 The Sheet is the data bus (every `VIO-` workflow reads/writes it), the dashboard, the pilot's
-cost meter, and — since 2026-08-21 — its targeting memory. **Seven tabs** — `Inbox`, `System`,
-`Leads`, `Suppression`, `Events`, `Costs`, `Segments`. Header = row 1. Workflows key on exact column names — don't rename a
+cost meter, and — since 2026-08-21 — its targeting memory. **Specified here: seven tabs** —
+`Inbox`, `System`, `Leads`, `Suppression`, `Events`, `Costs`, `Segments`. Live sheet-audit on
+**2026-09-04** also saw `Demo` and `Pipeline` on the spreadsheet (this doc does not yet specify
+their columns). Header = row 1. Workflows key on exact column names — don't rename a
 column without updating every workflow that reads/writes it.
 
-**LIVE since 2026-08-16.** Spreadsheet `VisioneerIT Outbound`, id `1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`, four tabs built
-(`Leads`, `Events`, `Costs`, `Suppression`) — `Segments` is **defined but not yet created on the
-live sheet**; re-running the setup script adds it (creating tabs is idempotent, existing tabs and
-their headers are left alone). Shared with `vio-n8n-sheets@visioneerit-outbound.iam.gserviceaccount.com` as Editor, and the n8n credential
+**LIVE since 2026-08-16.** Spreadsheet `VisioneerIT Outbound`, id `1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`.
+`Leads`, `Events`, `Costs`, `Suppression`, `Segments`, `Inbox`, and `System` all exist on the live
+sheet (re-confirmed 2026-09-04). Creating tabs is idempotent; existing tabs and their headers are
+left alone. Shared with `vio-n8n-sheets@visioneerit-outbound.iam.gserviceaccount.com` as Editor, and the n8n credential
 `VIO Google Sheets` is installed and verified.
 
 **Writes are live since 2026-08-17**, in `VIO-intake-verify-curate` (WF-1) — it reads `Leads` +

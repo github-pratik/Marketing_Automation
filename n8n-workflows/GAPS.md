@@ -1,5 +1,13 @@
 # GAPS.md — ruthless gap audit of the VisioneerIT outbound engine (n8n)
 
+**Superseded as a picture of what is online — live probe 2026-09-04.** Keep the body as a
+historical snapshot (29 Aug, read-only, no SSH). Do not act on the ranked findings without
+re-checking: Finding B (`product: 'demo'`) is fixed in `VIO-run-outreach`; Finding C (intake
+maybe off) is false — intake is ACTIVE and ran that afternoon; the send-loop file is
+`VIO-run-outreach.json` (same id, was `VIO-demo-sheet-run.json`); `VIO-costs-rollup` is the one
+workflow that is **inactive**. Current status lives in `README.md` (workflow index) and
+`../CLAUDE.md`.
+
 Audit performed read-only against the working tree as of **2026-08-29, ~20:15**. No SSH, no
 deploy, no writes except this file. Every claim below cites the actual file/line/code read; where
 I could not settle something without hitting the live droplet, it is marked **UNVERIFIED**

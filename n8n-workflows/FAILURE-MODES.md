@@ -1,7 +1,7 @@
 # Failure-mode audit — Inbox → Leads → send chain
 
 Scope: the live path `Inbox tab -> VIO-inbox-mapper (2 min poll) -> VIO-intake-verify-curate
-(Reoon) -> Leads tab -> VIO-demo-sheet-run (3 min poll) -> VIO-operator-agent (OpenAI) ->
+(Reoon) -> Leads tab -> VIO-run-outreach (3 min poll) -> VIO-operator-agent (OpenAI) ->
 VIO-sendr-generate-page (Sendr) -> VIO-enrol-email (Instantly, no human approval)`.
 
 Method: read every node's `jsCode`, `onError`, `retryOnFail`, and the `connections` graph directly
@@ -11,11 +11,11 @@ node + code, or (b) marked **UNVERIFIED** with the experiment that would settle 
 no fixes — it is a report only.
 
 **Read this first — one root cause behind four of the eight questions.**
-`VIO-demo-sheet-run` claims a Leads row (`channel_state_email: 'pending_approval'`) BEFORE the
+`VIO-run-outreach` claims a Leads row (`channel_state_email: 'pending_approval'`) BEFORE the
 expensive work (OpenAI draft, Sendr page, Instantly enrol) starts — deliberately, to stop the
 double-draft bug the repo already hit once (see Q7). But nothing un-claims the row if anything
 downstream throws. `pending_approval` is not in `Pick demo rows`' `READY` set
-(`VIO-demo-sheet-run.json`, node `Pick demo rows`: `READY = new Set(['', 'not_sent', 'approved'])`),
+(`VIO-run-outreach.json`, node `Pick demo rows`: `READY = new Set(['', 'not_sent', 'approved'])`),
 so a row that reaches `pending_approval` and then hits *any* unhandled error is never picked up
 again by the schedule. The only way out is a human running `VIO-sheet-repair`'s `approve` action
 with `force: true` (`VIO-sheet-repair.json`, node `Mark approved`). That is a real, working escape
@@ -99,7 +99,7 @@ same row, not create a duplicate one).
 - **The LOST part:** by the time either the `Assemble + Report` throw or the `Preconditions` throw
   fires, `Row usable?`'s parallel branch has already run `Claim row early` →
   `Claim early in sheet`, writing `channel_state_email: 'pending_approval'`
-  (`VIO-demo-sheet-run.json`, node `Claim row early`). Since `Draft (operator agent)` and `Enrol
+  (`VIO-run-outreach.json`, node `Claim row early`). Since `Draft (operator agent)` and `Enrol
   email (no gate — see notes)` are both plain `executeWorkflow` nodes with no `onError`, the throw
   propagates and kills this row's chain before `Shape row update` / `Write result back` ever run.
   The row sits at `pending_approval` — not in `READY` — forever, until a human runs
@@ -117,7 +117,7 @@ mechanism as Q2.
   res.pageUrl || null, ... } }]`. **`ok: true` is hardcoded** — it does not reflect whether
   `pageUrl` actually came back. A Sendr 200 with a missing `pageUrl` is reported as `ok: true,
   pageUrl: null`.
-- `VIO-demo-sheet-run.json`, node `Claim row (pending_approval)`: `const page =
+- `VIO-run-outreach.json`, node `Claim row (pending_approval)`: `const page =
   $('Generate Sendr page').first().json.pageUrl || '';` — silently becomes `''`. This gets written
   to the `sendr_page_url` column while `channel_state_email` is unconditionally set to
   `pending_approval` in the same write.
@@ -153,7 +153,7 @@ lies about the outcome — filed as its own top-5 item below.**
   instantly.json`'s `Report` node carries an equivalent, more detailed version of the same guard.
   `Build Sheet Rows` in `VIO-enrol-email.json` writes a `Leads` row **only** when `r.enrolled` is
   true, so a false "enrolled" from a workspace-wide skip cannot land in the sheet as a lead row.
-- **The bug this uncovered:** `VIO-demo-sheet-run.json`, node `Shape row update` (the node that
+- **The bug this uncovered:** `VIO-run-outreach.json`, node `Shape row update` (the node that
   writes the *final* `channel_state_email` back onto the `Leads` row after `Enrol email (no gate —
   see notes)` returns): `const enrolled = Array.isArray(r.leads) && r.leads.some((l) => l.status
   === 'enrolled'); ... channel_state_email: enrolled ? 'enrolled' : 'needs_review'`. This reads
@@ -182,7 +182,7 @@ worst wastes an OpenAI/Sendr call, and retries are now in place — see note bel
 HTTP call succeeds: the dangerous case, folded into Q6 below since the mechanism is identical.**
 
 **⚠️ Note on timing — the repo changed under this audit.** The first pass through this question found
-every Sheets node in `VIO-demo-sheet-run.json` and `VIO-enrol-email.json` with no `retryOnFail` at
+every Sheets node in `VIO-run-outreach.json` and `VIO-enrol-email.json` with no `retryOnFail` at
 all (confirmed by reading each node's JSON directly), while `VIO-intake-verify-curate.json`'s
 equivalents already retried 3x. Re-checking those same files while finishing this report, they now
 **all** retry (`retryOnFail: true`, `maxTries: 4`, `waitBetweenTries: 5000`) — this repo was being
@@ -198,7 +198,7 @@ Current retry configuration, traced node by node (re-verified against the live f
 | Node | File | `retryOnFail` | `maxTries` / wait | `onError` |
 |---|---|---|---|---|
 | `Read Leads (dedupe)`, `Read Suppression`, `Write Lead Row (Leads)`, `Log Reoon Call (Events)` | `VIO-intake-verify-curate.json` | `true` | 3 / 2000ms | none (default: stop) |
-| `Read Leads`, `Claim early in sheet`, `Claim row in sheet`, `Write result back` | `VIO-demo-sheet-run.json` | `true` | 4 / 5000ms | none (default: stop) |
+| `Read Leads`, `Claim early in sheet`, `Claim row in sheet`, `Write result back` | `VIO-run-outreach.json` | `true` | 4 / 5000ms | none (default: stop) |
 | `Read Suppression`, `Read Events`, `Write Lead Row (Leads)`, `Log Enrolment (Events)` | `VIO-enrol-email.json` | `true` | 4 / 5000ms | none (default: stop) |
 
 Every Sheets node in this chain now retries a transient failure. **None of them has an `onError`
@@ -236,10 +236,10 @@ routes"): `docker restart n8n-stack-n8n-1` is a documented, routine step in the 
 Nothing in any `VIO-*.json` file, and nothing referenced in the README's deploy checklist, describes
 an in-flight execution surviving or resuming after that restart. There is no queue-mode/worker
 configuration, no static-data lock, and no "resume from checkpoint" node anywhere in
-`VIO-demo-sheet-run.json` or `VIO-enrol-email.json` (grepped `lock|singleton|staticData|SETNX` across
+`VIO-run-outreach.json` or `VIO-enrol-email.json` (grepped `lock|singleton|staticData|SETNX` across
 both files — no hits outside the WF-3 hardening note, which is about a *different* dedup and is
 explicitly still TODO). **UNVERIFIED, and worth settling directly:** trigger
-`VIO-demo-sheet-run` against a real "manual" row, and `docker restart n8n-stack-n8n-1` at the moment
+`VIO-run-outreach` against a real "manual" row, and `docker restart n8n-stack-n8n-1` at the moment
 `Enroll Lead (Instantly)` is executing (watch `docker logs` for the POST); then check
 `execution_entity` for that execution's terminal status and whether the Instantly dashboard shows
 the lead as actually enrolled.
@@ -250,7 +250,7 @@ What the code DOES establish, independent of the exact crash semantics:
   earlier in the chain than `Enroll Lead`), so a crash **before** the Instantly call is safe —
   nothing was sent, and the row is recoverable via `force: true`.
 - A crash **after** `Enroll Lead (Instantly)` returns success but **before** `Write result back`
-  (in `VIO-demo-sheet-run`) or `Write Lead Row (Leads)` / `Log Enrolment (Events)` (in
+  (in `VIO-run-outreach`) or `Write Lead Row (Leads)` / `Log Enrolment (Events)` (in
   `VIO-enrol-email`) commit is indistinguishable, from the Sheet's point of view, from a crash that
   happened *before* the send — in both cases the row is left at `pending_approval` with no
   Events-tab record either (that write is downstream of the same commit point). **Nothing in this
@@ -286,11 +286,11 @@ the stranding via `force: true` without independently checking Instantly first.
 structurally-unclosed window remains for cross-execution overlap — marked UNVERIFIED where it
 depends on n8n scheduler behaviour.**
 
-- Confirmed in `VIO-demo-sheet-run.json`'s `connections` block: `Row usable?`'s true output (index 1)
+- Confirmed in `VIO-run-outreach.json`'s `connections` block: `Row usable?`'s true output (index 1)
   fans out to **two** targets in this exact order: `Claim row early` first, `Shape for drafting`
   second. `Claim row early`'s own code comment states why this ordering matters: "n8n's v1 execution
   order runs the first connected branch to completion before the second, so the claim lands before
-  drafting starts." `VIO-demo-sheet-run.json`'s `settings.executionOrder` is indeed `"v1"`. This
+  drafting starts." `VIO-run-outreach.json`'s `settings.executionOrder` is indeed `"v1"`. This
   claim about connection-order determining execution-order **is plausible and matches the documented
   n8n v1 behaviour but was not independently verified live in this audit** (no n8n access) —
   **UNVERIFIED**, experiment: seed two claimable rows, trigger manually, and diff the `Claim early in
@@ -300,8 +300,8 @@ depends on n8n scheduler behaviour.**
   in its code — no `opener`/`sendr_page_url`/etc.), specifically so it cannot stomp on later writes;
   this part is a straightforward code fact, not a runtime claim.
 - **The window that remains:** there is no lock preventing a **second, independent execution** of
-  `VIO-demo-sheet-run` from starting while a **first execution is still running** — `Every minute`
-  is a plain `scheduleTrigger` (`VIO-demo-sheet-run.json`), and nothing in the workflow (no static
+  `VIO-run-outreach` from starting while a **first execution is still running** — `Every minute`
+  is a plain `scheduleTrigger` (`VIO-run-outreach.json`), and nothing in the workflow (no static
   data check, no Redis `SETNX`, confirmed by grep across the file) enforces single-instance
   execution. n8n's own default behaviour for whether overlapping schedule-trigger executions are
   blocked was **not verified** in this audit (no live instance). If the CHAIN genuinely stays under
@@ -310,7 +310,7 @@ depends on n8n scheduler behaviour.**
   sequentially) could push a single execution's wall-clock time past 3 minutes under load or Reoon/
   Sendr/OpenAI slowness, at which point the next scheduled trigger fires while the first is still
   mid-batch. **UNVERIFIED**, experiment: seed 10+ claimable rows, trigger the workflow, and check
-  whether `execution_entity` shows two `VIO-demo-sheet-run` executions with overlapping
+  whether `execution_entity` shows two `VIO-run-outreach` executions with overlapping
   `startedAt`/`stoppedAt` ranges.
 
 ---
@@ -324,7 +324,7 @@ but the stated 15-20/day ceiling is not actually enforced against a Detroit cale
   Date().toISOString().slice(0, 10);` — `.toISOString()` is always UTC. The per-lead loop then
   compares `String(e.timestamp || '').slice(0, 10) !== today` against `Events` rows to count
   `sentToday`.
-- The rest of this same codebase demonstrably knows better: `VIO-demo-sheet-run.json`'s own
+- The rest of this same codebase demonstrably knows better: `VIO-run-outreach.json`'s own
   `Heartbeat` node uses `const TZ = 'America/Detroit'; ... d.toLocaleString('en-US', { timeZone: TZ,
   ... })` explicitly because (per its comment) a person compares the time "to the clock on their
   wall." The Instantly campaign's own send window is documented elsewhere in this repo as
@@ -369,7 +369,7 @@ exactly the sends that matter, and it directly sets up a human-triggered duplica
 sees `needs_review`, assumes nothing went out, and re-approves via `VIO-sheet-repair`, at which
 point the row is legitimately reprocessed — new draft, new Sendr page, new Instantly call — for a
 prospect who may have already been mailed.*
-Cite: `VIO-demo-sheet-run.json` node `Shape row update` (`Array.isArray(r.leads) &&
+Cite: `VIO-run-outreach.json` node `Shape row update` (`Array.isArray(r.leads) &&
 r.leads.some(l => l.status === 'enrolled')`) vs. `VIO-enrol-email.json`'s actual output shape (no
 `leads` key anywhere in the file) vs. `VIO-agent-tool-push-instantly.json`'s `Report` node, which
 *does* produce that shape and is what `Shape row update` was evidently written against before the
@@ -387,7 +387,7 @@ shared box, and the window covers `Enroll Lead (Instantly)` plus two to four dow
 executions.* *Damage: very high — a real duplicate email to a real prospect, with no audit trail
 distinguishing it from a false alarm, is the worst single outcome this audit considered, and the
 existing recovery tool (`VIO-sheet-repair`) actively walks a human into causing it.*
-Cite: `VIO-demo-sheet-run.json` (`Enroll Lead` → `Report` → `Build Sheet Rows` → Sheets writes, no
+Cite: `VIO-run-outreach.json` (`Enroll Lead` → `Report` → `Build Sheet Rows` → Sheets writes, no
 intermediate durable marker) and `VIO-sheet-repair.json`'s `Mark approved` node (decides purely from
 `verify_action`/`channel_state_email`, no way to check Instantly).
 **Fix:** write a `pending_send` (or similar) Events row *before* calling `Enroll Lead (Instantly)`,
@@ -403,7 +403,7 @@ no wrong email goes out, but a real, human-typed lead silently falls out of the 
 lost until someone notices the stuck row and remembers the `force: true` incantation; at scale (the
 target is daily volume) this is a slow, compounding leak of exactly the leads a human went to the
 trouble of typing in.*
-Cite: `VIO-demo-sheet-run.json`, `Row usable?` → `Claim row early` (writes `pending_approval`
+Cite: `VIO-run-outreach.json`, `Row usable?` → `Claim row early` (writes `pending_approval`
 unconditionally) with no corresponding "release the claim" path on any of the five throw sites in
 `VIO-enrol-email.json`'s `Preconditions`, or on `Assemble + Report`'s / `Report Page URL`'s own
 failure modes.
@@ -418,19 +418,19 @@ sending activity into the evening.* *Damage: medium — no wrong recipient, but 
 one number CLAUDE.md calls "the owner's stated ceiling," which matters for deliverability/warm-up
 pacing and for anyone relying on the cap as a compliance control.*
 Cite: `VIO-enrol-email.json`, `Preconditions (fail closed)`: `new Date().toISOString().slice(0, 10)`,
-contrasted with `VIO-demo-sheet-run.json`'s own `Heartbeat` node explicitly using `timeZone:
+contrasted with `VIO-run-outreach.json`'s own `Heartbeat` node explicitly using `timeZone:
 'America/Detroit'` elsewhere in the same repo.
 **Fix:** compute `today` with the same `America/Detroit` `toLocaleString`/`Intl.DateTimeFormat`
 pattern already used in the `Heartbeat` nodes, or explicitly document (and accept) that the cap is
 UTC-bounded if that's actually fine.
 
-**5. Cross-execution overlap of `VIO-demo-sheet-run` under load is structurally possible and unverified.**
+**5. Cross-execution overlap of `VIO-run-outreach` under load is structurally possible and unverified.**
 *Likelihood: low under normal, low-volume "demo" conditions (~30-60s chain vs. 3-min interval), but
 rises directly with volume — and volume is the stated goal (15-20/day, presumably growing).*
 *Damage: potentially high if it occurs (duplicate drafts/pages/enrolments for the same row racing
 each other), but currently unverified whether n8n's scheduler even allows it on this instance/
 version, and the early-claim fix substantially narrows the window versus the pre-2026-08-29 code.*
-Cite: `VIO-demo-sheet-run.json`, `Every minute` (`scheduleTrigger`, 3-min interval) with no lock/
+Cite: `VIO-run-outreach.json`, `Every minute` (`scheduleTrigger`, 3-min interval) with no lock/
 static-data/Redis guard anywhere in the file (grepped).
 **Fix:** the cheapest real fix is a static-data or Redis `SETNX` "workflow already running" guard at
 the very top of the execution (the WF-3 hardening note already flags Redis as available on the

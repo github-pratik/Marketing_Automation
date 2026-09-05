@@ -12,7 +12,7 @@ the code and guessing what it does. Scratch test scripts live in
 them loads the *actual* node code via `fs.readFileSync` + `jq`, not a paraphrase.
 
 **Live chain exercised:** `VIO-inbox-mapper` → `VIO-intake-verify-curate` → (for a `manual`-sourced
-row) `VIO-demo-sheet-run`'s runner, which calls `VIO-operator-agent` (the deterministic v1 agent —
+row) `VIO-run-outreach`'s runner, which calls `VIO-operator-agent` (the deterministic v1 agent —
 this is the one actually wired into the auto-run path, confirmed by workflow id
 `VIOwf4agent0001`, **not** the LangChain `VIO-operator-agent-v2`) → `VIO-sendr-generate-page` →
 `VIO-enrol-email`, which as of 2026-08-30 sends **with no human approval**. The same
@@ -161,7 +161,7 @@ to contain a URL or markup.
 
 ### F5 — HIGH — The public Sendr page is published before any opener sanity check runs
 
-**Files/nodes:** `VIO-demo-sheet-run.json` node order (`Draft (operator agent)` → `Shape for page`
+**Files/nodes:** `VIO-run-outreach.json` node order (`Draft (operator agent)` → `Shape for page`
 → `Generate Sendr page` → `Claim row (pending_approval)` → `Shape for enrolment` → `Enrol email`),
 cross-referenced against `VIO-sendr-generate-page.json`'s `Route Product to Template` (only checks
 `lead.first_name` and `lead.company` are non-empty) and `Build Page Request` (puts `lead.opener`
@@ -180,7 +180,7 @@ the only remaining backstop, and that is unverified from this repo (external cal
 
 **Fix:** either move the length/BANNED-pattern check (or a superset of it, including F4's fix)
 into `VIO-sendr-generate-page` itself before `Build Page Request` runs, or have
-`VIO-demo-sheet-run` run that same check between `Draft (operator agent)` and `Shape for page` so
+`VIO-run-outreach` run that same check between `Draft (operator agent)` and `Shape for page` so
 a bad opener never reaches Sendr in the first place.
 
 ---
@@ -200,7 +200,7 @@ This is plain `+` string concatenation of `$json.company` (etc.) into the messag
 `JSON.stringify`, not any delimiter that survives an embedded `"`.
 
 **Proof (no OpenAI call made — this only proves what string is SENT to the model, not how it
-responds):** upstream sanitization on both live callers (`VIO-demo-sheet-run`'s `Pick demo rows`
+responds):** upstream sanitization on both live callers (`VIO-run-outreach`'s `Pick demo rows`
 and `VIO-source-leads`' `Filter + Shape`) is `v.replace(/[ -]+/g,' ').trim().slice(0,160)`
 — it strips control characters and caps length, but does **nothing** about quote characters or
 plain-English instruction text. Fed the company field
@@ -244,7 +244,7 @@ escape `"` and backslash in each field) instead of `+` concatenation, mirroring
 ### F7 — MEDIUM — Unicode bidi-override and confusable characters pass every sanitizer untouched
 
 **Files/nodes:** every `clean()`/sanitizer found in this codebase (`VIO-inbox-mapper.json`
-`Map headers (alias table)`, `VIO-demo-sheet-run.json` `Pick demo rows`, `VIO-source-leads.json`
+`Map headers (alias table)`, `VIO-run-outreach.json` `Pick demo rows`, `VIO-source-leads.json`
 `Filter + Shape`) strips only ` -` plus `` (ASCII C0 controls + DEL). None of them
 touch the Unicode bidi-control block (`‪`-`‮`, `⁦`-`⁩`) or the zero-width/format
 block (`​`-`‍`, `﻿`).
@@ -257,7 +257,7 @@ block (`​`-`‍`, `﻿`).
 - `Website: "example.com‮moc.knab-live"` → survives into the mapped `company_domain`
   unchanged — the same trick against a domain a human might eyeball before approving a
   `channel_state_email: approved` override for a catch-all address (the exact override mechanism
-  `VIO-demo-sheet-run`'s `Pick demo rows` documents for catch-all domains).
+  `VIO-run-outreach`'s `Pick demo rows` documents for catch-all domains).
 - A Cyrillic-homoglyph domain (`exа mple.com` with U+0430 Cyrillic а in place of Latin a) passes
   through with no normalization or flagging.
 

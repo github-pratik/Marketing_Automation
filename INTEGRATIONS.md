@@ -32,12 +32,35 @@ not yet wired into anything · `[BLOCKED]` missing a credential.
     `"Maybe: please request direct dial via people/bulk_match"`. `Boolean()` on that is `true`, so
     a naive coercion marks every lead as having a confirmed direct dial. Treat it as tri-state.
   Response top level is `{people, total_entries}` — there is no `pagination` object.
+- **⚠️ `q_keywords` is a LITERAL TEXT MATCH, not an industry filter — measured live 2026-09-05.**
+  Both product ICPs defaulted it to `government contracting` / `government`. On the same title set
+  that phrase cut **168,759 matching people to SEVEN**, and adding any second filter took it to
+  zero. The hardcoded search had therefore been returning almost nobody since it was written, and
+  it read as a narrow market rather than a broken filter. It is now **empty by default**; targeting
+  is `person_titles` + `person_seniorities` + `person_locations` + `organization_num_employees_ranges`
+  (measured: 490 people for one US state at 51-200 staff). `q_keywords` stays available as a
+  deliberate narrowing tool — it works, it is just far sharper than it reads.
+- **Filter formats that bite:** `person_locations` wants `"Virginia, US"`, not `"Virginia"` — a bare
+  state does not reliably match. `organization_num_employees_ranges` wants `"51,200"`, so the comma
+  is INSIDE a band and cannot also separate bands (VIO-source-leads separates them with `;`).
 - **Paid reveal:** `POST /people/match` — spends lead credits. Matched by Apollo's own person
   `id` (from the free search, no ambiguity), `reveal_personal_emails: true`. Only ever called on
   the already-filtered survivor list, never the raw search results — search wide for free, reveal
   only who's worth it. **Email only** — the engine never requests a phone number here.
 - **Status:** `[LIVE]` — wired into `reach-engine/engine.py` (`apollo_search()`, `apollo_reveal()`
   behind `--reveal`). Live-tested 2026-08-05: 1/1 revealed for 1 lead credit.
+- **⚠️ `people/match` DOES NOT FAIL ON AN UNKNOWN ID — it returns a different person.** Proven live
+  2026-09-05: a request for `000000000000000000000000` came back **HTTP 200 with someone else's
+  record on it**. So "the call succeeded" says nothing about who was returned. Had that person
+  carried an email, a stranger nobody chose would have entered the outbound pipeline and been
+  billed for. `VIO-apollo-reveal :: Shape for intake` now checks the echoed `person.id` against the
+  ids actually requested and **discards a substituted person entirely** — address, name, company and
+  domain — rather than merely not using them; a rejected person's details have no business in our
+  audit log either. The Events row records the substituted id so the event stays traceable.
+- **`reveal_personal_emails` is FALSE in n8n and TRUE in `reach-engine/engine.py`.** The n8n path
+  wants the work address: a personal inbox is worse for deliverability, worse for reply rate, and a
+  colder thing to do to someone who has never heard of us. **Reconcile `engine.py` to n8n, not the
+  other way round.**
 - **Guard:** mobile/direct-dial reveal is the scarce credit — spend it only on a confirmed
   positive-reply lead heading to Thoughtly, never the whole list.
 
@@ -306,7 +329,8 @@ dynamic video background — see `reach-engine/sendr-page-template.md` Part 3.
   *"You do not have the required `resourcemanager.projects.create` permission"*. Managed accounts
   commonly block this. Use a personal or properly-owned account.
 - **Status:** `[LIVE]` — credential installed and verified against the real sheet. Sheet **writes
-  are not wired into the workflows yet**; that's the next build.
+  are wired** (intake, inbox-mapper, run-outreach, enrol-email, instantly-events, sheet-repair).
+  A 2026-09-04 live probe saw intake write Leads + Events the same afternoon.
 
 ## Thoughtly — warm voice call · `[PARKED 2026-08-17]`
 
@@ -362,13 +386,14 @@ notes are kept so voice can be revived without re-researching the API — nothin
 - **Auth: a service account, NOT OAuth** — n8n credential `VIO Google Sheets`, id `VIOgsheetcred01`,
   type `googleApi`. The Sheets node defaults to `authentication: oAuth2` and will not offer this
   credential at all unless the node explicitly sets `authentication: "serviceAccount"`.
-- **Schema:** `SHEET_SCHEMA.md` — four tabs (`Leads`, `Suppression`, `Events`, `Costs`). The live
-  header **order** differs from the doc's listed order, so match on column names, never on A1
-  letters.
-- **In use by:** `VIO-intake-verify-curate` — reads `Leads` + `Suppression` as pre-verify gates,
-  appends to `Leads` + `Events`. See `n8n-workflows/README.md` for live execution evidence and the
-  node-level gotchas (notably `handlingExtraData: ignoreIt`, without which an unexpected input key
-  silently adds a new column to the Sheet).
+- **Schema:** `SHEET_SCHEMA.md`. Live sheet-audit on 2026-09-04 read `Leads`, `Suppression`,
+  `Events`, `Costs`, `Segments`, `Inbox`, `System`, plus `Demo` and `Pipeline`. The live header
+  **order** differs from the doc's listed order, so match on column names, never on A1 letters.
+- **In use by:** `VIO-inbox-mapper` (Inbox + System heartbeat), `VIO-intake-verify-curate`
+  (Leads + Suppression + Events), `VIO-run-outreach` (Leads + System), `VIO-enrol-email`
+  (Leads + Events + Suppression), `VIO-instantly-events`, `VIO-sheet-repair`, `VIO-sheet-audit`.
+  See `n8n-workflows/README.md` for live execution evidence and the node-level gotchas (notably
+  `handlingExtraData: ignoreIt`, without which an unexpected input key silently adds a new column).
 
 ## Orphaned
 

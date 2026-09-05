@@ -4,7 +4,12 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 
 <style>
+  /* This console is deliberately light-only — it is a workday tool that sits next to a
+     spreadsheet and an inbox, and it should look the same on every staff machine.
+     color-scheme:light keeps native controls (selects, inputs, scrollbars) light too,
+     which is the half that a dark OS theme would otherwise repaint underneath us. */
   :root{
+    color-scheme:light;
     --ground:#F5F7F9; --surface:#FFFFFF; --sunk:#EDF0F4; --ink:#191D26; --ink-soft:#414A5A;
     --muted:#697283; --rule:#DCE1E8; --rule-soft:#E9EDF2;
     --accent:#1B6A9E; --accent-bg:#E7F0F7;
@@ -15,23 +20,6 @@
     --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
     --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   }
-  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-    --ground:#14161C; --surface:#1B1E25; --sunk:#232833; --ink:#E8EBF1; --ink-soft:#B6BECC;
-    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
-    --accent:#6FB2DF; --accent-bg:#17303F;
-    --ok:#7CCB9C; --ok-bg:#183024;
-    --warn:#D9B05F; --warn-bg:#2E2716;
-    --stop:#E8869B; --stop-bg:#3A1F27;
-    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);}}
-  :root[data-theme="dark"]{
-    --ground:#14161C; --surface:#1B1E25; --sunk:#232833; --ink:#E8EBF1; --ink-soft:#B6BECC;
-    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
-    --accent:#6FB2DF; --accent-bg:#17303F;
-    --ok:#7CCB9C; --ok-bg:#183024;
-    --warn:#D9B05F; --warn-bg:#2E2716;
-    --stop:#E8869B; --stop-bg:#3A1F27;
-    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);}
-
   *{box-sizing:border-box}
   body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
   button{font-family:inherit;font-size:inherit;cursor:pointer}
@@ -147,7 +135,7 @@
 
 <div class="proto">
   <b>Prototype</b>
-  <span>Real leads and real states from your pipeline, so you can judge the shape. Buttons respond but nothing is sent — this is for deciding what staff see before it gets built.</span>
+  <span>Real leads and real states from your pipeline, so you can judge the shape. <b>Find leads</b> runs against a sample set, not Apollo. Buttons respond but nothing is sent and no credit is spent — this is for deciding what staff see before it gets built.</span>
 </div>
 
 <div class="app">
@@ -160,6 +148,7 @@
     <button role="tab" aria-selected="true"  data-v="leads">Leads <span class="cnt" id="cLeads">5</span></button>
     <button role="tab" aria-selected="false" data-v="review">Needs you <span class="cnt" id="cRev">2</span></button>
     <button role="tab" aria-selected="false" data-v="replies">Replies <span class="cnt" id="cRep">1</span></button>
+    <button role="tab" aria-selected="false" data-v="find">Find leads</button>
     <button role="tab" aria-selected="false" data-v="add">Add leads</button>
   </nav>
 
@@ -213,6 +202,126 @@
     <div class="panel">
       <div class="panel-head"><h2>Replies</h2><span class="sub">someone answered — the sequence has already stopped for them</span></div>
       <div id="repList"></div>
+    </div>
+  </div>
+
+  <!-- ================= FIND (Apollo) ================= -->
+  <div class="view" id="v-find" hidden>
+
+    <div class="stats">
+      <div class="stat"><div class="k">Apollo credits</div><div class="v" id="aCred">1,000</div><div class="n">placeholder until wired</div></div>
+      <div class="stat"><div class="k">Preview cost</div><div class="v ok">0</div><div class="n">searching is always free</div></div>
+      <div class="stat"><div class="k">Pull cost</div><div class="v acc" id="aCost">0</div><div class="n">1 credit per person</div></div>
+      <div class="stat"><div class="k">Room today</div><div class="v">17</div><div class="n">of 20 sends</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Search Apollo</h2><span class="sub">change the filters, see who matches, then decide</span>
+        <div class="tools">
+          <select id="aSaved" style="width:230px">
+            <option value="">Saved searches…</option>
+            <option value="s1">GovCon capture leaders · US</option>
+            <option value="s2">Proposal managers · mid-size primes</option>
+            <option value="s3">Federal IT directors (VisioneerIT)</option>
+          </select>
+        </div>
+      </div>
+      <div style="padding:18px 16px">
+        <div class="form">
+          <div class="fld full"><label for="aTitles">Job titles</label>
+            <input type="text" id="aTitles" value="Capture Manager, VP of Business Development, Director of Business Development, Proposal Manager">
+            <span class="hint">Comma separated. Apollo matches these loosely, so "Capture Manager" also finds "Sr. Capture Manager".</span></div>
+
+          <div class="fld"><label for="aSen">Seniority</label>
+            <select id="aSen">
+              <option value="">Any</option>
+              <option value="director" selected>Director and above</option>
+              <option value="vp">VP and above</option>
+              <option value="c_suite">C-suite only</option>
+            </select></div>
+
+          <div class="fld"><label for="aSize">Company size</label>
+            <select id="aSize">
+              <option value="">Any size</option>
+              <option value="11,50">11–50 staff</option>
+              <option value="51,200" selected>51–200 staff</option>
+              <option value="201,1000">201–1,000 staff</option>
+              <option value="1001,10000">1,000+ staff</option>
+            </select></div>
+
+          <div class="fld"><label for="aState">Location</label>
+            <select id="aState">
+              <option value="">United States — anywhere</option>
+              <option value="Virginia">Virginia</option>
+              <option value="Maryland">Maryland</option>
+              <option value="District of Columbia">Washington, DC</option>
+              <option value="Texas">Texas</option>
+            </select>
+            <span class="hint">United States is fixed. Other countries are out of scope for this campaign.</span></div>
+
+          <div class="fld"><label for="aKw">Keywords <span style="text-transform:none;letter-spacing:0">(optional)</span></label>
+            <input type="text" id="aKw" value="" placeholder="leave empty unless you need to narrow hard">
+            <span class="hint">A literal text match, not an industry filter. Measured live: adding
+            &ldquo;government contracting&rdquo; cut 168,759 people to 7. Use it to narrow, never to target.</span></div>
+
+          <div class="fld"><label for="aProd">Pitch as</label>
+            <select id="aProd"><option value="oryoniq">OryonIQ</option><option value="visioneerit" disabled>VisioneerIT — no campaign yet</option></select>
+            <span class="hint">Decides which copy these people receive.</span></div>
+
+          <div class="full acts">
+            <button class="btn pri" id="aRun">Preview matches — free</button>
+            <button class="btn" id="aSave">Save this search</button>
+            <span class="hint" id="aHint">Nothing is contacted and no credit is spent by previewing.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px" id="aResPanel" hidden>
+      <div class="panel-head">
+        <h2 id="aResHead">Matches</h2><span class="sub" id="aResSub"></span>
+        <div class="tools">
+          <label for="aTake" class="hint" style="font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;font-size:10px">Pull</label>
+          <select id="aTake">
+            <option value="5">5 people</option>
+            <option value="10" selected>10 people</option>
+            <option value="25">25 people — max per run</option>
+          </select>
+          <button class="btn pri sm" id="aPull">Pull into pipeline</button>
+        </div>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>Person</th><th>Title</th><th>Company</th><th>Size</th><th>Email</th></tr></thead>
+        <tbody id="aRows"></tbody>
+      </table></div>
+      <div style="padding:14px 16px;border-top:1px solid var(--rule-soft)">
+        <div class="note" style="margin-top:0"><b>Why the surnames are cut off.</b> Apollo's free
+        search returns a first name and a masked surname, and no company website. That is not our choice and
+        it is not a bug — the full name and the address arrive only when you pull, which is the step
+        that costs a credit. Preview as wide as you like; pull narrow.</div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h2>What a pull actually does</h2></div>
+      <div style="padding:4px 16px 18px">
+        <div class="note"><b>Searching is free. Addresses cost.</b> Preview runs Apollo's free search —
+        no credits, as often as you like. Pull spends <b>one lead credit per person</b> to reveal the
+        email. That is why they are two buttons and not one.</div>
+        <div class="note"><b>Pulled people are not emailed.</b> They land in exactly the same queue as a
+        typed lead: verified, de-duplicated against everyone we have ever contacted, checked against the
+        never-contact list, then sent within the daily limit. A pull of 25 with 3 sends left today means
+        22 wait their turn — it does not mean 25 emails.</div>
+        <div class="note"><b>25 is the cap per run, on purpose.</b> A broad filter can match tens of
+        thousands of people. Without a ceiling, one wide search and one confident click would spend the
+        whole credit balance in a second.</div>
+        <div class="note"><b>The engine behind this screen is live.</b> Search and pull both run for real
+        on the server: a search with these filters returned 490 matching people for one US state at
+        51&ndash;200 staff, for zero credits. What is <i>not</i> connected is this page &mdash; a published
+        prototype cannot call our server, so the results below come from a sample set. Connecting it is a
+        hosting step, not a build step.</div>
+      </div>
     </div>
   </div>
 
@@ -443,6 +552,143 @@
     renderLeads(); renderReview(); renderReplies(); closeDrawer();
   }
 
+  // ---------- find leads (Apollo) ----------
+  // A stand-in for Apollo's free `mixed_people/api_search`. The SHAPE is what matters and it is
+  // faithful: a first name, an initial, a title, a company name, and no address — that is all the
+  // free tier returns (verified against the live API on 22 Aug). The pull step is where the surname
+  // and the email appear, because that is the call that spends a credit.
+  var SURNAMES = { 'Re***s':'Reyes', 'Tr**n':'Tran', 'Na**r':'Nayar', 'Ko***ki':'Kowalski', 'Br***an':'Brennan',
+    'Ga***do':'Garrido', 'Wh***eld':'Whitfield', 'Mb**i':'Mbeki', 'Pe***va':'Petrova', 'Va**e':'Vance', 'So***en':'Sorensen',
+    'As***rd':'Ashford', 'De***do':'Delgado', 'Li***ist':'Lindqvist', 'Fa***w':'Farrow', 'Ok***wo':'Okonkwo', 'Ch***ry':'Chaudhry',
+    'Ha***an':'Halloran', 'Es***to':'Esposito', 'Qu***ro':'Quintero' };
+
+  var POOL = [
+    ['Dana','Re***s','Capture Manager','director','Cardinal Federal',   '51,200',  'Virginia','government contracting'],
+    ['Marcus','Tr**n','VP of Business Development','vp','Ridgeline Systems','51,200','Virginia','government contracting'],
+    ['Priya','Na**r','Director of Business Development','director','Anvil Defense','201,1000','Maryland','government contracting'],
+    ['Owen','Ko***ki','Proposal Manager','director','Cardinal Federal','51,200','Virginia','government contracting'],
+    ['Rachel','Br***an','Senior Capture Manager','director','Meridian Federal Group','51,200','District of Columbia','government contracting'],
+    ['Tomas','Ga***do','Chief Growth Officer','c_suite','Anvil Defense','201,1000','Maryland','government contracting'],
+    ['Alicia','Wh***eld','VP Capture & Strategy','vp','Blue Harbor Technologies','201,1000','Virginia','government contracting'],
+    ['Devon','Mb**i','Director of Capture','director','Northstar Mission Systems','1001,10000','Texas','government contracting'],
+    ['Simone','Pe***va','Proposal Director','director','Ridgeline Systems','51,200','Virginia','government contracting'],
+    ['Hector','Va**e','VP of Business Development','vp','Lattice Defense Works','11,50','Texas','government contracting'],
+    ['Naomi','So***en','Capture Manager','director','Blue Harbor Technologies','201,1000','Maryland','government contracting'],
+    ['Curtis','As***rd','Chief Executive Officer','c_suite','Lattice Defense Works','11,50','Texas','government contracting'],
+    ['Yasmin','De***do','Director of Proposals','director','Meridian Federal Group','51,200','District of Columbia','government contracting'],
+    ['Grant','Li***ist','VP Growth','vp','Northstar Mission Systems','1001,10000','Virginia','government contracting'],
+    ['Ines','Fa***w','Capture Lead','director','Halcyon Federal','11,50','Maryland','government contracting'],
+    ['Bradley','Ok***wo','Chief Information Officer','c_suite','Talbot County','201,1000','Maryland','government'],
+    ['Nadia','Ch***ry','Director of Information Technology','director','City of Arlington','201,1000','Virginia','government'],
+    ['Felix','Ha***an','CISO','c_suite','State of Texas DIR','1001,10000','Texas','government'],
+    ['Joanna','Es***to','IT Program Manager','director','Talbot County','201,1000','Maryland','government'],
+    ['Rueben','Qu***ro','Director of IT','director','Halcyon Federal','11,50','Maryland','government']
+  ].map(function (r, i) {
+    return { id:'ap' + i, first:r[0], ini:r[1], title:r[2], sen:r[3], co:r[4], size:r[5], st:r[6], kw:r[7],
+             // Held back until the pull, because that is when Apollo actually hands them over.
+             last: SURNAMES[r[1]] || 'Unknown',
+             dom: r[4].toLowerCase().replace(/[^a-z]/g, '') + '.com' };
+  });
+
+  var SIZE_LABEL = { '11,50':'11–50', '51,200':'51–200', '201,1000':'201–1,000', '1001,10000':'1,000+' };
+  var SEN_RANK   = { director:1, vp:2, c_suite:3 };
+  var SAVED = {
+    // No keyword on any of these. Apollo's q_keywords is a literal text match over the record, so
+    // 'government contracting' took a 168,759-person title search down to seven — targeting is done
+    // with titles, seniority, location and company size.
+    s1: { titles:'Capture Manager, VP of Business Development, Director of Business Development, Proposal Manager',
+          sen:'director', size:'51,200', st:'', kw:'' },
+    s2: { titles:'Proposal Manager, Proposal Director', sen:'director', size:'201,1000', st:'', kw:'' },
+    s3: { titles:'CIO, CISO, Director of IT, Director of Information Technology, IT Program Manager',
+          sen:'director', size:'', st:'', kw:'' }
+  };
+
+  var MATCHES = [];   // last preview
+  var CREDITS = 1000;
+
+  function apolloFilters() {
+    return {
+      titles: $('#aTitles').value.split(',').map(function (t) { return t.trim().toLowerCase(); })
+                .filter(Boolean),
+      sen: $('#aSen').value, size: $('#aSize').value, st: $('#aState').value,
+      kw: $('#aKw').value.trim().toLowerCase()
+    };
+  }
+
+  // Apollo matches a title loosely, so "Capture Manager" also finds "Sr. Capture Manager".
+  // Approximated here by comparing the distinctive words rather than the whole string.
+  function titleHit(personTitle, terms) {
+    if (!terms.length) return true;
+    var t = personTitle.toLowerCase();
+    return terms.some(function (term) {
+      var words = term.split(/\s+/).filter(function (w) { return w.length > 2 && w !== 'the' && w !== 'and' && w !== 'for' && w !== 'of'; });
+      if (!words.length) return t.indexOf(term) > -1;
+      return words.every(function (w) { return t.indexOf(w) > -1; });
+    });
+  }
+
+  function runPreview() {
+    var f = apolloFilters();
+    MATCHES = POOL.filter(function (p) {
+      if (!titleHit(p.title, f.titles)) return false;
+      if (f.sen && SEN_RANK[p.sen] < SEN_RANK[f.sen]) return false;
+      if (f.sen === 'c_suite' && p.sen !== 'c_suite') return false;
+      if (f.size && p.size !== f.size) return false;
+      if (f.st && p.st !== f.st) return false;
+      if (f.kw && p.kw.indexOf(f.kw) === -1) return false;
+      return true;
+    });
+
+    $('#aResPanel').hidden = false;
+    $('#aResHead').textContent = MATCHES.length + (MATCHES.length === 1 ? ' match' : ' matches');
+    $('#aResSub').textContent = MATCHES.length
+      ? 'from the sample set · the live search reports Apollo’s real total here · 0 credits spent'
+      : 'nothing matched — widen the titles or clear a filter';
+    $('#aRows').innerHTML = MATCHES.length ? MATCHES.map(function (p) {
+      return '<tr>' +
+        '<td><div class="nm">' + esc(p.first + ' ' + p.ini) + '</div>' +
+            '<div class="em">surname withheld until pulled</div></td>' +
+        '<td>' + esc(p.title) + '</td>' +
+        '<td>' + esc(p.co) + '</td>' +
+        '<td style="color:var(--muted)">' + esc(SIZE_LABEL[p.size] || '—') + '</td>' +
+        '<td><span class="tag t-ok">Has one</span></td></tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">No one matched those filters.</td></tr>';
+
+    updateCost();
+    toast(MATCHES.length + ' matched. No credits spent — previewing is free.');
+  }
+
+  function updateCost() {
+    var take = Math.min(Number($('#aTake').value) || 0, MATCHES.length);
+    $('#aCost').textContent = take;
+    $('#aPull').textContent = take ? 'Pull ' + take + ' — ' + take + ' credit' + (take === 1 ? '' : 's') : 'Pull';
+    $('#aPull').disabled = !take;
+  }
+
+  function pullLeads() {
+    var take = Math.min(Number($('#aTake').value) || 0, MATCHES.length);
+    if (!take) { toast('Preview first, so you can see who you are about to pay for.'); return; }
+    if (take > CREDITS) { toast('Not enough Apollo credits for that many.'); return; }
+    CREDITS -= take;
+    $('#aCred').textContent = CREDITS.toLocaleString();
+
+    MATCHES.slice(0, take).forEach(function (p) {
+      LEADS.unshift({
+        id: 'a' + p.id + Date.now(), first: p.first, last: p.last,
+        email: p.first.toLowerCase() + '.' + p.last.toLowerCase() + '@' + p.dom,
+        co: p.co, state: 'pending_approval', verify: '', reoon: '', product: 'OryonIQ', page: '',
+        lastEvent: 'Pulled from Apollo · checking', opener: '',
+        tl: [{ t: 'just now', w: 'Pulled from Apollo by you', b: 'Shashikant · 1 lead credit' }]
+      });
+    });
+    MATCHES = MATCHES.slice(take);
+    runRerender();
+    toast('Pulled ' + take + '. They are queued for verification, not emailed yet.');
+    document.querySelector('nav button[data-v="leads"]').click();
+  }
+
+  function runRerender() { renderLeads(); renderReview(); renderReplies(); }
+
   // ---------- wiring ----------
   document.addEventListener('click', function (e) {
     var t = e.target.closest('button, tr, .scrim');
@@ -452,7 +698,7 @@
       Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
         b.setAttribute('aria-selected', String(b === t));
       });
-      ['leads', 'review', 'replies', 'add'].forEach(function (v) {
+      ['leads', 'review', 'replies', 'find', 'add'].forEach(function (v) {
         $('#v-' + v).hidden = (v !== t.dataset.v);
       });
       return;
@@ -463,6 +709,9 @@
     if (t.dataset.book)  return act('book');
     if (t.dataset.later) return act('later');
     if (t.dataset.stopr) return act('stopr');
+    if (t.id === 'aRun')  return runPreview();
+    if (t.id === 'aPull') return pullLeads();
+    if (t.id === 'aSave') { toast('Saved. It will appear in the saved-searches list.'); return; }
     if (t.id === 'bAdd') {
       var em = $('#fEmail').value.trim();
       if (!em) { toast('An email address is required.'); return; }
@@ -482,6 +731,14 @@
   });
   $('#q').addEventListener('input', renderLeads);
   $('#fState').addEventListener('change', renderLeads);
+  $('#aTake').addEventListener('change', updateCost);
+  $('#aSaved').addEventListener('change', function () {
+    var v = SAVED[this.value];
+    if (!v) return;
+    $('#aTitles').value = v.titles; $('#aSen').value = v.sen;
+    $('#aSize').value = v.size; $('#aState').value = v.st; $('#aKw').value = v.kw;
+    toast('Filters loaded. Preview to see who matches now.');
+  });
 
   renderLeads(); renderReview(); renderReplies();
 })();

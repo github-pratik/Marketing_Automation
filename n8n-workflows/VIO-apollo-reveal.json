@@ -1,0 +1,490 @@
+{
+  "id": "VIOwfApolloRev1",
+  "name": "VIO-apollo-reveal",
+  "nodes": [
+    {
+      "id": "vio-wfA-trigger",
+      "name": "Reveal Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -780,
+        0
+      ],
+      "webhookId": "vio-apollo-reveal",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-apollo-reveal",
+        "responseMode": "lastNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "vio-wfA-called",
+      "name": "Called by Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -780,
+        220
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "vio-wfA-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -560,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Fail-closed auth, same contract as every other VIO webhook. This one matters more than most:\n// VIO-source-leads only leaks a prospect list, but THIS endpoint spends money. An unauthenticated\n// caller could drain the Apollo credit balance with a single loop, and no gate further down would\n// stop it, because every gate after this point is about lead quality rather than authorisation.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {};\nconst headers = item.headers || {};\nconst got = q.t || q.token || headers['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };\n"
+      }
+    },
+    {
+      "id": "vio-wfA-guard",
+      "name": "Guard (cap + shape)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -340,
+        110
+      ],
+      "parameters": {
+        "jsCode": "// The spending gate. Everything downstream of this node costs Apollo lead credits, so this is the\n// last place a mistake is free.\n//\n// It takes an EXPLICIT LIST OF PERSON IDS, never a set of search filters. That is the whole design:\n// a caller cannot say \"reveal everyone matching director in Virginia\" and discover afterwards that\n// it meant nine thousand people. They must first run the free search (VIO-source-leads), look at\n// who came back, and name the ones they want. Search wide for free; reveal narrow and on purpose.\nconst MAX_IDS = 25;                       // same ceiling as the free search's per_page\nconst PRODUCTS = ['oryoniq', 'visioneerit'];\nconst ID_RE = /^[A-Za-z0-9_-]{8,64}$/;    // Apollo person ids are opaque; shape-check only\n\nconst body = $input.first().json || {};\n\n// Same string-only rule as VIO-source-leads and VIO-sendr-generate-page: a gate that coerces its\n// input is not a gate. String(['oryoniq']) === 'oryoniq'.\nif (typeof body.product !== 'string') {\n  throw new Error(`REFUSED: 'product' must be a string, got ${Array.isArray(body.product) ? 'array' : typeof body.product}`);\n}\nconst product = body.product.trim().toLowerCase();\nif (PRODUCTS.indexOf(product) === -1) {\n  throw new Error(`REFUSED: unknown product '${body.product}'. Known: ${PRODUCTS.join(', ')}`);\n}\n\nconst raw = body.ids ?? body.apollo_ids;\nif (!Array.isArray(raw)) {\n  throw new Error(`REFUSED: 'ids' must be an array of Apollo person ids, got ${raw === undefined ? 'nothing' : typeof raw}`);\n}\nif (raw.length === 0) {\n  throw new Error('REFUSED: no ids to reveal. An empty pull is a mistake, not a no-op — say what you want revealed.');\n}\nif (raw.length > MAX_IDS) {\n  throw new Error(`REFUSED: ${raw.length} ids in one pull; the cap is ${MAX_IDS}. This cap is what stands between one wide search and an empty credit balance.`);\n}\n\n// De-duplicate rather than refuse: the same person can legitimately appear twice in a list a human\n// assembled from two pages, and paying twice for one address is the failure worth preventing.\nconst seen = new Set();\nconst ids = [];\nfor (const v of raw) {\n  const id = String(v == null ? '' : v).trim();\n  if (!ID_RE.test(id)) {\n    throw new Error(`REFUSED: '${id}' is not a plausible Apollo person id. Ids come from the free search — do not hand-type them.`);\n  }\n  if (seen.has(id)) continue;\n  seen.add(id);\n  ids.push(id);\n}\n\n// One n8n item per id. Every node downstream is per-item or $input.all(), so an array riding on a\n// single item would silently reveal only the first person and report success for all of them.\nreturn ids.map((apollo_id) => ({ json: {\n  apollo_id,\n  product,\n  source_config: product,\n  requested_count: raw.length,\n  unique_count: ids.length,\n  duplicates_collapsed: raw.length - ids.length,\n  requested_by: String(body.requested_by || '').slice(0, 120),\n} }));\n"
+      }
+    },
+    {
+      "id": "vio-wfA-readleads",
+      "name": "Read Leads (held ids)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -120,
+        110
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "vio-wfA-skip",
+      "name": "Skip ones we already hold",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        110
+      ],
+      "parameters": {
+        "jsCode": "// Drop anyone we already hold, BEFORE paying to reveal them.\n//\n// VIO-intake-verify-curate already de-duplicates, and it is the authority — but it runs AFTER the\n// credit is spent. Intake's dedupe protects the Leads tab from double rows; this one protects the\n// credit balance. They are different jobs and both are needed.\n//\n// Matching is on the Apollo person id only. That is deliberate and it is a KNOWN PARTIAL: a person\n// we hold under a different id, or one typed in by hand from the same company, will not be caught\n// here and will cost a credit before intake catches them by email. Matching on anything else is\n// impossible at this point in the chain — we have not bought the address yet, so the id is the only\n// identifier that exists.\n//\n// `lead_id` is checked as well as `apollo_id` because Leads.lead_id IS the Apollo id whenever the\n// lead came from Apollo (see Normalize Lead in VIO-intake-verify-curate), and older rows written by\n// reach-engine populate one column but not always the other.\nconst requested = $('Guard (cap + shape)').all().map((i) => i.json);\n\nconst held = new Set();\nfor (const item of $input.all()) {\n  const r = item.json || {};\n  for (const v of [r.apollo_id, r.lead_id]) {\n    const s = String(v == null ? '' : v).trim();\n    if (s) held.add(s);\n  }\n}\n\nconst toReveal = requested.filter((r) => !held.has(r.apollo_id));\nconst skipped  = requested.filter((r) => held.has(r.apollo_id)).map((r) => r.apollo_id);\n\n// ALWAYS emit at least one item. A node that emits zero stops the chain where it stands, and the\n// terminal report never runs — so \"every one of them was already in the pipeline\", which is a\n// perfectly ordinary outcome, would have looked identical to a crash. This is the same trap that\n// made VIO-sheet-provision silently do nothing for two runs while reporting success.\nif (toReveal.length === 0) {\n  return [{ json: {\n    _reveal: false,\n    product: requested.length ? requested[0].product : '',\n    source_config: requested.length ? requested[0].source_config : '',\n    already_held: skipped,\n    already_held_count: skipped.length,\n    to_reveal_count: 0,\n  } }];\n}\n\nreturn toReveal.map((r) => ({ json: {\n  _reveal: true,\n  apollo_id: r.apollo_id,\n  product: r.product,\n  source_config: r.source_config,\n  already_held: skipped,\n  already_held_count: skipped.length,\n  to_reveal_count: toReveal.length,\n} }));\n"
+      }
+    },
+    {
+      "id": "vio-wfA-if1",
+      "name": "Anything to reveal?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        320,
+        110
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wfA-if1-cond",
+              "leftValue": "={{ $json._reveal }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "vio-wfA-reveal",
+      "name": "Apollo Reveal (paid)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        0
+      ],
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "VIOapollocred01",
+          "name": "VIO Apollo"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/api/v1/people/match",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ id: $json.apollo_id, reveal_personal_emails: false }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "vio-wfA-shape",
+      "name": "Shape for intake",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Turn Apollo's people/match responses into the payload VIO-intake-verify-curate expects.\n//\n// The field list is not free-form. `Normalize Lead` inside intake builds an EXPLICIT object, so\n// anything not named there is silently dropped — that is exactly how `Product` reached intake from\n// VIO-inbox-mapper on 2026-08-29 and vanished before the Leads row was written. The names below\n// match that node's inputs deliberately; adding a field here without adding it there does nothing.\n//\n// WHY THE REVEAL IS WORTH MORE THAN THE ADDRESS: the free search returns no surname and no company\n// domain. people/match returns both. `company_domain` is what drives Sendr's dynamic-website GIF,\n// so a lead pulled this way gets a personalised page, where a lead hand-typed without a website\n// silently degrades to a generic preview.\nconst requested = $('Skip ones we already hold').all().map((i) => i.json).filter((j) => j._reveal);\n\nconst clean = (v, cap) => String(v == null ? '' : v)\n  .replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, cap);\n\nconst normDomain = (v) => clean(v, 160).toLowerCase()\n  .replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0];\n\n// Apollo's people/match does NOT fail on an id it cannot find. Proven live 2026-09-05: a request\n// for id 000000000000000000000000 came back 200 with a DIFFERENT person on it. So \"the call\n// succeeded\" says nothing about who was returned, and if that person had happened to carry an\n// email we would have put a stranger nobody chose into an outbound pipeline and billed a credit\n// for the privilege.\n//\n// Every response is therefore checked against the set of ids we actually asked for. A mismatch is\n// treated as a failed reveal, never as a lead.\nconst requestedIds = new Set(requested.map((r) => r.apollo_id));\n\nconst responses = $input.all();\n\nconst rows = [];\nresponses.forEach((item, i) => {\n  const j = item.json || {};\n  const person = j.person || {};\n  // Trust the id Apollo echoed back over positional alignment; fall back to position only when the\n  // call failed outright and there is no person to read an id from.\n  const echoed = clean(person.id, 64);\n  const req = (echoed && requested.filter((r) => r.apollo_id === echoed)[0]) || requested[i] || {};\n  // Report it under the id WE asked for, so the operator can see which of their picks failed.\n  const apollo_id = (echoed && requestedIds.has(echoed)) ? echoed : clean(req.apollo_id, 64);\n\n  // onError:continueRegularOutput means a failed call arrives here as an item carrying `error`\n  // rather than killing the batch. One bad id must not cost us the other twenty-four.\n  const mismatched = Boolean(echoed) && !requestedIds.has(echoed);\n  const failed = Boolean(j.error) || mismatched || (!person.id && !person.email);\n  const org = person.organization || person.account || {};\n  // A substituted person's details are DISCARDED, not merely unused. Carrying the address forward\n  // would write a stranger's email into the Events audit log under our outreach, and the whole\n  // point of rejecting the substitution is that we have no business holding their details at all.\n  const email = mismatched ? '' : clean(person.email, 160).toLowerCase();\n\n  rows.push({\n    apollo_id,\n    ok: !failed && Boolean(email),\n    reason: mismatched ? `apollo returned a DIFFERENT person (${echoed}) than the one requested — discarded`\n          : Boolean(j.error) || (!person.id && !person.email) ? 'apollo did not return a person'\n          : (email ? '' : 'apollo returned the person but no email address'),\n    // --- the intake contract ---\n    email,\n    contact_email: email,\n    first_name: mismatched ? '' : clean(person.first_name, 80),\n    last_name: mismatched ? '' : clean(person.last_name, 80),\n    title: mismatched ? '' : clean(person.title, 120),\n    company: mismatched ? '' : clean(org.name || person.organization_name, 160),\n    company_domain: mismatched ? '' : normDomain(org.primary_domain || org.website_url),\n    linkedin_url: mismatched ? '' : clean(person.linkedin_url, 240),\n    phone: '',                       // never requested here — direct-dial credits are the scarce ones\n    has_email: Boolean(email),\n    has_phone: false,\n    source_config: clean(req.source_config, 40) || 'apollo',\n    Product: (req.product === 'visioneerit') ? 'VisioneerIT' : 'OryonIQ',\n  });\n});\n\nconst usable = rows.filter((r) => r.ok);\n\n// Always emit at least one item, for the same reason Skip does: \"we paid and got nothing back\" is a\n// real outcome that must reach the report rather than stopping the chain silently.\nif (usable.length === 0) {\n  return [{ json: { _any: false, attempted: rows.length, usable: 0, rows } }];\n}\nreturn usable.map((r) => ({ json: Object.assign({ _any: true, _attempted: rows.length, _rows: rows }, r) }));\n"
+      }
+    },
+    {
+      "id": "vio-wfA-events",
+      "name": "Events rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// One Events row per reveal ATTEMPT, not per usable lead.\n//\n// This is the only durable record that money was spent. Intake writes an Events row for each lead\n// it verifies, but a credit spent on a person Apollo could not return an address for produces no\n// lead, no intake row, and therefore no trace at all — the spend would exist only in Apollo's\n// billing page and nobody would ever reconcile the two. \"Who spent two hundred credits last\n// Tuesday\" has to be answerable from the sheet.\n//\n// est_cost_usd is left BLANK on purpose. SHEET_SCHEMA.md Tab 3: leave it blank while the real rate\n// is unknown in COSTS.md — measure, don't estimate. A made-up number in the cost meter is worse\n// than a gap, because a gap prompts someone to go and find the rate.\nconst first = $input.first().json || {};\nconst attempts = (first._any === false ? first.rows : first._rows) || [];\nconst now = new Date().toISOString();\nconst source = first.source_config || 'apollo';\n\n// The reveal branch ran, so a call was made and something must be recorded. If it somehow produced\n// no response items at all, that itself is the finding — writing nothing would leave the sheet\n// implying no call happened, and this node emitting nothing would stop the chain before the report.\nif (!attempts.length) {\n  return [{ json: {\n    timestamp: now, lead_id: '', lead_email: '',\n    tool: 'apollo', action: 'reveal', units: 0, est_cost_usd: '',\n    result: 'reveal branch ran but Apollo returned no response items',\n    workflow: 'VIO-apollo-reveal', source_config: source,\n  } }];\n}\n\nreturn attempts.map((r) => ({ json: {\n  timestamp: now,\n  lead_id: r.apollo_id || '',\n  lead_email: r.email || '',\n  tool: 'apollo',\n  action: 'reveal',\n  // Apollo bills a lead credit when it returns enrichment data. A call that came back with no\n  // person and no address is recorded at 0 so the totals stay honest in both directions.\n  units: r.ok ? 1 : 0,\n  est_cost_usd: '',\n  result: r.ok ? 'revealed work email' : (r.reason || 'no address returned'),\n  workflow: 'VIO-apollo-reveal',\n  source_config: r.source_config || source,\n} }));\n"
+      }
+    },
+    {
+      "id": "vio-wfA-logevents",
+      "name": "Log Reveal (Events)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1200,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 15000,
+      "credentials": {
+        "googleApi": {
+          "id": "VIOgsheetcred01",
+          "name": "VIO Google Sheets"
+        }
+      },
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Events",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        }
+      }
+    },
+    {
+      "id": "vio-wfA-restore",
+      "name": "Restore lead items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1420,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Put the LEAD items back after the Events write.\n//\n// A Google Sheets node returns rows in the shape of the sheet it just wrote, so the items leaving\n// `Log Reveal (Events)` carry Events columns — timestamp, tool, action — and no email address. If\n// those flowed on to intake, intake would receive ten rows describing an audit log and try to\n// verify them as people. That is not hypothetical: it is exactly how VIO-run-outreach broke on\n// 2026-09-01, when VIO-enrol-email returned Events columns and `Shape row update` threw on every\n// send.\n//\n// So the Events write is a SIDE BRANCH in sequence rather than a step in the data path, and this\n// node reads the real payload back from the node that built it.\nreturn $('Shape for intake').all();\n"
+      }
+    },
+    {
+      "id": "vio-wfA-if2",
+      "name": "Any address revealed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "vio-wfA-if2-cond",
+              "leftValue": "={{ $json._any }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "vio-wfA-intake",
+      "name": "Verify + curate (intake)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1860,
+        -110
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "VIOwf1intake0001",
+          "mode": "list",
+          "cachedResultName": "VIO-intake-verify-curate"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "vio-wfA-report",
+      "name": "Reveal Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2080,
+        110
+      ],
+      "parameters": {
+        "jsCode": "// The single terminal. Every branch converges here, so this node's output IS the workflow's return\n// value — for the webhook caller and for an Execute Workflow caller alike.\n//\n// One terminal is a rule, not a preference: n8n hands the caller whichever terminal node happened\n// to finish last, so a workflow with two ends returns a coin flip. VIO-enrol-email and\n// VIO-intake-verify-curate both shipped that bug and both were fixed the same way.\n//\n// It reads from NAMED NODES rather than from its input, because which branch fed it is exactly the\n// thing being reported. Each read is wrapped: a node that never ran in this execution throws when\n// referenced, and \"the reveal branch did not run\" is an answer, not a failure.\nconst scrub = (v) => Array.isArray(v) ? v.map(scrub)\n  : (v && typeof v === 'object') ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, scrub(x)]))\n  : (typeof v === 'string' ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ') : v);\n\nconst read = (name) => { try { return $(name).all().map((i) => i.json); } catch (e) { return null; } };\n\nconst requested = read('Guard (cap + shape)') || [];\nconst skipStage = read('Skip ones we already hold') || [];\nconst shaped    = read('Shape for intake') || [];\n\nconst first = skipStage[0] || {};\nconst alreadyHeld = first.already_held || [];\n\n// Attempts live on whichever shape the Shape node produced: the noop item carries `rows`, a normal\n// item carries `_rows`.\nconst s0 = shaped[0] || {};\nconst attempts = (s0._any === false ? s0.rows : s0._rows) || [];\nconst revealed = attempts.filter((r) => r.ok);\nconst noAddress = attempts.filter((r) => !r.ok);\n\n// Per-lead verdicts from intake, when the batch got that far.\nconst intake = read('Verify + curate (intake)') || [];\nconst verdicts = [];\nfor (const r of intake) {\n  const list = Array.isArray(r && r.results) ? r.results : (r && r.outcome ? [r] : []);\n  for (const v of list) {\n    verdicts.push({\n      email: v.email || v.contact_email || '',\n      outcome: v.outcome || '',\n      reason: v.reason || '',\n      reoon_status: v.reoon_status || '',\n      lead_id: v.lead_id || '',\n    });\n  }\n}\n\nreturn [{ json: scrub({\n  ok: true,\n  workflow: 'VIO-apollo-reveal',\n  ran: ['guard', 'dedupe_before_spending', attempts.length ? 'apollo_people_match' : null,\n        attempts.length ? 'log_events' : null, revealed.length ? 'intake_verify_curate' : null]\n       .filter(Boolean),\n\n  requested: requested.length,\n  duplicates_collapsed: (requested[0] || {}).duplicates_collapsed || 0,\n  already_held: alreadyHeld.length,\n  already_held_ids: alreadyHeld,\n\n  reveal_calls: attempts.length,\n  revealed: revealed.length,\n  no_address: noAddress.length,\n  no_address_ids: noAddress.map((r) => r.apollo_id),\n\n  // Apollo bills a lead credit when it returns enrichment data, so a call that came back empty is\n  // counted at zero. Called an estimate rather than a fact because the authority is Apollo's own\n  // billing page, not this workflow — reconcile against it before quoting a spend to anyone.\n  credits_spent_estimate: revealed.length,\n\n  // What a caller most wants to know: these people are NOT emailed. They are queued behind the same\n  // verification, de-duplication and suppression checks as a hand-typed lead, and then the daily cap\n  // decides how many actually go out.\n  handed_to_intake: revealed.length,\n  verdicts,\n  note: revealed.length\n    ? 'Revealed addresses were handed to VIO-intake-verify-curate. Nothing has been emailed — '\n      + 'intake verifies and de-duplicates, then VIO-run-outreach sends within the daily cap.'\n    : 'No address was revealed, so nothing was handed on. No lead was created.',\n}) }];\n"
+      }
+    }
+  ],
+  "connections": {
+    "Reveal Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Guard (cap + shape)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Called by Workflow": {
+      "main": [
+        [
+          {
+            "node": "Guard (cap + shape)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard (cap + shape)": {
+      "main": [
+        [
+          {
+            "node": "Read Leads (held ids)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads (held ids)": {
+      "main": [
+        [
+          {
+            "node": "Skip ones we already hold",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip ones we already hold": {
+      "main": [
+        [
+          {
+            "node": "Anything to reveal?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anything to reveal?": {
+      "main": [
+        [
+          {
+            "node": "Apollo Reveal (paid)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reveal Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apollo Reveal (paid)": {
+      "main": [
+        [
+          {
+            "node": "Shape for intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape for intake": {
+      "main": [
+        [
+          {
+            "node": "Events rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Events rows": {
+      "main": [
+        [
+          {
+            "node": "Log Reveal (Events)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Reveal (Events)": {
+      "main": [
+        [
+          {
+            "node": "Restore lead items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore lead items": {
+      "main": [
+        [
+          {
+            "node": "Any address revealed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any address revealed?": {
+      "main": [
+        [
+          {
+            "node": "Verify + curate (intake)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reveal Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify + curate (intake)": {
+      "main": [
+        [
+          {
+            "node": "Reveal Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "VIOwfEerroralert"
+  }
+}

@@ -114,6 +114,37 @@ Current ids: `Openai Marketing` `7t8KDC4EZpbIkOxP` · `slack marketing` `niWxNp4
 ssh root@104.248.119.152 "docker exec n8n-stack-postgres-1 psql -U postgres -d railway -tAc \"select name, jsonb_path_query_array(nodes::jsonb, '\\\$[*].credentials') from workflow_entity where id like 'VIO%' order by name;\""
 ```
 
+### ⚠️ `import:workflow` DEACTIVATES the workflow it imports (found live 2026-09-05)
+
+Importing `VIO-source-leads.json` printed `Deactivating workflow "VIO-source-leads"` and the DB
+flag went to `false`. Nothing warned beyond that one line, which is easy to miss between two
+`Successfully imported` messages — and a deactivated poller looks exactly like a working one until
+someone notices the mail stopped.
+
+**Adding `"active": true` to the JSON does not help — the importer ignores it.** Activation is a
+separate step:
+
+```bash
+docker exec n8n-stack-n8n-1 n8n update:workflow --id=<WORKFLOW_ID> --active=true
+docker restart n8n-stack-n8n-1
+```
+
+**Every import of an active workflow must be followed by an activation and a state check:**
+
+```bash
+docker exec n8n-stack-postgres-1 psql -U postgres -d railway -tAc \
+  "select name, active from workflow_entity where name like 'VIO-%' and active = false"
+```
+
+Only `VIO-costs-rollup` should appear. Anything else in that list is an outage in progress.
+
+### ⚠️ A Google Sheets node needs `authentication: "serviceAccount"` (found live 2026-09-05)
+
+Omit it and the node silently defaults to OAuth2 and throws **"Node does not have any credentials
+set for googleSheetsOAuth2Api"** — even with a `googleApi` credential attached and pinned by id.
+The credential looks correct in every check; the node is simply asking for a different one.
+`test-apollo-reveal.mjs` asserts it on every Sheets node in that workflow.
+
 ### Restarting to bind webhook routes
 `n8n update:workflow --active=true` sets the DB flag but the running process only binds webhook
 routes at startup — a live probe 404s until then. `docker restart n8n-stack-n8n-1` restarts **only**
@@ -141,7 +172,7 @@ across `VIO-*.json` to reproduce this list): `VIOwf8askhuman1` (ask-human), `VIO
 (reveal-contacts), `VIOwfBpushinst1` (push-instantly), `VIOwf9source0001` (source-leads),
 `VIOwf4agent0001` (operator-agent), `VIOwf6sendrgen01` (sendr-generate-page), `VIOwf1intake0001`
 (intake — called by `VIO-inbox-mapper`'s `Verify + curate (intake)` node), `VIOwfLenrolmail`
-(enrol-email — called by `VIO-demo-sheet-run`'s `Enrol email (no gate — see notes)` node).
+(enrol-email — called by `VIO-run-outreach`'s `Enrol email (no gate — see notes)` node).
 
 **⚠️ None of the JSON backups in this folder carry a top-level `"active": true`** — not even for
 the workflows this document calls LIVE elsewhere. `grep '"active"' VIO-*.json` finds the key
@@ -150,10 +181,10 @@ curate.json`, `VIO-operator-agent.json`, `VIO-operator-agent-v2.json`, `VIO-send
 `VIO-sendr-generate-page.json`, all six of which are `false`. Per "Imports arrive deactivated"
 above, that is expected — `import-workflow.sh` deactivates on write regardless of what was true on
 the droplet, so **the JSON is never proof of current activation state, in either direction.**
-Every activation claim in this file (including "intake is now ACTIVE," below) reflects what was
-last confirmed on the droplet by a human or a live probe, not what the backup file says. Where that
-confirmation doesn't exist in any doc this repo carries, the workflow's section below says
-**activation not verifiable from the repo** instead of guessing.
+Every activation claim in this file reflects what was last confirmed on the droplet by a human or
+a live probe, not what the backup file says. The workflow index below is the **2026-09-04** probe
+(`workflow_entity.active` + container bind list + dummy-token webhook POSTs). Re-probe before
+trusting it after an import or droplet move.
 
 A healthy blocked approval shows `status: waiting` in `execution_entity` for BOTH the caller and
 `ask-human`. That is the gate armed and a human being asked — not a hang.
@@ -162,33 +193,38 @@ A healthy blocked approval shows `status: waiting` in `execution_entity` for BOT
 
 ### Workflow index
 
-One row per `VIO-*.json` in this folder (20 files, checked against `ls VIO-*.json` while writing
-this table). "Active" reflects the most recent live confirmation this repo's docs carry — see the
-warning just above the "must be ACTIVE" list; where none exists it says so rather than reading the
-JSON's `active` key, which is not reliable in either direction.
+One row per `VIO-*.json` in this folder (21 files). **Active?** is the live `workflow_entity.active`
+flag plus the container bind list from **2026-09-04 ~17:35 UTC** (n8n 2.22.6 recreate). The JSON
+`active` key is still not proof in either direction — see the warning above. Dummy-token POSTs the
+same day bound every VIO webhook (none 404).
 
-| Workflow | id | Trigger(s) | Active? | Purpose |
+The send loop was renamed **`VIO-run-outreach`** (same id `VIOwfDsheetdemo1`; file used to be
+`VIO-demo-sheet-run.json`). Older notes in this folder that still say the old name mean this
+workflow.
+
+| Workflow | id | Trigger(s) | Active? (2026-09-04) | Purpose |
 |---|---|---|---|---|
-| `VIO-intake-verify-curate` | `VIOwf1intake0001` | manual (`When clicking Test`) + `executeWorkflowTrigger` (`Leads In`) | **ACTIVE** (called synchronously by `VIO-inbox-mapper`; see below) | Reoon-verify a lead, gate on dedupe/suppression, classify pass/drop/needs_review |
-| `VIO-inbound-reply-to-call` | `VIOwf3inbound001` | webhook (`vio-inbound-reply`) | activation not verifiable from the repo | Instantly reply → OpenAI sentiment → dedup/TCPA gate → Slack "take this follow-up?" |
-| `VIO-operator-agent` | `VIOwf4agent0001` | webhook (test only) + `executeWorkflow` target | must be ACTIVE (called by `VIO-demo-sheet-run`, `VIO-run-campaign`) | Deterministic draft: validate config → personalize → assemble email (LangChain-free fallback) |
-| `VIO-sendr-generate-page` | `VIOwf6sendrgen01` | webhook (`vio-sendr-generate-page`) + `executeWorkflow` target | must be ACTIVE (called by `VIO-demo-sheet-run`) | Lead + product → personalized Sendr page URL, fails closed on unknown product |
-| `VIO-sendr-events` | `VIOwf5sendrevt01` | webhook (`vio-sendr-events`) | activation not verifiable from the repo | Sendr workspace webhook → heat classification → Slack on hot/booked/error |
-| `VIO-operator-agent-v2` | `VIOwf7agentv201` | webhook (`vio-operator-agent`) | activation not verifiable from the repo | True autonomous LangChain Agent node; tool-gated, no send/dial/reveal tools wired |
-| `VIO-inbox-mapper` | `VIOwfHinboxmap` | schedule (2 min) | activation not verifiable from the repo (README calls it LIVE; no fresh probe recorded here) | Normalises whatever staff paste into the `Inbox` tab onto the `Leads` schema; calls intake |
-| `VIO-agent-tool-ask-human` | `VIOwf8askhuman1` | `executeWorkflowTrigger` only | must be ACTIVE (called by `push-instantly`, `reveal-contacts`) | Shared Slack approve/adjust/deny gate; fails closed on any non-`true` decision |
-| `VIO-agent-tool-reveal-contacts` | `VIOwfArevealcon1` | `executeWorkflowTrigger` only | must be ACTIVE (agent tool) | Human-gated Apollo `people/match` reveal, capped 10 leads/call, email-only (no phone) |
-| `VIO-agent-tool-push-instantly` | `VIOwfBpushinst1` | webhook (`vio-agent-tool-push-instantly`) + `executeWorkflowTrigger` | must be ACTIVE (agent tool; no longer called by `VIO-demo-sheet-run`, see its section) | Human-gated Instantly enrolment via a hardcoded campaign allow-list, capped 12 leads/call |
-| `VIO-source-leads` | `VIOwf9source0001` | webhook (`vio-source-leads`) + `executeWorkflowTrigger` (`Called by Workflow`) | must be ACTIVE (called by `VIO-run-campaign`) | Free Apollo search filtered to `has_email`, capped 25/call, no credits spent |
-| `VIO-run-campaign` | `VIOwfCruncamp001` | webhook (`vio-run-campaign`) | activation not verifiable from the repo | End-to-end free run: source → draft, per product, no reveal/enrol |
-| `VIO-demo-sheet-run` | `VIOwfDsheetdemo1` | schedule (node named "Every minute", actually every 3 min) | activation not verifiable from the repo | Polls `Leads` for human-typed rows → draft → Sendr page → email enrolment (now ungated, see below) |
-| `VIO-enrol-email` | `VIOwfLenrolmail` | `executeWorkflowTrigger` only | must be ACTIVE (called by `VIO-demo-sheet-run`) | Ungated Instantly enrolment for human-picked leads; 5 throw-checks replace the Slack click |
-| `VIO-instantly-events` | `VIOwfGinstevents` | webhook (`vio-instantly-events`) | activation not verifiable from the repo | Instantly delivery/bounce/unsub events → `Events` row + `Leads` stage + `Suppression` on bounce/unsub |
-| `VIO-costs-rollup` | `VIOwfKcostsroll` | schedule (daily, 02:00) | activation not verifiable from the repo | Full recompute of `Events` into per (date, tool, metric, product) buckets on the `Costs` tab |
-| `VIO-sheet-audit` | `VIOwfFsheetaudit` | webhook (`vio-sheet-audit`) | activation not verifiable from the repo | Read-only audit of all 8 tabs' actual headers + live dropdown values, vs. the (twice-wrong) docs |
-| `VIO-sheet-provision` | `VIOwfIprovision` | webhook (`vio-sheet-provision`) | activation not verifiable from the repo | Writes the `Inbox` tab's header row (bootstraps an unprovisioned tab) |
-| `VIO-sheet-repair` | `VIOwfJrepairsht` | webhook (`vio-sheet-repair`) | activation not verifiable from the repo | Operator chores: seed an `Inbox` test row, or vouch-approve one catch-all-domain lead in `Leads` |
-| `VIO-error-alert` | `VIOwfEerroralert` | error trigger (`errorWorkflow` target of every other VIO workflow) | activation not verifiable from the repo (must be reachable as an error-workflow target, which does not require its own trigger to be armed the way `executeWorkflow` targets do) | Turns any VIO workflow's failure into one Slack message, distinguishing a refusal (gate working) from an outage |
+| `VIO-intake-verify-curate` | `VIOwf1intake0001` | manual + `executeWorkflowTrigger` (`Leads In`) | **ACTIVE** — ran today (Inbox → Reoon → Leads) | Reoon-verify a lead, gate on dedupe/suppression, classify pass/drop/needs_review |
+| `VIO-inbound-reply-to-call` | `VIOwf3inbound001` | webhook (`vio-inbound-reply`) | **ACTIVE**, route bound; no retained traffic | Instantly reply → OpenAI sentiment → dedup/TCPA gate → Slack "take this follow-up?" |
+| `VIO-operator-agent` | `VIOwf4agent0001` | webhook (test) + `executeWorkflow` target | **ACTIVE** (called by `VIO-run-outreach`, `VIO-run-campaign`) | Deterministic draft: validate config → personalize → assemble email |
+| `VIO-sendr-generate-page` | `VIOwf6sendrgen01` | webhook + `executeWorkflow` target | **ACTIVE**, route bound (called by `VIO-run-outreach`) | Lead + product → personalized Sendr page URL, fails closed on unknown product |
+| `VIO-sendr-events` | `VIOwf5sendrevt01` | webhook (`vio-sendr-events`) | **ACTIVE**, route bound; no retained traffic | Sendr workspace webhook → heat classification → Slack on hot/booked/error |
+| `VIO-operator-agent-v2` | `VIOwf7agentv201` | webhook (`vio-operator-agent`) | **ACTIVE**, route bound; unused on the daily path | True autonomous LangChain Agent node; tool-gated, no send/dial/reveal tools wired |
+| `VIO-inbox-mapper` | `VIOwfHinboxmap` | schedule (2 min) | **ACTIVE** — 2,511 successes in retained history; imported a row today | Normalises Inbox onto the `Leads` schema; calls intake |
+| `VIO-agent-tool-ask-human` | `VIOwf8askhuman1` | `executeWorkflowTrigger` only | **ACTIVE** — 6 Slack waits stranded since 25–30 Aug | Shared Slack approve/adjust/deny gate |
+| `VIO-agent-tool-reveal-contacts` | `VIOwfArevealcon1` | `executeWorkflowTrigger` only | **ACTIVE**; never invoked in retained history | Human-gated Apollo `people/match` reveal, cap 10, email-only |
+| `VIO-apollo-reveal` | `VIOwfApolloRev1` | webhook (`vio-apollo-reveal`) + `executeWorkflowTrigger` | **ACTIVE** (2026-09-05), route bound and exercised | The console's paid pull: ids in → work addresses out → handed to intake. Cap 25, dedupes before spending |
+| `VIO-agent-tool-push-instantly` | `VIOwfBpushinst1` | webhook + `executeWorkflowTrigger` | **ACTIVE** — 6 Slack waits stranded; not on the Inbox send path | Human-gated Instantly enrolment when an LLM picks recipients |
+| `VIO-source-leads` | `VIOwf9source0001` | webhook + `executeWorkflowTrigger` | **ACTIVE**, route bound; **not wired into intake** | Free Apollo search, `has_email` only, cap 25, no credits |
+| `VIO-run-campaign` | `VIOwfCruncamp001` | webhook (`vio-run-campaign`) | **ACTIVE**, route bound; unused | Free run: source → draft, no reveal/enrol |
+| `VIO-run-outreach` | `VIOwfDsheetdemo1` | schedule (3 min; node `Every 3 minutes`) | **ACTIVE** — 1,673 successes, almost all idle heartbeats | Polls `Leads` for Manual + READY rows → draft → page → ungated enrol |
+| `VIO-enrol-email` | `VIOwfLenrolmail` | `executeWorkflowTrigger` only | **ACTIVE** (called by `VIO-run-outreach`). One live enrol 2026-09-01; writeback fix untested | Ungated Instantly enrolment; 5 throw-checks replace the Slack click |
+| `VIO-instantly-events` | `VIOwfGinstevents` | webhook (`vio-instantly-events`) | **ACTIVE**, route bound; no retained traffic | Delivery/bounce/unsub → Events + Leads stage + Suppression |
+| `VIO-costs-rollup` | `VIOwfKcostsroll` | schedule (daily, 02:00) | **INACTIVE** — only VIO workflow that did not bind. Costs tab is not rolling up. | Full recompute of Events into Costs buckets |
+| `VIO-sheet-audit` | `VIOwfFsheetaudit` | webhook (`vio-sheet-audit`) | **ACTIVE**, route bound; ran today | Read-only audit of the live tabs vs this doc |
+| `VIO-sheet-provision` | `VIOwfIprovision` | webhook (`vio-sheet-provision`) | **ACTIVE**, route bound; unused (tabs already exist) | Writes Inbox / System header rows |
+| `VIO-sheet-repair` | `VIOwfJrepairsht` | webhook (`vio-sheet-repair`) | **ACTIVE**, route bound; used 2026-09-01 to vouch a catch-all | Seed an Inbox test row, or vouch-approve one Leads address |
+| `VIO-error-alert` | `VIOwfEerroralert` | error trigger | **ACTIVE** — posted the 2026-09-01 writeback throw to Slack | One Slack message per VIO failure; refusal vs outage |
 
 
 
@@ -831,7 +867,7 @@ writing this section).
 **The only gated tool that emails a real prospect.** Two entry points converge on `Build Proposal`:
 a webhook (`POST /webhook/vio-agent-tool-push-instantly`) and an `executeWorkflowTrigger`
 (`Tool Call In`, `inputSource: passthrough`) for the agent. **As of this write-up it is reached only
-via the tool-call path in practice** — `VIO-demo-sheet-run`'s enrolment node used to target this
+via the tool-call path in practice** — `VIO-run-outreach`'s enrolment node used to target this
 workflow but has been repointed at `VIO-enrol-email` instead (see that section); this workflow now
 exists specifically for the case an LLM is choosing the recipients, which is exactly the case that
 still needs a human click on every batch.
@@ -895,6 +931,65 @@ same way `VIO-sendr-generate-page` does) → `Apollo Search (free)` (HTTP POST
 `mixed_people/api_search`) → `Filter + Shape` (Code: keeps only `has_email` survivors, mirrors
 `reach-engine/engine.py`'s `[p for p in people if p.get('has_email')][:limit]`) → `Report`.
 
+**Rewritten 2026-09-05 — the filters now come from the CALLER.** They used to be hardcoded, so the
+only way to search for anyone new was to edit and re-import this workflow. `Resolve ICP` now takes
+`person_titles`, `person_seniorities`, `organization_num_employees_ranges`, `person_locations`,
+`q_keywords`, `page` and `per_page`, falling back to the product ICP for anything omitted, and
+echoes the resolved set back as `filters_used` so a saved search replays exactly what ran.
+
+The trust boundary is the point of the node, and the line is drawn deliberately:
+
+| | |
+|---|---|
+| **REFUSE** | anything that changes **who** is contacted — an unknown seniority, a non-US location, a backwards size band. Apollo drops an unrecognised filter *silently*, so the operator would narrow the search, see a plausible list, and pull people matching none of it. |
+| **FORGIVE** | anything that only changes **how many** come back. A nonsense `per_page` cannot reach the wrong person, and the operator agent legitimately emits nulls and strings for it. |
+
+United States is a **constraint, not a default** — a lead outside it has not been cleared for
+outreach, so a foreign location is refused rather than replaced. `test-apollo-search.mjs` 54/54.
+
+Live 2026-09-05 with caller filters (titles + director/vp/c_suite + Virginia + 51-200 staff):
+**490 matching, 5/5 emailable, 0 credits.**
+
+### `VIO-apollo-reveal.json` — WF-14 (id `VIOwfApolloRev1`) — **LIVE**
+
+> **Not the same thing as `VIO-agent-tool-reveal-contacts` (WF-12), and both are kept.** Same vendor
+> call, different authorisation model and different destination. WF-12 is the *AI agent's* tool: the
+> agent proposes, a human clicks Approve in Slack, and the result is **reported back to the agent** —
+> it never reaches the pipeline. WF-14 is the *console's* path: a human has already chosen the people
+> on screen, so the approval is that click, and the result is **handed to intake** so the leads
+> actually enter outreach. Worth knowing: a lead revealed through WF-12 today goes nowhere. Folding
+> the two together is a real consolidation candidate, but it means changing a workflow with 235
+> passing tests and a proven Slack gate, so it has deliberately not been done here.
+
+**The workflow that spends money.** `POST /webhook/vio-apollo-reveal` (or Execute Workflow) with a
+product and an explicit list of Apollo person ids; it reveals their work addresses and hands them to
+`VIO-intake-verify-curate`, so a pulled lead passes the same verification, dedupe and suppression
+gates as one typed by hand.
+
+Every other VIO workflow fails by doing nothing. **This one fails by doing something expensive**, so
+the guards are the design:
+
+- **Ids, never filters.** A caller cannot say "reveal everyone matching director in Virginia" and
+  discover afterwards that it meant nine thousand people. Search wide for free, reveal narrow and on
+  purpose. Cap is **25 per pull**; duplicates are collapsed rather than refused, because paying
+  twice for one address is the failure worth preventing.
+- **Dedupe BEFORE spending.** Intake de-duplicates too and is the authority, but it runs *after* the
+  credit is gone. `Read Leads (held ids)` → `Skip ones we already hold` protects the balance.
+  Known partial: it can only match on the Apollo id, because we have not bought an address yet.
+- **Substitution is discarded.** See INTEGRATIONS.md — `people/match` returns *a different person*
+  for an unknown id, with HTTP 200.
+- **Every attempt is logged to `Events`**, including the ones that returned nothing (`units: 0`).
+  A credit spent on a person with no address produces no lead and would otherwise leave no trace
+  outside Apollo's billing page.
+- **One terminal.** `Reveal Report` is the only end, and every branch reaches it — including
+  "everyone was already ours" and "we paid and got nothing", both of which would otherwise stop the
+  chain silently and look like a crash.
+
+`test-apollo-reveal.mjs` 73/73. Proven live 2026-09-05: three guard refusals by their real messages,
+and a full paid-branch run that discarded a substituted person, wrote its Events row, and created no
+lead. **A reveal of a real person has not yet been run** — that spends a credit and puts a real
+stranger into the pipeline.
+
 **The ICP is embedded here as a third copy** (config, this node, and the operator agents'
 `validate_config` all carry their own copy) because n8n has no filesystem access to
 `config-<product>.json` at runtime — `sync-routes.py` does not yet cover this file's `icp`, per its
@@ -946,15 +1041,21 @@ flag catches silent attrition between the two stages.
 Proven offline: **`test-run-campaign.mjs` passes 62/62** (re-run against the current JSON while
 writing this section).
 
-### `VIO-demo-sheet-run.json` — WF-14 (id `VIOwfDsheetdemo1`)
+### `VIO-run-outreach.json` — WF-14 (id `VIOwfDsheetdemo1`)
 
-**The Sheet-driven demo loop: a human types a row, this workflow drafts it, pages it, and mails
-it.** Trigger node is named `Every minute` but its `scheduleTrigger` rule is actually a **3-minute
-interval** — worth knowing before assuming the name is the behaviour.
+Renamed from `VIO-demo-sheet-run` (same id). **ACTIVE** as of the 2026-09-04 live probe — 3-minute
+poll, System-tab heartbeat every cycle. Retained history: 1,673 successes (almost all idle) and
+one error (2026-09-01 writeback, below). Last real send attempt 2026-09-01 20:09 UTC.
 
-**Nodes:** `Every minute` → `Read Leads` → `Pick demo rows` (Code: two filters, both load-bearing —
+**The Sheet-driven send loop: a human types a row, this workflow drafts it, pages it, and mails
+it.** Trigger node is `Every 3 minutes` (older notes called it `Every minute`; the interval was
+always 3 minutes).
+
+**Nodes:** `Every 3 minutes` → `Read Leads` → `Pick demo rows` (Code: two filters, both load-bearing —
 `source_config === 'manual'` (the live sheet's dropdown for "a human typed this," **not** `'demo'`;
-see the note below) **and** `channel_state_email` blank, the claim marker) → `Row usable?` (IF) →
+case-insensitive, and the Inbox mapper defaults a blank to `Manual`) **and** `channel_state_email`
+in the READY set `{ '', 'not_sent', 'approved' }` — blank is a row typed straight into Leads;
+`not_sent` is what intake writes on a Reoon pass; `approved` is a human vouch via `VIO-sheet-repair`) → `Row usable?` (IF) →
 false: `Explain the bad row` → `Write result back` · true: **fans out in parallel** to
 `Claim row early` → `Claim early in sheet` (writes `pending_approval` immediately, before any
 drafting starts) and to `Shape for drafting` → `Draft (operator agent)` (`executeWorkflow` →
@@ -964,12 +1065,11 @@ drafting starts) and to `Shape for drafting` → `Draft (operator agent)` (`exec
 `VIOwfLenrolmail`, `mode: 'each'` — see "The email leg is now ungated" below) → `Shape row update` →
 `Write result back`.
 
-**`source_config` means something different on this tab than `SHEET_SCHEMA.md` documents**, per
-`Pick demo rows`'s own comment: the live sheet has a data-validation dropdown offering exactly
-Apollo / Warmly-Intent / Referral / Manual — "how did this lead arrive" — not the product config
-("which product owns it") the doc describes. The loop-guard logic still holds regardless: intake
-writes `oryoniq`/`visioneerit` and Apollo-sourced rows carry `Apollo`, neither of which matches
-`manual`, so this schedule cannot re-trigger on rows the system itself appended.
+**`source_config` means how the lead arrived, not which product owns it.** The live sheet dropdown
+is Apollo / Warmly-Intent / Referral / Manual. Product is the separate `Product` column. The Inbox
+mapper stamps `source_config: Manual` when the paste does not say otherwise; intake copies that
+through. Apollo-sourced rows would carry `Apollo` and would not match `manual`, so this schedule
+cannot re-trigger on rows it (or intake) appended for a non-Manual arrival.
 
 **Three real bugs, found live and fixed in the code itself, all still visible as comments:**
 1. **Claim-then-work, not work-then-claim (found live 2026-08-29).** The row used to be claimed only
@@ -1002,20 +1102,25 @@ The Slack-gated path (`VIO-agent-tool-push-instantly`) is explicitly kept as the
 place an LLM *does* choose recipients — the autonomous operator agent — and the comment is explicit
 that the gate has to come back here too if this path is ever fed from an automated source.
 
-Proven offline: **`test-demo-sheet-run.mjs` passes 145/145** (re-run against the current JSON while
-writing this section — this workflow was being actively edited during this pass; re-run before
-trusting a specific number in the future).
+Proven offline: **`test-run-outreach.mjs`** (was `test-demo-sheet-run.mjs`). Re-run before trusting
+a specific assertion count — this workflow's surface still moves.
+
+**Live 2026-09-04:** pollers are healthy and idle. A real Inbox row went through intake the same
+afternoon; subsequent outreach cycles stopped at the heartbeat, so that row was not in the READY
+set (typical: Reoon `needs_review` on a catch-all). Mail is not moving because nobody is READY,
+not because the poller is dead.
 
 ### `VIO-enrol-email.json` — WF-15 (id `VIOwfLenrolmail`)
 
 **Brand-new workflow, added while this documentation pass was in progress** — it did not exist when
 this audit started and had no test file for part of that time either; both now exist. Reached only
-via `executeWorkflowTrigger` (`Called by Workflow`) — called by `VIO-demo-sheet-run`'s `Enrol email
+via `executeWorkflowTrigger` (`Called by Workflow`) — called by `VIO-run-outreach`'s `Enrol email
 (no gate — see notes)` node, no webhook.
 
 **Nodes:** `Called by Workflow` → `Read Suppression` → `Read Events` → `Preconditions (fail
 closed)` → `Enroll Lead (Instantly)` (HTTP) → `Report` → `Build Sheet Rows` → `Leads rows` /
-`Events rows` → `Write Lead Row (Leads)` / `Log Enrolment (Events)`.
+`Events rows` → `Write Lead Row (Leads)` / `Log Enrolment (Events)` / `Write intent` →
+`Enrolment Result (to caller)` (the single join — see the 2026-09-01 live miss below).
 
 **This replaces a human clicking Approve/Decline with five checks that throw, per `Preconditions
 (fail closed)`'s own comment, because a human was doing five jobs before:**
@@ -1052,6 +1157,14 @@ and `Build Sheet Rows` writes a `Leads` row only for leads that check confirms.
 Proven offline: **`test-enrol-email.mjs` passes 72/72** (this test file also appeared mid-audit;
 re-run before trusting the number going forward — this workflow's surface is still moving).
 
+**Live 2026-09-01 (exec 346169 enrol success, 346166 outreach error).** Instantly enrolment ran.
+`Shape row update` in `VIO-run-outreach` then threw: the sub-workflow returned Events-column keys
+(`timestamp`, `lead_email`, `tool`, …) instead of an `enrolled` boolean, because Execute Workflow
+emits the last node and that was a Sheets write, not a join. The throw is deliberate — guessing
+wrong either loses the record or mails them twice. `Enrolment Result (to caller)` was added at
+20:14 UTC the same day as the single exit (same pattern as intake). **No second send has proven
+the fix.** That lead may still show `pending_approval` on Leads while Instantly already has them.
+
 ### `VIO-instantly-events.json` — WF-16 (id `VIOwfGinstevents`)
 
 Webhook: `POST /webhook/vio-instantly-events`, `?t=<VIO_WEBHOOK_TOKEN>`, same fail-closed
@@ -1080,6 +1193,10 @@ Proven offline: **`test-instantly-events.mjs` passes 71/71** (re-run against the
 writing this section).
 
 ### `VIO-costs-rollup.json` — WF-17 (id `VIOwfKcostsroll`)
+
+**INACTIVE as of the 2026-09-04 live probe** (`workflow_entity.active = false`; it did not appear
+in the container's "Activated workflow" bind list). The Costs tab is not being recomputed. Activate
+it in the n8n **web UI** (or restart after a UI toggle) — the CLI cannot reload a running trigger.
 
 Trigger: daily schedule, 02:00. `Daily Rollup` → `Read Events` → `Build Rollup Rows` (Code) →
 `Cost rows` / `Summary row` (two `Filter` nodes on `_kind`) → `Write Rollup (Costs)`
@@ -1110,13 +1227,14 @@ JSON while writing this section, and covers `Build Rollup Rows`' bucket logic di
 ### `VIO-sheet-audit.json` — WF-18 (id `VIOwfFsheetaudit`)
 
 Webhook: `POST /webhook/vio-sheet-audit`, `responseMode: lastNode` (the caller needs the report
-synchronously). Read-only against all **eight** tabs: `Read Leads`, `Read Suppression`,
-`Read Events`, `Read Costs`, `Read Segments`, `Read Demo`, `Read Inbox`, `Read Pipeline` → `Report`
-(Code).
+synchronously). Read-only against the live tabs: `Read Leads`, `Read Suppression`,
+`Read Events`, `Read Costs`, `Read Segments`, `Read Demo`, `Read Inbox`, `Read Pipeline`,
+`Read System` → `Report` (Code). A 2026-09-04 run (exec 350206) completed; one Google "too many
+requests" appeared inside it.
 
 **Exists because the schema doc has been wrong twice, per `Report`'s own comment**: `source_config`
 is documented as the product config but is really the arrival-channel dropdown (see
-`VIO-demo-sheet-run`'s note above), and `channel_state_email` is documented as
+`VIO-run-outreach`'s note above), and `channel_state_email` is documented as
 `not_sent`/`queued`/`sent` but is really the pipeline-stage vocabulary
 (`VIO-instantly-events`'s note above). "Guessing from the doc put invalid values into columns a
 human reads" — this workflow instead reports the headers and distinct dropdown values a tab

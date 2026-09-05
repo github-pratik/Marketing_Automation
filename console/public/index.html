@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OryonIQ Outreach Console</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖥️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  /* Light-only on purpose: a workday tool that sits next to a spreadsheet and an
+     inbox should look the same on every staff machine. color-scheme keeps native
+     controls light too, which a dark OS theme would otherwise repaint. */
+  :root{
+    color-scheme:light;
+    --ground:#F5F7F9; --surface:#FFFFFF; --sunk:#EDF0F4; --ink:#191D26; --ink-soft:#414A5A;
+    --muted:#697283; --rule:#DCE1E8; --rule-soft:#E9EDF2;
+    --accent:#1B6A9E; --accent-bg:#E7F0F7;
+    --ok:#1F6B44; --ok-bg:#E4F2EA;
+    --warn:#8A6114; --warn-bg:#FAF1DF;
+    --stop:#A8324A; --stop-bg:#F9EBEE;
+    --shadow:0 1px 2px rgba(25,29,38,.05),0 4px 14px -6px rgba(25,29,38,.10);
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;font-size:inherit;cursor:pointer}
+  a{color:var(--accent)}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+  [hidden]{display:none!important}
+
+  /* ---- login ---- */
+  .gate{min-height:100vh;display:grid;place-items:center;padding:20px}
+  .gate .card{background:var(--surface);border:1px solid var(--rule);border-radius:6px;box-shadow:var(--shadow);padding:26px;width:min(380px,100%)}
+  .gate h1{font-size:18px;margin:0 0 4px}
+  .gate p{color:var(--muted);font-size:13px;margin:0 0 18px}
+  .gate input{width:100%;margin-bottom:12px}
+  .gate .btn{width:100%;justify-content:center}
+  .err{background:var(--stop-bg);color:var(--stop);border-radius:4px;padding:9px 12px;font-size:13px;margin-bottom:12px}
+
+  /* ---- app chrome ---- */
+  .app{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+  .top{display:flex;align-items:center;gap:16px;padding:20px 0 0;flex-wrap:wrap}
+  .brand{font-weight:700;font-size:17px;letter-spacing:-.02em}
+  .brand span{color:var(--muted);font-weight:400}
+  .who{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+  .live{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+  .dot.bad{background:var(--stop)}
+
+  nav{display:flex;gap:2px;margin-top:18px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+  nav button{background:none;border:0;padding:10px 14px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+  nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+  nav button .cnt{font-family:var(--mono);font-size:10.5px;background:var(--sunk);padding:1px 5px;border-radius:8px;margin-left:6px;color:var(--muted)}
+  nav button[aria-selected="true"] .cnt{background:var(--accent-bg);color:var(--accent)}
+  .view{padding-top:22px}
+
+  .banner{background:var(--warn-bg);border:1px solid var(--rule);border-left:3px solid var(--warn);
+    border-radius:4px;padding:10px 14px;margin-top:16px;font-size:12.5px;color:var(--ink-soft);
+    display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .banner b{color:var(--ink);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+  .banner span{flex:1;min-width:280px}
+
+  /* ---- stats ---- */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:5px;overflow:hidden;margin-bottom:22px}
+  .stat{background:var(--surface);padding:13px 15px}
+  .stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-family:var(--mono);font-size:23px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:4px;line-height:1.1}
+  .stat .n{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .v.ok{color:var(--ok)} .v.warn{color:var(--warn)} .v.acc{color:var(--accent)}
+
+  /* ---- panels + table ---- */
+  .panel{background:var(--surface);border:1px solid var(--rule);border-radius:5px;box-shadow:var(--shadow);overflow:hidden}
+  .panel-head{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+  .panel-head h2{font-size:14px;font-weight:600;margin:0}
+  .panel-head .sub{font-size:12.5px;color:var(--muted)}
+  .tools{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input[type=text],input[type=email],input[type=password],input[type=url],select,textarea{
+    font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;
+    background:var(--surface);color:var(--ink);min-width:0}
+  .btn{padding:7px 13px;border-radius:4px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);font-weight:500;display:inline-flex;align-items:center;gap:6px}
+  .btn:hover:not(:disabled){background:var(--sunk)}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.pri:hover:not(:disabled){filter:brightness(1.08)}
+  .btn.sm{padding:4px 9px;font-size:12px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:720px}
+  th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:9px 16px;border-bottom:1px solid var(--rule);font-weight:500;white-space:nowrap}
+  td{padding:11px 16px;border-bottom:1px solid var(--rule-soft);vertical-align:middle}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:var(--sunk)}
+  tbody tr:last-child td{border-bottom:0}
+  .nm{font-weight:600}
+  .em{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+
+  .tag{font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:3px;white-space:nowrap;display:inline-block}
+  .t-ok{background:var(--ok-bg);color:var(--ok)}
+  .t-warn{background:var(--warn-bg);color:var(--warn)}
+  .t-stop{background:var(--stop-bg);color:var(--stop)}
+  .t-acc{background:var(--accent-bg);color:var(--accent)}
+  .t-mute{background:var(--sunk);color:var(--muted)}
+
+  /* ---- drawer ---- */
+  .scrim{position:fixed;inset:0;background:rgba(10,14,20,.45);z-index:40}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(580px,100%);background:var(--surface);border-left:1px solid var(--rule);z-index:41;overflow-y:auto;box-shadow:-8px 0 32px rgba(0,0,0,.14)}
+  .dhead{position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--rule);padding:16px 20px;display:flex;align-items:flex-start;gap:12px;z-index:1}
+  .dhead h3{margin:0;font-size:16px;font-weight:600}
+  .dhead .em{display:block;margin-top:2px}
+  .x{margin-left:auto;background:none;border:0;font-size:20px;color:var(--muted);line-height:1;padding:0 4px}
+  .dbody{padding:18px 20px 40px}
+  .kv{display:grid;grid-template-columns:120px 1fr;gap:7px 14px;font-size:13px;margin-bottom:20px}
+  .kv dt{color:var(--muted);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding-top:2px}
+  .kv dd{margin:0;word-break:break-word}
+  h4.sec{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:22px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--rule-soft)}
+
+  .tl{list-style:none;margin:0;padding:0}
+  .tl li{display:grid;grid-template-columns:14px 1fr;gap:12px;padding-bottom:16px;position:relative}
+  .tl li::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent);margin-top:5px}
+  .tl li:not(:last-child)::after{content:"";position:absolute;left:4px;top:16px;bottom:0;width:1px;background:var(--rule)}
+  .tl .when{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .tl .what{font-weight:500}
+  .tl .by{font-size:12.5px;color:var(--muted)}
+  .tl li.stop::before{background:var(--stop)}
+  .tl li.ok::before{background:var(--ok)}
+  .bf{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--warn);background:var(--warn-bg);padding:1px 5px;border-radius:3px;margin-left:6px}
+
+  .draft{background:var(--sunk);border:1px solid var(--rule);border-radius:4px;padding:13px 15px;font-size:13px;white-space:pre-wrap;line-height:1.6;max-height:280px;overflow:auto}
+  .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+  /* ---- forms ---- */
+  .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+  .fld{display:flex;flex-direction:column;gap:5px}
+  .fld label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .fld .hint{font-size:11.5px;color:var(--muted)}
+  .full{grid-column:1/-1}
+
+  .note{background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:4px;padding:12px 15px;font-size:13px;color:var(--ink-soft);margin-top:16px}
+  .note.warn{background:var(--warn-bg);border-left-color:var(--warn)}
+  .note b{color:var(--ink)}
+  .empty{padding:40px 20px;text-align:center;color:var(--muted)}
+  code{font-family:var(--mono);font-size:.9em;background:var(--sunk);padding:1px 4px;border-radius:3px}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:var(--ground);
+    padding:11px 18px;border-radius:5px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.24);z-index:60;max-width:min(520px,92vw)}
+  .toast.bad{background:var(--stop)}
+  @media (prefers-reduced-motion:no-preference){.toast{animation:rise .22s ease-out}}
+  @keyframes rise{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div class="gate" id="gate" hidden>
+  <form class="card" id="loginForm">
+    <h1>OryonIQ Outreach</h1>
+    <p>Staff console. Sign in to continue.</p>
+    <div class="err" id="loginErr" hidden></div>
+    <input type="password" id="pw" placeholder="Staff password" autocomplete="current-password" required>
+    <button class="btn pri" type="submit" id="loginBtn">Sign in</button>
+  </form>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div id="app" hidden>
+<div class="app">
+  <div class="top">
+    <div class="brand">OryonIQ <span>· Outreach</span></div>
+    <div class="who">
+      <span class="live"><span class="dot" id="liveDot"></span><span id="liveTxt">live</span></span>
+      <button class="btn sm" id="refreshBtn">Refresh</button>
+      <button class="btn sm" id="logoutBtn">Sign out</button>
+    </div>
+  </div>
+
+  <nav role="tablist">
+    <button role="tab" aria-selected="true"  data-v="leads">Leads <span class="cnt" id="cLeads">–</span></button>
+    <button role="tab" aria-selected="false" data-v="review">Needs you <span class="cnt" id="cRev">–</span></button>
+    <button role="tab" aria-selected="false" data-v="replies">Replies <span class="cnt" id="cRep">–</span></button>
+    <button role="tab" aria-selected="false" data-v="find">Find leads</button>
+    <button role="tab" aria-selected="false" data-v="add">Add leads</button>
+  </nav>
+
+  <!-- ---------- LEADS ---------- -->
+  <!-- The single most misleading thing this console could do is imply that a
+       click here moves mail. It does not yet: n8n still reads the Google Sheet.
+       Saying so on every tab is cheaper than one person believing otherwise. -->
+  <div class="banner" id="cutoverBanner">
+    <b>Reading Supabase · n8n still sends from the Sheet</b>
+    <span>This console reads and writes the new Supabase record, and every action is
+    written to the ledger. The sending workflow has <em>not</em> been switched over yet, so
+    releasing a lead here records your decision but does not itself put mail in the queue.</span>
+  </div>
+
+  <div class="view" id="v-leads">
+    <div class="stats">
+      <div class="stat"><div class="k">Sent today</div><div class="v acc" id="sSent">–</div><div class="n" id="sSentN">&nbsp;</div></div>
+      <div class="stat"><div class="k">Awaiting you</div><div class="v warn" id="sWait">–</div><div class="n">a person must decide</div></div>
+      <div class="stat"><div class="k">Replies</div><div class="v ok" id="sRep">–</div><div class="n" id="sRepN">&nbsp;</div></div>
+      <div class="stat"><div class="k">Meetings</div><div class="v" id="sMeet">–</div><div class="n">booked</div></div>
+      <div class="stat"><div class="k">Never contact</div><div class="v" id="sSup">–</div><div class="n">suppressed</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>All leads</h2><span class="sub">click any row for its full history</span>
+        <div class="tools">
+          <input type="text" id="q" placeholder="Search name, company, email…" style="width:210px">
+          <select id="fState">
+            <option value="">Any status</option>
+            <option value="not_sent">Ready to send</option>
+            <option value="approved">Approved</option>
+            <option value="enrolled">Emailed</option>
+            <option value="needs_review">Needs you</option>
+            <option value="pending_approval">Held</option>
+            <option value="replied">Replied</option>
+            <option value="booked">Booked</option>
+            <option value="dropped">Not usable</option>
+          </select>
+        </div>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>Person</th><th>Company</th><th>Status</th><th>Verification</th><th>Last updated</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <div class="note"><b>Why some leads sit still.</b> A lead only moves when every check passes.
+    "Needs you" means verification could not confirm the mailbox, usually a catch-all domain where the
+    mail server accepts any address so nobody can tell a real one from a typo. One click from you
+    releases it.</div>
+
+    <div class="note warn" id="notReadyNote" hidden></div>
+  </div>
+
+  <!-- ---------- NEEDS YOU ---------- -->
+  <div class="view" id="v-review" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Waiting on a person</h2>
+        <span class="sub">the system refused to guess — it needs a human to say yes or no</span></div>
+      <div id="revList"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- ---------- REPLIES ---------- -->
+  <div class="view" id="v-replies" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Replies</h2><span class="sub">someone answered — the sequence has already stopped for them</span></div>
+      <div id="repList"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="note"><b>Replies arrive here from Instantly.</b> The reply webhook writes straight to the
+    ledger, so this list is whatever the database actually holds. An empty list means nobody has
+    answered yet, not that something is broken.</div>
+  </div>
+
+  <!-- ---------- ADD ---------- -->
+  <div class="view" id="v-add" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Add one lead</h2><span class="sub">goes through the same checks as everything else</span></div>
+      <div style="padding:18px 16px">
+        <form class="form" id="addForm">
+          <div class="fld"><label for="fFirst">First name</label><input type="text" id="fFirst" placeholder="Dana"></div>
+          <div class="fld"><label for="fLast">Last name</label><input type="text" id="fLast" placeholder="Reyes"></div>
+          <div class="fld"><label for="fEmail">Work email</label><input type="email" id="fEmail" placeholder="dana@cardinalfederal.com" required></div>
+          <div class="fld"><label for="fCo">Company</label><input type="text" id="fCo" placeholder="Cardinal Federal"></div>
+          <div class="fld"><label for="fTitle">Job title</label><input type="text" id="fTitle" placeholder="Capture Manager"></div>
+          <div class="fld"><label for="fProd">Product</label>
+            <select id="fProd"></select>
+            <span class="hint">Required. The system refuses rather than guessing which company is pitching.</span></div>
+          <div class="full" style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+            <button class="btn pri" type="submit" id="bAdd">Add lead</button>
+            <span class="hint">It lands held, gets verified, then joins the send queue.</span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="note"><b>Adding is not sending.</b> A new lead is written as <code>pending_approval</code>
+    and checked against the never-contact list before it is stored at all. Verification and the daily
+    cap decide when, or whether, it is mailed.</div>
+  </div>
+</div>
+</div>
+
+<div id="drawerHost"></div>
+<div id="toastHost"></div>
+
+<script type="module">
+"use strict";
+
+const $ = (s, r) => (r || document).querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Human labels for the database's own vocabulary. The enum values are the truth;
+// these are only how they are shown.
+const STATE = {
+  not_sent:         ['Ready to send','t-acc'],
+  approved:         ['Approved','t-acc'],
+  needs_review:     ['Needs you','t-warn'],
+  pending_approval: ['Held','t-mute'],
+  enrolled:         ['Emailed','t-ok'],
+  replied:          ['Replied','t-ok'],
+  booked:           ['Booked','t-ok'],
+  bounced:          ['Bounced','t-stop'],
+  unsubscribed:     ['Unsubscribed','t-stop'],
+  dropped:          ['Not usable','t-stop'],
+};
+const VERIFY = {
+  pass:         ['Confirmed real','t-ok'],
+  needs_review: ['Cannot confirm','t-warn'],
+  drop:         ['Not a real address','t-stop'],
+  unverified:   ['Not checked','t-mute'],
+};
+const tag = (pair) => pair ? `<span class="tag ${pair[1]}">${esc(pair[0])}</span>` : '';
+
+let STATE_DATA = { leads: [], replies: [], campaigns: [], stats: {} };
+
+function toast(msg, bad) {
+  $('#toastHost').innerHTML = `<div class="toast${bad ? ' bad' : ''}" role="status">${esc(msg)}</div>`;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { $('#toastHost').innerHTML = ''; }, 4200);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    method: opts.method || 'GET',
+    headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (res.status === 401) { showGate(); throw new Error('Signed out.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+// ---------- dates ----------
+const fmt = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
+// ---------- render ----------
+function renderStats() {
+  const s = STATE_DATA.stats || {};
+  $('#sSent').textContent = s.sentToday ?? '–';
+  $('#sSentN').textContent = `of ${s.dailyCap ?? '?'} allowed`;
+  $('#sWait').textContent = s.awaitingYou ?? '–';
+  $('#sRep').textContent = s.unreadReplies ?? 0;
+  $('#sRepN').textContent = (s.unreadReplies ? 'unhandled' : 'none unhandled');
+  $('#sMeet').textContent = s.meetings ?? 0;
+  $('#sSup').textContent = s.suppressed ?? 0;
+
+  // Say plainly when nothing can go out, rather than showing a healthy-looking
+  // zero. "Sent today: 0" and "nothing is eligible" are different problems.
+  const ready = STATE_DATA.leads.filter(l => ['not_sent','approved'].includes(l.channel_state_email));
+  const note = $('#notReadyNote');
+  if (!ready.length && STATE_DATA.leads.length) {
+    note.innerHTML = '<b>Nothing is queued to send.</b> No lead is in a state the runner can act on '
+      + '(<code>not_sent</code> or <code>approved</code>). Releasing a lead under "Needs you", or adding '
+      + 'a new one that verifies clean, is what puts mail back in the queue.';
+    note.hidden = false;
+  } else { note.hidden = true; }
+}
+
+function renderLeads() {
+  const q = $('#q').value.trim().toLowerCase();
+  const f = $('#fState').value;
+  const list = STATE_DATA.leads.filter(l => {
+    if (f && l.channel_state_email !== f) return false;
+    if (!q) return true;
+    return `${l.first_name} ${l.last_name} ${l.company} ${l.contact_email}`.toLowerCase().includes(q);
+  });
+  $('#cLeads').textContent = STATE_DATA.leads.length;
+  $('#rows').innerHTML = list.length ? list.map(l => `
+    <tr tabindex="0" data-id="${esc(l.id)}">
+      <td><div class="nm">${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</div>
+          <div class="em">${esc(l.contact_email)}</div></td>
+      <td>${esc(l.company || '—')}</td>
+      <td>${tag(STATE[l.channel_state_email]) || esc(l.channel_state_email)}</td>
+      <td>${tag(VERIFY[l.verify_action]) || esc(l.verify_action)}</td>
+      <td style="color:var(--muted)">${esc(fmt(l.updated_at))}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">Nothing matches that.</td></tr>';
+}
+
+// A lead needs a person when verification could not decide, or when it is being
+// held. Both are "the system refused to guess".
+const needsPerson = (l) =>
+  (l.verify_action === 'needs_review' || l.channel_state_email === 'pending_approval')
+  && l.channel_state_email !== 'dropped';
+
+function renderReview() {
+  const list = STATE_DATA.leads.filter(needsPerson);
+  $('#cRev').textContent = list.length;
+  $('#revList').innerHTML = list.length ? list.map(l => {
+    const domain = (l.contact_email.split('@')[1] || '');
+    const why = l.verify_action === 'needs_review'
+      ? `<b>${esc(domain)}</b> accepts mail for any address, so nobody can tell a real mailbox from a typo. Release it only if you know this person exists.`
+      : 'This lead is held and has not been verified yet. Releasing it lets the runner pick it up.';
+    return `<div style="padding:16px;border-bottom:1px solid var(--rule-soft)">
+      <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+        <div class="nm">${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</div>
+        <div class="em">${esc(l.contact_email)}</div>
+        ${tag(VERIFY[l.verify_action])}${tag(STATE[l.channel_state_email])}</div>
+      <div style="color:var(--ink-soft);margin-top:7px;max-width:70ch">${why}</div>
+      <div class="acts">
+        <button class="btn pri sm" data-ok="${esc(l.id)}">Yes, this person is real</button>
+        <button class="btn sm" data-no="${esc(l.id)}">Never contact</button>
+        <button class="btn sm" data-open="${esc(l.id)}">See history</button></div></div>`;
+  }).join('') : '<div class="empty">Nothing waiting. Everything has been decided.</div>';
+}
+
+function renderReplies() {
+  const list = STATE_DATA.replies;
+  $('#cRep').textContent = list.filter(r => !r.handled_at).length;
+  $('#repList').innerHTML = list.length ? list.map(r => `
+    <div style="padding:16px;border-bottom:1px solid var(--rule-soft)">
+      <div style="display:flex;gap:11px;align-items:baseline;flex-wrap:wrap">
+        <div class="nm">${esc(r.lead_email)}</div>
+        ${r.sentiment ? `<span class="tag ${r.sentiment === 'positive' ? 't-ok' : r.sentiment === 'negative' ? 't-stop' : 't-mute'}">${esc(r.sentiment)}</span>` : ''}
+        ${r.handled_at ? `<span class="tag t-mute">handled: ${esc(r.handled_as || '')}</span>` : ''}
+        <span style="margin-left:auto;color:var(--muted);font-size:12.5px">${esc(fmt(r.received_at))}</span></div>
+      ${r.subject ? `<div style="margin-top:6px;font-weight:500">${esc(r.subject)}</div>` : ''}
+      <div class="draft" style="margin-top:10px">${esc(r.body || '(no body recorded)')}</div>
+      ${r.handled_at ? '' : `<div class="acts">
+        <button class="btn pri sm" data-reply="${r.id}" data-as="booked">Booked a meeting</button>
+        <button class="btn sm" data-reply="${r.id}" data-as="parked">Not now — park it</button>
+        <button class="btn sm" data-reply="${r.id}" data-as="suppressed">Never contact</button></div>`}
+    </div>`).join('') : '<div class="empty">No replies yet.</div>';
+}
+
+function renderProducts() {
+  const sel = $('#fProd');
+  if (!STATE_DATA.campaigns.length) return;
+  sel.innerHTML = STATE_DATA.campaigns.map(c => {
+    const usable = c.instantly_campaign_id && c.active;
+    const label = c.product === 'oryoniq' ? 'OryonIQ' : 'VisioneerIT';
+    return `<option value="${esc(c.product)}"${usable ? '' : ' disabled'}>${esc(label)}${usable ? '' : ' — no campaign yet'}</option>`;
+  }).join('');
+  const firstUsable = STATE_DATA.campaigns.find(c => c.instantly_campaign_id && c.active);
+  if (firstUsable) sel.value = firstUsable.product;
+}
+
+function renderAll() { renderStats(); renderLeads(); renderReview(); renderReplies(); }
+
+// ---------- drawer ----------
+async function openLead(id) {
+  const l = STATE_DATA.leads.find(x => x.id === id);
+  if (!l) return;
+  $('#drawerHost').innerHTML = `
+    <div class="scrim" data-close="1"></div>
+    <aside class="drawer" role="dialog" aria-modal="true" aria-label="Lead detail">
+      <div class="dhead"><div><h3>${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</h3>
+        <span class="em">${esc(l.contact_email)}</span></div>
+        <button class="x" data-close="1" aria-label="Close">&times;</button></div>
+      <div class="dbody">
+        <dl class="kv">
+          <dt>Company</dt><dd>${esc(l.company || '—')}</dd>
+          <dt>Title</dt><dd>${esc(l.title || '—')}</dd>
+          <dt>Status</dt><dd>${tag(STATE[l.channel_state_email])}</dd>
+          <dt>Verification</dt><dd>${tag(VERIFY[l.verify_action])}
+            ${l.reoon_status ? `<span style="color:var(--muted);font-size:12px">${esc(l.reoon_status)}</span>` : ''}
+            ${l.verify_reason ? `<div style="color:var(--muted);font-size:12px;margin-top:3px">${esc(l.verify_reason)}</div>` : ''}</dd>
+          <dt>Product</dt><dd>${esc(l.product)}</dd>
+          <dt>Source</dt><dd>${esc(l.source || '—')}</dd>
+          ${l.sendr_page_url ? `<dt>Their page</dt><dd><a href="${esc(l.sendr_page_url)}" target="_blank" rel="noopener">${esc(l.sendr_page_url)}</a></dd>` : ''}
+        </dl>
+        ${l.email_draft ? `<h4 class="sec">What we sent</h4><div class="draft">${esc(l.email_draft)}</div>` : ''}
+        <h4 class="sec">Everything that happened</h4>
+        <div id="tlHost"><div class="empty">Loading the ledger…</div></div>
+        ${needsPerson(l) ? `<div class="acts">
+          <button class="btn pri sm" data-ok="${esc(l.id)}">Yes, this person is real</button>
+          <button class="btn sm" data-no="${esc(l.id)}">Never contact</button></div>` : ''}
+      </div></aside>`;
+
+  try {
+    const { events } = await api(`/api/leads/${id}/timeline`);
+    const kind = (a) => ['enrolled','booked','approved','verified'].includes(a) ? 'ok'
+      : ['suppressed','bounced','unsubscribed','dropped'].includes(a) ? 'stop' : '';
+    // No filler element here: the dot is `.tl li::before`, which is itself a grid
+    // child. An extra empty <span> would make three children in a two-column
+    // grid and push the text into the 14px dot column, one character per line.
+    $('#tlHost').innerHTML = events.length ? `<ul class="tl">${events.map(e => `
+      <li class="${e.action === 'verified' && e.outcome !== 'pass' ? 'stop' : kind(e.action)}">
+        <div>
+          <div class="when">${esc(fmt(e.at))}</div>
+          <div class="what">${esc(e.action)}${e.outcome ? ` — ${esc(e.outcome)}` : ''}
+            ${e.payload && e.payload.backfilled ? '<span class="bf">reconstructed</span>' : ''}</div>
+          <div class="by">${esc(e.actor)}${e.workflow ? ` · ${esc(e.workflow)}` : ''}</div>
+        </div></li>`).join('')}</ul>`
+      : '<div class="empty">No events recorded for this lead.</div>';
+  } catch (err) {
+    $('#tlHost').innerHTML = `<div class="empty">Could not load the ledger: ${esc(err.message)}</div>`;
+  }
+}
+const closeDrawer = () => { $('#drawerHost').innerHTML = ''; };
+
+// ---------- actions ----------
+async function release(id) {
+  try { await api(`/api/leads/${id}/release`, { method: 'POST' });
+    toast('Released. The runner can pick it up on its next pass.');
+    await load(); closeDrawer();
+  } catch (e) { toast(e.message, true); }
+}
+async function suppress(id) {
+  const l = STATE_DATA.leads.find(x => x.id === id);
+  if (!confirm(`Add ${l ? l.contact_email : 'this address'} to the never-contact list?\n\nThis is permanent — the list is append-only and cannot be edited afterwards.`)) return;
+  try { await api(`/api/leads/${id}/suppress`, { method: 'POST', body: { reason: 'marked never-contact in the console' } });
+    toast('Added to the never-contact list. This is permanent.');
+    await load(); closeDrawer();
+  } catch (e) { toast(e.message, true); }
+}
+async function handleReply(id, as) {
+  if (as === 'suppressed' && !confirm('Add this person to the never-contact list? This is permanent.')) return;
+  try { await api(`/api/replies/${id}/handle`, { method: 'POST', body: { as } });
+    toast(as === 'booked' ? 'Marked as booked.' : as === 'parked' ? 'Parked.' : 'Added to the never-contact list.');
+    await load();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- load ----------
+async function load() {
+  try {
+    STATE_DATA = await api('/api/state');
+    renderProducts();
+    renderAll();
+    $('#liveDot').classList.remove('bad');
+    $('#liveTxt').textContent = 'live · ' + new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  } catch (err) {
+    $('#liveDot').classList.add('bad');
+    $('#liveTxt').textContent = 'no data';
+    if (err.message !== 'Signed out.') toast(err.message, true);
+  }
+}
+
+// ---------- gate ----------
+function showGate() { $('#gate').hidden = false; $('#app').hidden = true; }
+function showApp() { $('#gate').hidden = true; $('#app').hidden = false; }
+
+$('#loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('#loginErr').hidden = true;
+  $('#loginBtn').disabled = true;
+  try {
+    await api('/api/login', { method: 'POST', body: { password: $('#pw').value } });
+    $('#pw').value = '';
+    showApp(); await load();
+  } catch (err) {
+    $('#loginErr').textContent = err.message;
+    $('#loginErr').hidden = false;
+  } finally { $('#loginBtn').disabled = false; }
+});
+
+$('#logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  showGate();
+});
+$('#refreshBtn').addEventListener('click', load);
+
+$('#addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('#bAdd').disabled = true;
+  try {
+    await api('/api/leads', { method: 'POST', body: {
+      first: $('#fFirst').value, last: $('#fLast').value, email: $('#fEmail').value,
+      company: $('#fCo').value, title: $('#fTitle').value, product: $('#fProd').value,
+    }});
+    ['fFirst','fLast','fEmail','fCo','fTitle'].forEach(i => { $('#' + i).value = ''; });
+    toast('Added. It is held until verification runs.');
+    await load();
+    document.querySelector('nav button[data-v="leads"]').click();
+  } catch (err) { toast(err.message, true); }
+  finally { $('#bAdd').disabled = false; }
+});
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button, tr, .scrim');
+  if (!t) return;
+  if (t.dataset.close) return closeDrawer();
+  if (t.dataset.v) {
+    document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-selected', String(b === t)));
+    ['leads','review','replies','add'].forEach(v => { $('#v-' + v).hidden = (v !== t.dataset.v); });
+    return;
+  }
+  if (t.dataset.ok) return release(t.dataset.ok);
+  if (t.dataset.no) return suppress(t.dataset.no);
+  if (t.dataset.open) return openLead(t.dataset.open);
+  if (t.dataset.reply) return handleReply(t.dataset.reply, t.dataset.as);
+  if (t.tagName === 'TR' && t.dataset.id) return openLead(t.dataset.id);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDrawer();
+  if (e.key === 'Enter' && e.target.tagName === 'TR' && e.target.dataset.id) openLead(e.target.dataset.id);
+});
+$('#q').addEventListener('input', renderLeads);
+$('#fState').addEventListener('change', renderLeads);
+
+// Refresh while the tab is visible. The pipeline writes on its own schedule, so
+// a console left open on a desk should not quietly go stale.
+setInterval(() => { if (!document.hidden && !$('#app').hidden) load(); }, 60_000);
+
+// Probe once: a valid cookie means straight into the app, no login screen.
+try {
+  await api('/api/state').then(d => { STATE_DATA = d; showApp(); renderProducts(); renderAll();
+    $('#liveTxt').textContent = 'live · ' + new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); });
+} catch { showGate(); }
+</script>
+</body>
+</html>
