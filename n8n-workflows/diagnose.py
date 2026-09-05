@@ -56,6 +56,16 @@ TRANSIENT_PATTERNS = (
     r"ECONNRESET|ETIMEDOUT|socket hang up",
 )
 
+# EXECUTION STORMS ARE DEFECTS, WHATEVER THE ERROR SAYS.
+# On 2026-09-04 the scheduler fired VIO-inbox-mapper 2,551 times in one hour (mode=trigger,
+# ~85x its 2-minute cadence), exhausted the Sheets read quota, and every failure carried a
+# textbook "transient" message — so this tool reported 1,175 failures as weather and said
+# "nothing is broken". It also put 1,153 alerts into Slack. A transient is a transient only
+# at a transient RATE. Anything above STORM_PER_HOUR executions in an hour is reported first,
+# as a defect, before any per-message classification runs.
+EXPECTED_PER_HOUR = {"VIO-inbox-mapper": 30, "VIO-run-outreach": 20}
+STORM_PER_HOUR = 90          # 3x the fastest poller; nothing legitimate reaches this
+
 GUARD_PATTERNS = (
     r"^REFUSED:",
     r"bad or missing token",
@@ -150,6 +160,24 @@ def failures(hours):
     return out
 
 
+def storms(hours):
+    raw = psql(f"""
+        select coalesce(json_agg(row_to_json(x))::text, '[]') from (
+          select w.name as wf, date_trunc('hour', e."startedAt")::text as hour,
+                 count(*) as n, sum(case when e.status='error' then 1 else 0 end) as errs,
+                 min(e.mode) as mode
+          from execution_entity e join workflow_entity w on w.id = e."workflowId"
+          where w.name like 'VIO%' and e."startedAt" > now() - interval '{int(hours)} hours'
+          group by 1, 2 having count(*) >= {STORM_PER_HOUR}
+          order by 2
+        ) x;
+    """)
+    try:
+        return json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return []
+
+
 def get(path, body=None):
     token = os.environ.get("VIO_WEBHOOK_TOKEN")
     if not token:
@@ -179,6 +207,18 @@ def main():
     # ---------------- errors -------------------------------------------------
     section(f"FAILURES (last {a.hours}h)")
     fails = failures(a.hours)
+
+    st = storms(a.hours)
+    if st:
+        print("  EXECUTION STORM — a defect regardless of what each failure says:")
+        for r in st:
+            exp = EXPECTED_PER_HOUR.get(r["wf"], "?")
+            print(f"   {r['wf']}  {r['hour'][:13]}  {r['n']} runs in the hour "
+                  f"(expected ~{exp}, mode={r['mode']}), {r['errs']} failed")
+        print("  A scheduler firing far above cadence burns API quota and floods Slack;")
+        print("  the per-message errors below are consequences, not causes.\n")
+        storm_hours = {(r["wf"], r["hour"][:13]) for r in st}
+        fails = [f for f in fails if (f["wf"], f["at"][:13].replace("T", " ")) not in storm_hours]
     guards = [f for f in fails if is_guard(f["msg"])]
     transient = [f for f in fails if not is_guard(f["msg"]) and is_transient(f["msg"])]
     defects = [f for f in fails if not is_guard(f["msg"]) and not is_transient(f["msg"])]
