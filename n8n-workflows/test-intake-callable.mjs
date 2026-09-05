@@ -417,7 +417,9 @@ console.log('\n== workflow structure: two entry points, ONE copy of the gates ==
 {
   const types = WF.nodes.map((n) => n.type);
   eq('the workflow id is unchanged', WF.id, 'VIOwf1intake0001');
-  eq('it stays deactivated by design', WF.active, false);
+  // Active since 2026-08-29 — VIO-inbox-mapper calls it live in batch mode. Confirmed
+  // against the real database on 2026-09-05 (only VIO-costs-rollup is off).
+  eq('it is active', WF.active, true);
 
   ok('the manual trigger is still there', types.includes('n8n-nodes-base.manualTrigger'));
   ok('an executeWorkflowTrigger was added', types.includes('n8n-nodes-base.executeWorkflowTrigger'));

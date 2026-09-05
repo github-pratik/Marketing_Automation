@@ -863,4 +863,6 @@
   "meta": {
     "idNote": "id VIOwfDsheetdemo1 is historical. Renaming the workflow is safe; changing the ID is not — importing under a new id creates a SECOND workflow and leaves this one active, giving two schedules on the same Leads tab and duplicate sends."
   }
+,
+  "active": true
 }

@@ -286,7 +286,9 @@ console.log('\n== Sheets row shapes (autoMapInputData matches on header text) ==
 
 console.log('\n== workflow-level invariants ==');
 {
-  eq('stays deactivated', WF.active, false);
+  // Active since 2026-08-29 — VIO-inbox-mapper calls it live in batch mode. Confirmed
+  // against the real database on 2026-09-05 (only VIO-costs-rollup is off).
+  eq('is active', WF.active, true);
   eq('keeps its id', WF.id, 'VIOwf1intake0001');
   const types = WF.nodes.map((n) => n.type);
   ok('trigger is still the manual trigger', types.includes('n8n-nodes-base.manualTrigger'));
