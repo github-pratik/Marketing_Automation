@@ -1,0 +1,488 @@
+<title>OryonIQ Outreach Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+  :root{
+    --ground:#F5F7F9; --surface:#FFFFFF; --sunk:#EDF0F4; --ink:#191D26; --ink-soft:#414A5A;
+    --muted:#697283; --rule:#DCE1E8; --rule-soft:#E9EDF2;
+    --accent:#1B6A9E; --accent-bg:#E7F0F7;
+    --ok:#1F6B44; --ok-bg:#E4F2EA;
+    --warn:#8A6114; --warn-bg:#FAF1DF;
+    --stop:#A8324A; --stop-bg:#F9EBEE;
+    --shadow:0 1px 2px rgba(25,29,38,.05),0 4px 14px -6px rgba(25,29,38,.10);
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --ground:#14161C; --surface:#1B1E25; --sunk:#232833; --ink:#E8EBF1; --ink-soft:#B6BECC;
+    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
+    --accent:#6FB2DF; --accent-bg:#17303F;
+    --ok:#7CCB9C; --ok-bg:#183024;
+    --warn:#D9B05F; --warn-bg:#2E2716;
+    --stop:#E8869B; --stop-bg:#3A1F27;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);}}
+  :root[data-theme="dark"]{
+    --ground:#14161C; --surface:#1B1E25; --sunk:#232833; --ink:#E8EBF1; --ink-soft:#B6BECC;
+    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
+    --accent:#6FB2DF; --accent-bg:#17303F;
+    --ok:#7CCB9C; --ok-bg:#183024;
+    --warn:#D9B05F; --warn-bg:#2E2716;
+    --stop:#E8869B; --stop-bg:#3A1F27;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;font-size:inherit;cursor:pointer}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
+  /* ---- prototype banner ---- */
+  .proto{background:var(--warn-bg);border-bottom:1px solid var(--rule);padding:9px 20px;font-size:12.5px;color:var(--ink-soft);display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .proto b{color:var(--ink);font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
+
+  /* ---- app chrome ---- */
+  .app{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+  .top{display:flex;align-items:center;gap:16px;padding:20px 0 0;flex-wrap:wrap}
+  .brand{font-weight:700;font-size:17px;letter-spacing:-.02em}
+  .brand span{color:var(--muted);font-weight:400}
+  .who{margin-left:auto;display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted)}
+  .avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-bg);color:var(--accent);display:grid;place-items:center;font-size:11px;font-weight:600}
+
+  nav{display:flex;gap:2px;margin-top:18px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+  nav button{background:none;border:0;padding:10px 14px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
+  nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+  nav button .cnt{font-family:var(--mono);font-size:10.5px;background:var(--sunk);padding:1px 5px;border-radius:8px;margin-left:6px;color:var(--muted)}
+  nav button[aria-selected="true"] .cnt{background:var(--accent-bg);color:var(--accent)}
+
+  .view{padding-top:22px}
+  [hidden]{display:none!important}
+
+  /* ---- stat row ---- */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:5px;overflow:hidden;margin-bottom:22px}
+  .stat{background:var(--surface);padding:13px 15px}
+  .stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-family:var(--mono);font-size:23px;font-weight:500;font-variant-numeric:tabular-nums;margin-top:4px;line-height:1.1}
+  .stat .n{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .v.ok{color:var(--ok)} .v.warn{color:var(--warn)} .v.acc{color:var(--accent)}
+
+  /* ---- table ---- */
+  .panel{background:var(--surface);border:1px solid var(--rule);border-radius:5px;box-shadow:var(--shadow);overflow:hidden}
+  .panel-head{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+  .panel-head h2{font-size:14px;font-weight:600;margin:0}
+  .panel-head .sub{font-size:12.5px;color:var(--muted)}
+  .tools{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+  input[type=text],input[type=email],input[type=url],select,textarea{
+    font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;
+    background:var(--surface);color:var(--ink);min-width:0}
+  textarea{resize:vertical;line-height:1.5}
+  .btn{padding:7px 13px;border-radius:4px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);font-weight:500}
+  .btn:hover{background:var(--sunk)}
+  .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.pri:hover{filter:brightness(1.08)}
+  .btn.sm{padding:4px 9px;font-size:12px}
+
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:720px}
+  th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:9px 16px;border-bottom:1px solid var(--rule);font-weight:500;white-space:nowrap}
+  td{padding:11px 16px;border-bottom:1px solid var(--rule-soft);vertical-align:middle}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:var(--sunk)}
+  tbody tr:last-child td{border-bottom:0}
+  .nm{font-weight:600}
+  .em{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+
+  .tag{font-family:var(--mono);font-size:9.5px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:3px;white-space:nowrap;display:inline-block}
+  .t-ok{background:var(--ok-bg);color:var(--ok)}
+  .t-warn{background:var(--warn-bg);color:var(--warn)}
+  .t-stop{background:var(--stop-bg);color:var(--stop)}
+  .t-acc{background:var(--accent-bg);color:var(--accent)}
+  .t-mute{background:var(--sunk);color:var(--muted)}
+
+  /* ---- drawer ---- */
+  .scrim{position:fixed;inset:0;background:rgba(10,14,20,.45);z-index:40}
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);border-left:1px solid var(--rule);z-index:41;overflow-y:auto;box-shadow:-8px 0 32px rgba(0,0,0,.14)}
+  .dhead{position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--rule);padding:16px 20px;display:flex;align-items:flex-start;gap:12px}
+  .dhead h3{margin:0;font-size:16px;font-weight:600}
+  .dhead .em{display:block;margin-top:2px}
+  .x{margin-left:auto;background:none;border:0;font-size:20px;color:var(--muted);line-height:1;padding:0 4px}
+  .dbody{padding:18px 20px 40px}
+  .kv{display:grid;grid-template-columns:118px 1fr;gap:7px 14px;font-size:13px;margin-bottom:20px}
+  .kv dt{color:var(--muted);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding-top:2px}
+  .kv dd{margin:0}
+  h4.sec{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:22px 0 10px;padding-bottom:7px;border-bottom:1px solid var(--rule-soft)}
+
+  .tl{list-style:none;margin:0;padding:0}
+  .tl li{display:grid;grid-template-columns:14px 1fr;gap:12px;padding-bottom:16px;position:relative}
+  .tl li::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent);margin-top:5px}
+  .tl li:not(:last-child)::after{content:"";position:absolute;left:4px;top:16px;bottom:0;width:1px;background:var(--rule)}
+  .tl .when{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .tl .what{font-weight:500}
+  .tl .by{font-size:12.5px;color:var(--muted)}
+  .tl li.stop::before{background:var(--stop)}
+  .tl li.ok::before{background:var(--ok)}
+
+  .draft{background:var(--sunk);border:1px solid var(--rule);border-radius:4px;padding:13px 15px;font-size:13px;white-space:pre-wrap;line-height:1.6}
+  .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+
+  /* ---- forms ---- */
+  .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
+  .fld{display:flex;flex-direction:column;gap:5px}
+  .fld label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .fld .hint{font-size:11.5px;color:var(--muted)}
+  .full{grid-column:1/-1}
+  .drop{border:2px dashed var(--rule);border-radius:6px;padding:34px 20px;text-align:center;color:var(--muted);background:var(--sunk)}
+  .drop b{color:var(--ink);display:block;font-size:15px;margin-bottom:5px}
+
+  .note{background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:4px;padding:12px 15px;font-size:13px;color:var(--ink-soft);margin-top:16px}
+  .note b{color:var(--ink)}
+  .empty{padding:40px 20px;text-align:center;color:var(--muted)}
+  code{font-family:var(--mono);font-size:.9em;background:var(--sunk);padding:1px 4px;border-radius:3px}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:var(--ground);
+    padding:11px 18px;border-radius:5px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.24);z-index:60}
+  @media (prefers-reduced-motion:no-preference){.toast{animation:rise .22s ease-out}}
+  @keyframes rise{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+</style>
+
+<div class="proto">
+  <b>Prototype</b>
+  <span>Real leads and real states from your pipeline, so you can judge the shape. Buttons respond but nothing is sent — this is for deciding what staff see before it gets built.</span>
+</div>
+
+<div class="app">
+  <div class="top">
+    <div class="brand">OryonIQ <span>· Outreach</span></div>
+    <div class="who"><span class="avatar" id="ini">SP</span><span id="whoName">Shashikant · staff</span></div>
+  </div>
+
+  <nav role="tablist">
+    <button role="tab" aria-selected="true"  data-v="leads">Leads <span class="cnt" id="cLeads">5</span></button>
+    <button role="tab" aria-selected="false" data-v="review">Needs you <span class="cnt" id="cRev">2</span></button>
+    <button role="tab" aria-selected="false" data-v="replies">Replies <span class="cnt" id="cRep">1</span></button>
+    <button role="tab" aria-selected="false" data-v="add">Add leads</button>
+  </nav>
+
+  <!-- ================= LEADS ================= -->
+  <div class="view" id="v-leads">
+    <div class="stats">
+      <div class="stat"><div class="k">Sent today</div><div class="v acc" id="sSent">3</div><div class="n">of 20 allowed</div></div>
+      <div class="stat"><div class="k">Awaiting you</div><div class="v warn">2</div><div class="n">verification unsure</div></div>
+      <div class="stat"><div class="k">Replies</div><div class="v ok">1</div><div class="n">1 unread</div></div>
+      <div class="stat"><div class="k">Meetings</div><div class="v">0</div><div class="n">this week</div></div>
+      <div class="stat"><div class="k">Never contact</div><div class="v" id="sSup">3</div><div class="n">suppressed</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>All leads</h2><span class="sub">click any row for its full history</span>
+        <div class="tools">
+          <input type="text" id="q" placeholder="Search name, company, email…" style="width:210px">
+          <select id="fState">
+            <option value="">Any status</option>
+            <option value="enrolled">Emailed</option>
+            <option value="needs_review">Needs you</option>
+            <option value="pending_approval">Held</option>
+            <option value="dropped">Not usable</option>
+          </select>
+        </div>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>Person</th><th>Company</th><th>Status</th><th>Verification</th><th>Last thing that happened</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </div>
+
+    <div class="note"><b>Why some leads sit still.</b> A lead only moves when every check passes.
+    "Needs you" means verification could not confirm the mailbox — usually a catch-all domain, where
+    the mail server accepts any address so nobody can tell a real one from a typo. One click from you
+    releases it.</div>
+  </div>
+
+  <!-- ================= NEEDS YOU ================= -->
+  <div class="view" id="v-review" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Waiting on a person</h2>
+        <span class="sub">the system refused to guess — it needs a human to say yes or no</span></div>
+      <div id="revList"></div>
+    </div>
+  </div>
+
+  <!-- ================= REPLIES ================= -->
+  <div class="view" id="v-replies" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Replies</h2><span class="sub">someone answered — the sequence has already stopped for them</span></div>
+      <div id="repList"></div>
+    </div>
+  </div>
+
+  <!-- ================= ADD ================= -->
+  <div class="view" id="v-add" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Add one lead</h2><span class="sub">goes through the same checks as everything else</span></div>
+      <div style="padding:18px 16px">
+        <div class="form">
+          <div class="fld"><label for="fFirst">First name</label><input type="text" id="fFirst" placeholder="Dana"></div>
+          <div class="fld"><label for="fLast">Last name</label><input type="text" id="fLast" placeholder="Reyes"></div>
+          <div class="fld"><label for="fEmail">Work email</label><input type="email" id="fEmail" placeholder="dana@cardinalfederal.com"></div>
+          <div class="fld"><label for="fCo">Company</label><input type="text" id="fCo" placeholder="Cardinal Federal"></div>
+          <div class="fld"><label for="fSite">Website</label><input type="url" id="fSite" placeholder="cardinalfederal.com"></div>
+          <div class="fld"><label for="fProd">Product</label>
+            <select id="fProd"><option>OryonIQ</option><option disabled>VisioneerIT — no campaign yet</option></select>
+            <span class="hint">Required. The system refuses rather than guessing which company is pitching.</span></div>
+          <div class="full" style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+            <button class="btn pri" id="bAdd">Add lead</button>
+            <span class="hint">Verified within about a minute. You will see it appear under Leads.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h2>Upload a list</h2><span class="sub">CSV or Excel, any column names</span></div>
+      <div style="padding:18px 16px">
+        <div class="drop"><b>Drop a file here</b>Column names do not need to match anything — about sixty spellings are recognised automatically.</div>
+        <div class="note" style="margin-top:14px"><b>A 500-row file is not 500 emails.</b> Every row is
+        verified and de-duplicated first, then the daily limit decides how many actually go out.
+        Rows that cannot be used come back listed with the reason, so you fix those rows rather than
+        the whole file.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="drawerHost"></div>
+<div id="toastHost"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // Real leads and real states, read from the live pipeline on 5 Sep 2026. The two @visioneerit.com
+  // addresses genuinely sit at needs_review because that domain is catch-all — which is exactly the
+  // case this screen exists to resolve, so it is worth showing rather than tidying away.
+  var LEADS = [
+    { id:'l1', first:'Pratik', last:'Patil', email:'pratik.patil@visioneerit.com', co:'VisioneerIT',
+      state:'enrolled', verify:'needs_review', reoon:'catch_all', product:'OryonIQ',
+      page:'https://sendrpage.com/sqevhczucv', lastEvent:'Emailed · 31 Aug',
+      opener:'Chasing the right bids while juggling teaming calls and trying to break past entrenched incumbents can feel like a constant marathon.',
+      tl:[ {t:'31 Aug 22:15',w:'Follow-up sent',b:'Instantly · step 2'},
+           {t:'31 Aug 22:06',w:'Email sent',b:'Instantly · from ellen@getoryoniq.com',k:'ok'},
+           {t:'31 Aug 22:05',w:'Page built',b:'Sendr'},
+           {t:'31 Aug 22:05',w:'Email written',b:'OpenAI'},
+           {t:'31 Aug 22:04',w:'Verification inconclusive',b:'Reoon · catch-all domain',k:'stop'},
+           {t:'31 Aug 22:03',w:'Added by Shashikant',b:'typed into the sheet'} ] },
+    { id:'l2', first:'Gavriel', last:'Legynd', email:'gavriel.legynd@visioneerit.com', co:'VisioneerIT',
+      state:'enrolled', verify:'needs_review', reoon:'catch_all', product:'OryonIQ',
+      page:'https://sendrpage.com/vwj3pw7s4u', lastEvent:'Emailed · 31 Aug',
+      opener:'Chasing down prime contracts while juggling multiple teaming calls must make it tough to see which pursuits are actually winnable.',
+      tl:[ {t:'02 Sep 13:16',w:'Follow-up sent',b:'Instantly · step 3'},
+           {t:'31 Aug 22:33',w:'Email sent',b:'Instantly',k:'ok'},
+           {t:'31 Aug 22:24',w:'Page built',b:'Sendr'},
+           {t:'31 Aug 22:23',w:'Verification inconclusive',b:'Reoon · catch-all domain',k:'stop'} ] },
+    { id:'l3', first:'Pratik', last:'Patil', email:'patilsp.0202@gmail.com', co:'VisioneerIT',
+      state:'enrolled', verify:'pass', reoon:'safe', product:'OryonIQ',
+      page:'https://sendrpage.com/v11vcaz39b', lastEvent:'Emailed · 4 Sep',
+      opener:'Chasing the right bids while juggling teaming calls and trying to break past entrenched incumbents can feel like running a constant marathon.',
+      tl:[ {t:'04 Sep 13:00',w:'Follow-up sent',b:'Instantly · step 3'},
+           {t:'01 Sep 20:12',w:'Email sent',b:'Instantly',k:'ok'},
+           {t:'01 Sep 20:09',w:'Page built',b:'Sendr'},
+           {t:'01 Sep 20:09',w:'Email written',b:'OpenAI'},
+           {t:'01 Sep 20:08',w:'Verified — safe to send',b:'Reoon · score 98',k:'ok'},
+           {t:'01 Sep 20:07',w:'Added by Shashikant',b:'typed into the sheet'} ] },
+    { id:'l4', first:'Prathik', last:'Sonu', email:'lenovob50sony@gmail.com', co:'Dont know',
+      state:'dropped', verify:'drop', reoon:'invalid', product:'OryonIQ', page:'', lastEvent:'Not usable · 4 Sep',
+      opener:'',
+      tl:[ {t:'04 Sep 17:36',w:'Address is not real — dropped',b:'Reoon · hard fail',k:'stop'},
+           {t:'04 Sep 17:36',w:'Re-checked after you corrected it',b:'address had been fixed'},
+           {t:'02 Sep 11:20',w:'Address rejected',b:'Reoon · invalid',k:'stop'} ] },
+    { id:'l5', first:'—', last:'', email:'p.pshpatil@outlook.com', co:'—',
+      state:'pending_approval', verify:'', reoon:'', product:'OryonIQ', page:'', lastEvent:'Held · 29 Aug',
+      opener:'',
+      tl:[ {t:'29 Aug 16:26',w:'Held for a person to release',b:'earliest test row'} ] }
+  ];
+
+  var REPLIES = [
+    { id:'r1', lead:'l3', who:'Pratik Patil', email:'patilsp.0202@gmail.com', when:'today, 09:41',
+      mood:'positive', unread:true,
+      body:'Thanks for reaching out. We do bid a fair amount of DoD AI work and the teaming picture is genuinely the hard part. Happy to take a look — what does the free tier show?' }
+  ];
+
+  var STATE = {
+    enrolled:        ['Emailed','t-ok'],
+    needs_review:    ['Needs you','t-warn'],
+    pending_approval:['Held','t-mute'],
+    dropped:         ['Not usable','t-stop']
+  };
+  var VERIFY = {
+    pass:        ['Confirmed real','t-ok'],
+    needs_review:['Cannot confirm','t-warn'],
+    drop:        ['Not a real address','t-stop'],
+    '':          ['Not checked','t-mute']
+  };
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g,
+    function (c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]); }); };
+  var tag = function (pair) { return '<span class="tag ' + pair[1] + '">' + esc(pair[0]) + '</span>'; };
+
+  function toast(msg) {
+    var h = $('#toastHost');
+    h.innerHTML = '<div class="toast" role="status">' + esc(msg) + '</div>';
+    setTimeout(function () { h.innerHTML = ''; }, 3400);
+  }
+
+  // ---------- leads table ----------
+  function renderLeads() {
+    var q = $('#q').value.trim().toLowerCase();
+    var f = $('#fState').value;
+    var list = LEADS.filter(function (l) {
+      if (f && l.state !== f) return false;
+      if (!q) return true;
+      return (l.first + ' ' + l.last + ' ' + l.co + ' ' + l.email).toLowerCase().indexOf(q) > -1;
+    });
+    $('#rows').innerHTML = list.length ? list.map(function (l) {
+      return '<tr tabindex="0" data-id="' + l.id + '">' +
+        '<td><div class="nm">' + esc((l.first + ' ' + l.last).trim()) + '</div>' +
+            '<div class="em">' + esc(l.email) + '</div></td>' +
+        '<td>' + esc(l.co) + '</td>' +
+        '<td>' + tag(STATE[l.state]) + '</td>' +
+        '<td>' + tag(VERIFY[l.verify] || VERIFY['']) + '</td>' +
+        '<td style="color:var(--muted)">' + esc(l.lastEvent) + '</td></tr>';
+    }).join('') : '<tr><td colspan="5" class="empty">Nothing matches that.</td></tr>';
+    $('#cLeads').textContent = LEADS.length;
+  }
+
+  // ---------- needs you ----------
+  function renderReview() {
+    var list = LEADS.filter(function (l) { return l.verify === 'needs_review' && l.state !== 'dropped'; });
+    $('#cRev').textContent = list.length;
+    $('#revList').innerHTML = list.length ? list.map(function (l) {
+      return '<div style="padding:16px;border-bottom:1px solid var(--rule-soft)">' +
+        '<div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">' +
+          '<div class="nm">' + esc((l.first + ' ' + l.last).trim()) + '</div>' +
+          '<div class="em">' + esc(l.email) + '</div>' + tag(VERIFY[l.verify]) + '</div>' +
+        '<div style="color:var(--ink-soft);margin-top:7px;max-width:70ch">' +
+          '<b>' + esc(l.email.split('@')[1]) + '</b> accepts mail for any address, so nobody can tell a real ' +
+          'mailbox from a typo. Release it only if you know this person exists.</div>' +
+        '<div class="acts">' +
+          '<button class="btn pri sm" data-ok="' + l.id + '">Yes, this person is real</button>' +
+          '<button class="btn sm" data-no="' + l.id + '">Never contact</button>' +
+          '<button class="btn sm" data-open="' + l.id + '">See history</button></div></div>';
+    }).join('') : '<div class="empty">Nothing waiting. Everything has been decided.</div>';
+  }
+
+  // ---------- replies ----------
+  function renderReplies() {
+    $('#cRep').textContent = REPLIES.filter(function (r) { return r.unread; }).length;
+    $('#repList').innerHTML = REPLIES.length ? REPLIES.map(function (r) {
+      return '<div style="padding:16px;border-bottom:1px solid var(--rule-soft)">' +
+        '<div style="display:flex;gap:11px;align-items:baseline;flex-wrap:wrap">' +
+          '<div class="nm">' + esc(r.who) + '</div><div class="em">' + esc(r.email) + '</div>' +
+          '<span class="tag t-ok">Interested</span>' +
+          '<span style="margin-left:auto;color:var(--muted);font-size:12.5px">' + esc(r.when) + '</span></div>' +
+        '<div class="draft" style="margin-top:10px">' + esc(r.body) + '</div>' +
+        '<div class="acts">' +
+          '<button class="btn pri sm" data-book="' + r.id + '">Send booking link</button>' +
+          '<button class="btn sm" data-later="' + r.id + '">Not now — remind me</button>' +
+          '<button class="btn sm" data-stopr="' + r.id + '">Never contact</button></div></div>';
+    }).join('') : '<div class="empty">No replies yet.</div>';
+  }
+
+  // ---------- drawer ----------
+  function openLead(id) {
+    var l = LEADS.filter(function (x) { return x.id === id; })[0];
+    if (!l) return;
+    var tl = l.tl.map(function (e) {
+      return '<li class="' + (e.k || '') + '"><span></span><div>' +
+        '<div class="when">' + esc(e.t) + '</div>' +
+        '<div class="what">' + esc(e.w) + '</div>' +
+        '<div class="by">' + esc(e.b) + '</div></div></li>';
+    }).join('');
+
+    $('#drawerHost').innerHTML =
+      '<div class="scrim" data-close="1"></div><aside class="drawer" role="dialog" aria-modal="true" aria-label="Lead detail">' +
+      '<div class="dhead"><div><h3>' + esc((l.first + ' ' + l.last).trim()) + '</h3>' +
+        '<span class="em">' + esc(l.email) + '</span></div>' +
+        '<button class="x" data-close="1" aria-label="Close">&times;</button></div>' +
+      '<div class="dbody">' +
+        '<dl class="kv">' +
+          '<dt>Company</dt><dd>' + esc(l.co) + '</dd>' +
+          '<dt>Status</dt><dd>' + tag(STATE[l.state]) + '</dd>' +
+          '<dt>Verification</dt><dd>' + tag(VERIFY[l.verify] || VERIFY['']) +
+            (l.reoon ? ' <span style="color:var(--muted);font-size:12px">' + esc(l.reoon) + '</span>' : '') + '</dd>' +
+          '<dt>Product</dt><dd>' + esc(l.product) + '</dd>' +
+          (l.page ? '<dt>Their page</dt><dd><a href="' + esc(l.page) + '" target="_blank" rel="noopener">' + esc(l.page) + '</a></dd>' : '') +
+        '</dl>' +
+        (l.opener ? '<h4 class="sec">What we sent</h4><div class="draft">' + esc(l.opener) + '</div>' : '') +
+        '<h4 class="sec">Everything that happened</h4><ul class="tl">' + tl + '</ul>' +
+        (l.verify === 'needs_review' && l.state !== 'dropped'
+          ? '<div class="acts"><button class="btn pri sm" data-ok="' + l.id + '">Yes, this person is real</button>' +
+            '<button class="btn sm" data-no="' + l.id + '">Never contact</button></div>' : '') +
+      '</div></aside>';
+  }
+  function closeDrawer() { $('#drawerHost').innerHTML = ''; }
+
+  // ---------- actions ----------
+  function act(kind, id) {
+    var l = LEADS.filter(function (x) { return x.id === id; })[0];
+    if (kind === 'ok' && l) {
+      l.verify = 'pass'; l.state = 'enrolled'; l.lastEvent = 'Released by you · just now';
+      l.tl.unshift({ t: 'just now', w: 'You confirmed this person is real', b: 'Shashikant', k: 'ok' });
+      toast('Released. It will be emailed within a few minutes.');
+    }
+    if (kind === 'no' && l) {
+      l.state = 'dropped'; l.verify = 'drop'; l.lastEvent = 'Never contact · just now';
+      l.tl.unshift({ t: 'just now', w: 'Added to never-contact', b: 'Shashikant', k: 'stop' });
+      $('#sSup').textContent = String(Number($('#sSup').textContent) + 1);
+      toast('Added to the never-contact list. This is permanent.');
+    }
+    if (kind === 'book') { REPLIES[0].unread = false; toast('Booking link sent, and the sequence stopped.'); }
+    if (kind === 'later') { REPLIES[0].unread = false; toast('Parked. You will be reminded in 30 days.'); }
+    if (kind === 'stopr') { REPLIES[0].unread = false; toast('Added to the never-contact list.'); }
+    renderLeads(); renderReview(); renderReplies(); closeDrawer();
+  }
+
+  // ---------- wiring ----------
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('button, tr, .scrim');
+    if (!t) return;
+    if (t.dataset.close) return closeDrawer();
+    if (t.dataset.v) {
+      Array.prototype.forEach.call(document.querySelectorAll('nav button'), function (b) {
+        b.setAttribute('aria-selected', String(b === t));
+      });
+      ['leads', 'review', 'replies', 'add'].forEach(function (v) {
+        $('#v-' + v).hidden = (v !== t.dataset.v);
+      });
+      return;
+    }
+    if (t.dataset.ok)    return act('ok', t.dataset.ok);
+    if (t.dataset.no)    return act('no', t.dataset.no);
+    if (t.dataset.open)  return openLead(t.dataset.open);
+    if (t.dataset.book)  return act('book');
+    if (t.dataset.later) return act('later');
+    if (t.dataset.stopr) return act('stopr');
+    if (t.id === 'bAdd') {
+      var em = $('#fEmail').value.trim();
+      if (!em) { toast('An email address is required.'); return; }
+      LEADS.unshift({ id: 'n' + Date.now(), first: $('#fFirst').value || '—', last: $('#fLast').value || '',
+        email: em, co: $('#fCo').value || '—', state: 'pending_approval', verify: '', reoon: '',
+        product: 'OryonIQ', page: '', lastEvent: 'Just added · checking', opener: '',
+        tl: [{ t: 'just now', w: 'Added by you', b: 'Shashikant' }] });
+      ['fFirst','fLast','fEmail','fCo','fSite'].forEach(function (i) { $('#' + i).value = ''; });
+      renderLeads(); toast('Added. Verification runs within a minute.');
+      return;
+    }
+    if (t.tagName === 'TR' && t.dataset.id) return openLead(t.dataset.id);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeDrawer();
+    if (e.key === 'Enter' && e.target.tagName === 'TR' && e.target.dataset.id) openLead(e.target.dataset.id);
+  });
+  $('#q').addEventListener('input', renderLeads);
+  $('#fState').addEventListener('change', renderLeads);
+
+  renderLeads(); renderReview(); renderReplies();
+})();
+</script>
