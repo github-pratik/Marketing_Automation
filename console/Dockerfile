@@ -1,8 +1,19 @@
-# Node 22 for a stable global fetch. Alpine because this image holds one file and
-# no dependencies — there is nothing to compile and nothing to audit.
+# Node 22 for a stable global fetch. Alpine — this image holds one real
+# dependency (xlsx, for the bulk-upload feature), so there is very little to
+# compile and very little to audit.
 FROM node:22-alpine
 
 WORKDIR /app
+
+# package.json + its lockfile copied and installed BEFORE the source, so an
+# edit to server.mjs does not invalidate this layer and force a re-download of
+# node_modules on every deploy — only a dependency change does. `npm ci`
+# (not `npm install`) so the build reproduces the exact tree the lockfile
+# pins, rather than silently picking up whatever a transitive dep bumped to
+# since the lockfile was generated.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
 COPY server.mjs ./
 COPY public ./public
 

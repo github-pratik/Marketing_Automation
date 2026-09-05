@@ -59,8 +59,27 @@ function runNode(nodeName, { input = [], nodes = {} } = {}) {
   return new Function('$input', '$', body)($input, $).map((i) => i.json);
 }
 
-// A Sheets read on a header-only tab emits one empty placeholder item (alwaysOutputData).
-const sheetRows = (rows) => (rows.length ? rows : [{}]);
+// A DELIBERATELY DUMB STAND-IN FOR THE DATABASE.
+//
+// The gate now asks Postgres one question per lead and acts on the answer. This suite is about the
+// callable contract and batch behaviour — two entry points converging on one gate, one item per
+// lead, a rejection in the middle not stopping the leads after it — none of which is about how an
+// identifier is matched.
+//
+// So this stands in for the query with EXACT matching only. It is intentionally not clever: the
+// real matching (subdomains, plus-tags, zero-width characters, phone formats) is `is_suppressed()`
+// in SQL and is tested against the live database in test-suppression-sql.mjs. Making this shim
+// smarter would recreate the second implementation that the move to Supabase deleted, and a bug
+// would then live in the fixture where no production code path can reach it.
+const canon = (v) => String(v ?? '').trim().toLowerCase();
+const answersFor = (normalized, { leads = [], suppression = [] }) => {
+  const held = new Set(leads.flatMap((r) => [canon(r.contact_email), canon(r.lead_id)]).filter(Boolean));
+  const stop = new Set(suppression.map((r) => canon(r.identifier_value)).filter(Boolean));
+  return normalized.map((n) => ({
+    dupe: held.has(canon(n.email)) || (Boolean(n.apollo_id) && held.has(canon(n.apollo_id))),
+    suppressed: stop.has(canon(n.email)) || stop.has(canon(n.company_domain)),
+  }));
+};
 
 // The IF node: `$json.gate_action equals 'verify'`, strict string compare, evaluated per item.
 // Output 0 is what reaches Reoon; output 1 is the terminal Skipped NoOp.
@@ -75,11 +94,8 @@ function viaTrigger(payload, { leads = [], suppression = [] } = {}) {
   const normalized = fanned.length ? runNode('Normalize Lead', { input: fanned }) : [];
   const gated = normalized.length
     ? runNode('Gate (dedupe + suppression)', {
-        nodes: {
-          'Normalize Lead': normalized,
-          'Read Leads (dedupe)': sheetRows(leads),
-          'Read Suppression': sheetRows(suppression),
-        },
+        input: answersFor(normalized, { leads, suppression }),
+        nodes: { 'Normalize Lead': normalized },
       })
     : [];
   return { fanned, normalized, gated, ...ifSplit(gated) };
@@ -88,11 +104,8 @@ function viaTrigger(payload, { leads = [], suppression = [] } = {}) {
 function viaManual(lead, { leads = [], suppression = [] } = {}) {
   const normalized = runNode('Normalize Lead', { input: [lead] });
   const gated = runNode('Gate (dedupe + suppression)', {
-    nodes: {
-      'Normalize Lead': normalized,
-      'Read Leads (dedupe)': sheetRows(leads),
-      'Read Suppression': sheetRows(suppression),
-    },
+    input: answersFor(normalized, { leads, suppression }),
+    nodes: { 'Normalize Lead': normalized },
   });
   return { normalized, gated, ...ifSplit(gated) };
 }
@@ -242,9 +255,17 @@ console.log('\n== a batch with a duplicate and a suppressed lead: both rejected 
     r.toReoon.map((g) => g.first_name).join(',') === 'Person1,Person4',
     JSON.stringify(r.toReoon.map((g) => g.first_name)));
 
-  // The Leads tab and Suppression tab are each read ONCE for the whole batch (executeOnce: true).
-  eq('one Suppression read serves every lead in the batch', r.gated[3].suppression_rows_scanned, 1);
-  eq('one Leads read serves every lead in the batch', r.gated[3].leads_rows_scanned, 1);
+  // These used to assert executeOnce on two whole-tab reads: one Leads read and one Suppression
+  // read served the entire batch. There are no tab reads any more — the gate asks one question per
+  // lead — so the invariant that replaces them is that the answers stay PAIRED WITH THEIR LEAD.
+  // Postgres returns one row per input item in order; a shift by one would suppress the wrong
+  // person and verify someone who had opted out.
+  eq('no tab scan is claimed any more', r.gated[3].suppression_rows_scanned, null);
+  eq('every lead records where its answer came from',
+     r.gated.every((g) => g.gate_source === 'supabase'), true);
+  ok('each lead kept its own identity through the gate',
+     r.gated.map((g) => g.first_name).join(',') === r.normalized.map((n) => n.first_name).join(','),
+     JSON.stringify(r.gated.map((g) => g.first_name)));
 }
 
 console.log('\n== dedupe WITHIN a batch (only reachable now that batches exist) ==');
@@ -432,9 +453,16 @@ console.log('\n== workflow structure: two entry points, ONE copy of the gates ==
 
   // Every original node id survives, so an import updates in place instead of orphaning nodes.
   const ids = new Set(WF.nodes.map((n) => n.id));
-  const original = ['vio-wf1-trigger', 'vio-wf1-testlead', 'vio-wf1-normalize', 'vio-wf1-readleads',
-    'vio-wf1-readsupp', 'vio-wf1-gate', 'vio-wf1-ifgate', 'vio-wf1-reoon', 'vio-wf1-classify',
+  // vio-wf1-readleads and vio-wf1-readsupp are deliberately absent since 2026-09-05: those were
+  // the two whole-tab Google Sheets reads, and they were deleted rather than rewired. The rest keep
+  // their ids so an import updates in place — including the two write nodes, which changed from
+  // Sheets to Postgres but kept their identity because everything referencing them by name still
+  // means the same step.
+  const original = ['vio-wf1-trigger', 'vio-wf1-testlead', 'vio-wf1-normalize',
+    'vio-wf1-gate', 'vio-wf1-ifgate', 'vio-wf1-reoon', 'vio-wf1-classify',
     'vio-wf1-shapeevent', 'vio-wf1-shapelead', 'vio-wf1-events', 'vio-wf1-leads', 'vio-wf1-skipped'];
+  ok('the two Sheets read nodes are gone, not merely disconnected',
+    !ids.has('vio-wf1-readleads') && !ids.has('vio-wf1-readsupp'));
   ok('every pre-existing node id is unchanged', original.every((id) => ids.has(id)),
     JSON.stringify(original.filter((id) => !ids.has(id))));
   eq('node ids are unique', ids.size, WF.nodes.length);
@@ -494,9 +522,15 @@ console.log('\n== workflow structure: two entry points, ONE copy of the gates ==
   const creds = WF.nodes.filter((n) => n.credentials).flatMap((n) => Object.values(n.credentials));
   ok('every credential is still pinned by id AND name', creds.every((c) => c.id && c.name),
     JSON.stringify(creds));
-  ok('the Sheets credential is still VIOgsheetcred01',
-    WF.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets')
-      .every((n) => n.credentials.googleApi.id === 'VIOgsheetcred01'));
+  // Referencing a credential by NAME alone makes the CLI importer bind to the first credential of
+  // that TYPE — it silently bound two VIO workflows to IndustrialBriefs' OpenAI key once. This is a
+  // shared instance, so the id is the thing that matters.
+  const pg = WF.nodes.filter((n) => n.type === 'n8n-nodes-base.postgres');
+  ok('the record is Postgres, and every node is pinned to VIO Supabase by id',
+    pg.length > 0 && pg.every((n) => n.credentials.postgres.id === 'VIOsupabasepg1'),
+    JSON.stringify(pg.map((n) => n.credentials?.postgres?.id)));
+  ok('no Google Sheets credential is referenced any more',
+    !JSON.stringify(WF).includes('VIOgsheetcred01'));
   ok('no new outbound call was introduced',
     WF.nodes.filter((n) => n.type === 'n8n-nodes-base.httpRequest').length === 1);
   ok('no secret material in the JSON',

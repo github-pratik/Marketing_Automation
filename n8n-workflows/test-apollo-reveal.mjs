@@ -295,24 +295,30 @@ guardRefuses('  and so is a short one', { product: 'oryoniq', ids: ['abc'] }, /n
      creds.every((n) => Object.values(n.credentials).every((c) => c.id)),
      creds.map((n) => n.name).join(', '));
 
-  const sheets = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
-  // appendOrUpdate compares its cached column list to the live header POSITIONALLY and throws when
-  // a column is inserted — that is what silently broke every send for three days from 2026-08-29.
-  ok('no Sheets node uses appendOrUpdate',
-     sheets.every((n) => n.parameters.operation !== 'appendOrUpdate'),
-     sheets.map((n) => n.parameters.operation).join(', '));
-  ok('the Events append carries an EMPTY cached schema',
-     sheets.filter((n) => n.parameters.operation === 'append')
-           .every((n) => (n.parameters.columns.schema || []).length === 0));
-  ok('the Leads read is executeOnce, not once per requested id',
-     sheets.find((n) => n.name === 'Read Leads (held ids)').executeOnce === true);
-  // A Sheets node with no `authentication` silently defaults to OAuth2 and throws "Node does not
-  // have any credentials set for googleSheetsOAuth2Api" — even with a googleApi credential
-  // attached and pinned by id. That is what the first live run of this workflow did, and it is
-  // exactly the kind of thing that should never have cost a deploy cycle to discover.
-  ok('every Sheets node declares serviceAccount auth',
-     sheets.every((n) => n.parameters.authentication === 'serviceAccount'),
-     sheets.map((n) => `${n.name}=${n.parameters.authentication}`).join(', '));
+  // MOVED TO SUPABASE 2026-09-05. The whole class of Sheets hazards this block used to guard
+  // against — a cached column list compared positionally, an append that silently adds a column,
+  // an unset `authentication` defaulting to OAuth2 — does not exist against a database. What
+  // replaces them are the hazards that DO exist here.
+  ok('no Google Sheets node remains',
+     wf.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets').length === 0);
+
+  const pgNodes = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.postgres');
+  ok('the record is Postgres', pgNodes.length === 2, String(pgNodes.length));
+  ok('  pinned to VIO Supabase by id, not by name',
+     pgNodes.every((n) => n.credentials.postgres.id === 'VIOsupabasepg1'));
+  ok('  the held-ids read runs once for the batch, not once per requested id',
+     pgNodes.find((n) => n.name === 'Read Leads (held ids)').executeOnce === true);
+  ok('  and never stalls the chain when nobody is held yet',
+     pgNodes.find((n) => n.name === 'Read Leads (held ids)').alwaysOutputData === true);
+  // The values crossing into these queries include a company name a stranger typed. Interpolating
+  // an expression into the SQL text would hand them the query.
+  for (const n of pgNodes)
+    ok(`  ${n.name}: no expression interpolated into the SQL text`, !/\{\{/.test(n.parameters.query));
+  ok('  the audit write binds one jsonb parameter',
+     /\$1::jsonb/.test(pgNodes.find((n) => n.name === 'Log Reveal (Events)').parameters.query));
+  // The dedupe read must not be able to WRITE. It runs before the spend gate, on every pull.
+  ok('  the pre-spend read is a select and nothing else',
+     /^\s*select\b/i.test(pgNodes.find((n) => n.name === 'Read Leads (held ids)').parameters.query));
 }
 
 console.log(`\n[apollo-reveal] ${pass} passed, ${fail} failed`);

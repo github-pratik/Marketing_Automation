@@ -368,6 +368,46 @@
     <div class="note"><b>Adding is not sending.</b> A new lead is written as <code>pending_approval</code>
     and checked against the never-contact list before it is stored at all. Verification and the daily
     cap decide when, or whether, it is mailed.</div>
+
+    <div class="panel" style="margin-top:20px">
+      <div class="panel-head"><h2>Upload a list</h2><span class="sub">CSV or Excel, any column names</span></div>
+      <div style="padding:18px 16px">
+        <form id="uploadForm">
+          <div class="form">
+            <div class="fld"><label for="uploadProd">Product for this file</label>
+              <select id="uploadProd"></select>
+              <span class="hint">Used for every row, unless a row has its own Product column naming
+              one of the two known products — an unrecognised value in that column refuses just that
+              row rather than guessing.</span></div>
+            <div class="fld full">
+              <label for="uploadFile">File</label>
+              <input type="file" id="uploadFile" accept=".csv,.xlsx,.xls" required>
+              <span class="hint">Column names do not need to match anything — email, first name,
+              last name, company, title, website and phone are recognised under about sixty common
+              spellings each.</span>
+            </div>
+            <div class="full acts">
+              <button class="btn pri" type="submit" id="uploadBtn">Upload and check</button>
+              <span class="hint" id="uploadHint">Up to 300 rows per file, 10MB. A larger list splits into more than one upload.</span>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px" id="uploadResPanel" hidden>
+      <div class="panel-head"><h2 id="uploadResHead">Result</h2><span class="sub" id="uploadResSub"></span></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Row</th><th>Email</th><th>Outcome</th><th>Reason</th></tr></thead>
+        <tbody id="uploadRows"></tbody>
+      </table></div>
+    </div>
+
+    <div class="note"><b>A 500-row file is not 500 emails.</b> Every row goes through the same
+    product refusal, suppression check and duplicate check as a single typed lead. Rows that cannot
+    be used come back listed with the reason, so you fix those rows rather than the whole file.
+    Nothing here recognises a header it has never seen by guessing with a model — an unmatched
+    column is reported, not interpreted.</div>
   </div>
 </div>
 </div>
@@ -484,7 +524,12 @@ function renderLeads() {
     if (!q) return true;
     return `${l.first_name} ${l.last_name} ${l.company} ${l.contact_email}`.toLowerCase().includes(q);
   });
-  $('#cLeads').textContent = STATE_DATA.leads.length;
+  // The nav badge is the server's true count of non-dropped leads, not the
+  // length of whatever page of rows happened to come back — a graveyard of
+  // dropped/terminal rows must never inflate the number a person reads as
+  // "how much is there to work through" (found live 2026-09-05, when a bulk
+  // correction on ~900 dropped test rows made this read "500").
+  $('#cLeads').textContent = STATE_DATA.stats?.activeLeadCount ?? STATE_DATA.leads.length;
   $('#rows').innerHTML = list.length ? list.map(l => `
     <tr tabindex="0" data-id="${esc(l.id)}">
       <td><div class="nm">${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</div>
@@ -546,13 +591,21 @@ const productLabel = (p) => (p === 'oryoniq' ? 'OryonIQ' : p === 'visioneerit' ?
 
 function renderProducts() {
   if (!STATE_DATA.campaigns.length) return;
-  const sel = $('#fProd');
-  sel.innerHTML = STATE_DATA.campaigns.map(c => {
+  const productOptions = STATE_DATA.campaigns.map(c => {
     const usable = c.instantly_campaign_id && c.active;
-    return `<option value="${esc(c.product)}"${usable ? '' : ' disabled'}>${esc(productLabel(c.product))}${usable ? '' : ' — no campaign yet'}</option>`;
-  }).join('');
-  const firstUsable = STATE_DATA.campaigns.find(c => c.instantly_campaign_id && c.active);
-  if (firstUsable) sel.value = firstUsable.product;
+    return { html: `<option value="${esc(c.product)}"${usable ? '' : ' disabled'}>${esc(productLabel(c.product))}${usable ? '' : ' — no campaign yet'}</option>`, usable, product: c.product };
+  });
+  const firstUsable = productOptions.find(o => o.usable);
+
+  // The single-add form and the upload's default-product selector share the
+  // same rule: a product with no campaign cannot send, so it is not offerable
+  // here even though a row's own Product column could still name it (and get
+  // refused there, per-row, when it does).
+  for (const id of ['fProd', 'uploadProd']) {
+    const sel = $('#' + id);
+    sel.innerHTML = productOptions.map(o => o.html).join('');
+    if (firstUsable) sel.value = firstUsable.product;
+  }
 
   // Searching is free and sends nothing, so a product with no campaign is still
   // a legitimate thing to research. This list is deliberately not disabled the
@@ -704,6 +757,77 @@ $('#addForm').addEventListener('submit', async (e) => {
     document.querySelector('nav button[data-v="leads"]').click();
   } catch (err) { toast(err.message, true); }
   finally { $('#bAdd').disabled = false; }
+});
+
+// Reads a File as base64 without ever holding the whole thing as a data: URL
+// string — readAsArrayBuffer + manual chunked base64 handles large files
+// without building one giant string via btoa(String.fromCharCode(...bytes)),
+// which chokes or is very slow past a few MB.
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that file.'));
+    reader.onload = () => {
+      const bytes = new Uint8Array(reader.result);
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      resolve(btoa(binary));
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+const OUTCOME_TAG = {
+  added: ['Added', 't-ok'], duplicate: ['Already in pipeline', 't-mute'],
+  suppressed: ['Never contact', 't-stop'], invalid: ['Invalid', 't-stop'],
+  no_email: ['No email found', 't-warn'], refused: ['Refused', 't-warn'],
+};
+
+$('#uploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fileInput = $('#uploadFile');
+  const file = fileInput.files[0];
+  if (!file) { toast('Choose a file first.', true); return; }
+
+  const btn = $('#uploadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Reading file…';
+  try {
+    const content_base64 = await fileToBase64(file);
+    btn.textContent = 'Checking rows…';
+    const d = await api('/api/leads/upload', { method: 'POST', body: {
+      filename: file.name, content_base64, product: $('#uploadProd').value,
+    }});
+
+    $('#uploadResPanel').hidden = false;
+    $('#uploadResHead').textContent = `${d.added} of ${d.total_rows} added`;
+    const parts = [];
+    if (d.duplicate) parts.push(`${d.duplicate} already in the pipeline`);
+    if (d.suppressed) parts.push(`${d.suppressed} on the never-contact list`);
+    if (d.no_email) parts.push(`${d.no_email} with no email found`);
+    if (d.invalid) parts.push(`${d.invalid} invalid`);
+    if (d.refused) parts.push(`${d.refused} refused (bad Product value)`);
+    if (d.capped) parts.push(`file has more than ${d.cap} rows — only the first ${d.cap} were checked`);
+    $('#uploadResSub').textContent = parts.length ? parts.join(' · ') : 'Every row was added cleanly.';
+
+    $('#uploadRows').innerHTML = d.results.map(r => `
+      <tr><td style="font-family:var(--mono);color:var(--muted)">${r.row}</td>
+          <td class="em">${esc(r.email || '—')}</td>
+          <td>${OUTCOME_TAG[r.outcome] ? `<span class="tag ${OUTCOME_TAG[r.outcome][1]}">${esc(OUTCOME_TAG[r.outcome][0])}</span>` : esc(r.outcome)}</td>
+          <td style="color:var(--ink-soft)">${esc(r.reason || '')}</td></tr>`).join('');
+
+    toast(`${d.added} lead${d.added === 1 ? '' : 's'} added and held pending verification.`);
+    fileInput.value = '';
+    if (d.added) await load();
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload and check';
+  }
 });
 
 // ---------- find leads ----------

@@ -50,37 +50,37 @@
             {
               "id": "f1",
               "name": "email",
-              "value": "probe@example.invalid",
+              "value": "p.pshpatil@gmail.com",
               "type": "string"
             },
             {
               "id": "f2",
               "name": "first_name",
-              "value": "Probe",
+              "value": "Pratik",
               "type": "string"
             },
             {
               "id": "f3",
               "name": "last_name",
-              "value": "Run",
+              "value": "Patil",
               "type": "string"
             },
             {
               "id": "f4",
               "name": "title",
-              "value": "Test",
+              "value": "Founder",
               "type": "string"
             },
             {
               "id": "f5",
               "name": "company",
-              "value": "Reserved Domain",
+              "value": "VisioneerIT",
               "type": "string"
             },
             {
               "id": "f6",
               "name": "company_domain",
-              "value": "example.invalid",
+              "value": "visioneerit.com",
               "type": "string"
             },
             {
@@ -130,9 +130,7 @@
       "position": [
         -560,
         0
-      ],
-      "notes": "Deliberately a SUPPRESSED, RFC 2606 reserved address. Clicking Test used to run a real person's address through Reoon — a credit spent, and a live lead written, every time somebody poked the workflow to see if it worked. example.invalid is on the suppression list, so this exercises the whole gate and stops before anything is spent or written. Change it only for a deliberate end-to-end run, and change it back.",
-      "notesInFlow": true
+      ]
     },
     {
       "parameters": {
@@ -257,7 +255,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Shape the Events row for the Reoon call that just happened. Keys MUST equal Events column names.\n//\n// est_cost_usd is deliberately left blank: COSTS.md records Reoon's $/credit as [UNKNOWN] on\n// purpose (\"measure, don't estimate\"), and a made-up number in the cost meter is worse than a gap.\n// `units: 1` is the honest, meterable fact - one /verify call, one credit.\nreturn $input.all().map(item => {\n  const c = item.json || {};\n  const l = c.lead || {};\n  const detail = [c.reoon_status, (c.overall_score === null || c.overall_score === undefined)\n    ? null : 'score ' + c.overall_score].filter(Boolean).join(', ');\n  return { json: {\n    timestamp: c.verified_at || new Date().toISOString(),\n    lead_id: c.lead_id || '',\n    lead_email: c.email || '',\n    tool: 'reoon',\n    action: 'verify',\n    units: 1,\n    est_cost_usd: '',\n    result: c.action + (detail ? ' (' + detail + ')' : ''),\n    // The raw Reoon verdict, carried separately from the human-readable `result`. The Supabase\n    // events row stores it in payload.reoon_status so 'how many catch_all did we hit this week'\n    // is a query rather than a string search through prose.\n    reoon_status: c.reoon_status || '',\n    workflow: 'VIO-intake-verify-curate',\n    source_config: l.source_config || ''\n  }};\n});\n"
+        "jsCode": "// Shape the Events row for the Reoon call that just happened. Keys MUST equal Events column names.\n//\n// est_cost_usd is deliberately left blank: COSTS.md records Reoon's $/credit as [UNKNOWN] on\n// purpose (\"measure, don't estimate\"), and a made-up number in the cost meter is worse than a gap.\n// `units: 1` is the honest, meterable fact - one /verify call, one credit.\nreturn $input.all().map(item => {\n  const c = item.json || {};\n  const l = c.lead || {};\n  const detail = [c.reoon_status, (c.overall_score === null || c.overall_score === undefined)\n    ? null : 'score ' + c.overall_score].filter(Boolean).join(', ');\n  return { json: {\n    timestamp: c.verified_at || new Date().toISOString(),\n    lead_id: c.lead_id || '',\n    lead_email: c.email || '',\n    tool: 'reoon',\n    action: 'verify',\n    units: 1,\n    est_cost_usd: '',\n    result: c.action + (detail ? ' (' + detail + ')' : ''),\n    workflow: 'VIO-intake-verify-curate',\n    source_config: l.source_config || ''\n  }};\n});\n"
       },
       "id": "vio-wf1-shapeevent",
       "name": "Shape Reoon Event",

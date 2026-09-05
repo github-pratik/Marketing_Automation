@@ -1,0 +1,9 @@
+{
+  "name": "vio-outreach-console",
+  "private": true,
+  "type": "module",
+  "description": "OryonIQ/VisioneerIT staff outreach console — reads and writes Supabase, never the browser directly.",
+  "dependencies": {
+    "xlsx": "0.18.5"
+  }
+}

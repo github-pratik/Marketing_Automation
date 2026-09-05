@@ -193,6 +193,45 @@ a separate **`booking_url`** (empty until a real one exists), and it is in the v
 calendar element and keep `cta` for the button — then an ordinary page link can never end up inside
 an iframe again.
 
+## Part 5 — the hero's corner video bubble renders stuck mid-animation, on top of the play button
+
+**Found 2026-09-05**, live on `https://sendrpage.com/sqevhczucv` (8462, `dynamic-website`
+background). What looked like "two videos" in the hero — a big dark circle sitting centered and
+overlapping the real play control — is one small preview bubble frozen at the wrong frame of its
+own CSS animation.
+
+**What it's supposed to be:** the bubble's base classes (`w-1/5 bottom-1/20 left-1/20`) size and
+place it as a small 20%-width thumbnail tucked in the bottom-left corner of the hero. It carries a
+`fadeoutin` keyframe animation:
+
+```css
+@keyframes fadeoutin {
+  0%   { opacity: 1; transform: scale(2) translate(88%, -40%); }
+  50%  { opacity: 0; }
+  100% { opacity: 1; transform: scale(1) translate(0%); }
+}
+```
+
+— a loop meant to pop the bubble large-and-shifted, fade it out, then settle it back to its normal
+small corner size.
+
+**The bug:** the bubble ships with a `pause` class that freezes `animation-play-state` at the **0%
+keyframe** — permanently `scale(2)` and shifted `translate(88%, -40%)`, i.e. double size and pushed
+toward page center — and it never reaches 100% to shrink back down. Verified via
+`getComputedStyle`: the element's declared CSS width is 148.9px (correctly 20% of the 744.6px
+container, matching the base classes), but its actual `getBoundingClientRect()` box is 297.8px —
+exactly double — with a live `transform: matrix(2, 0, 0, 2, 262.075, -119.125)` applied. So the
+oversized, off-position circle is this corner bubble stuck at frame zero, not a second video
+element. It collides visually with the separate, correctly-centered play-button control, which is
+what reads as "misaligned" / "two videos."
+
+No console errors accompany it — the `pause` class is simply present in the markup Sendr serves for
+this page, most likely a leftover from their screenshot/thumbnail-capture pass (which needs the
+animation held still for a static image) that is leaking into the live page render. Nothing in
+`config-oryoniq.json`, `push_to_sendr_page.py`, or the n8n `ROUTES` map touches this bubble's
+animation state — this is a Sendr-side template rendering defect, same category as the calendar
+iframe in Part 4, and needs a Sendr bug report / UI fix, not an engine workaround.
+
 ## Current page copy (live in 8462 — for reference when editing)
 
 **Hero headline** — `{{firstname}}, the RFP hasn't dropped yet — that's the point.`

@@ -33,7 +33,7 @@ echo "[1/5] copying source to $HOST:$REMOTE_DIR"
 # never leaves this machine — the droplet keeps its own .env, written once by
 # the step below and never overwritten.
 ssh "$HOST" "mkdir -p $REMOTE_DIR/public"
-scp -q "$HERE/server.mjs" "$HERE/Dockerfile" "$HOST:$REMOTE_DIR/"
+scp -q "$HERE/server.mjs" "$HERE/Dockerfile" "$HERE/package.json" "$HERE/package-lock.json" "$HOST:$REMOTE_DIR/"
 scp -q "$HERE/public/index.html" "$HOST:$REMOTE_DIR/public/"
 
 echo "[2/5] checking the droplet has its environment file"

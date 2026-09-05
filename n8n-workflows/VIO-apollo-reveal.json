@@ -59,8 +59,8 @@
     {
       "id": "vio-wfA-readleads",
       "name": "Read Leads (held ids)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         -120,
         110
@@ -68,26 +68,17 @@
       "executeOnce": true,
       "alwaysOutputData": true,
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
         }
       },
       "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
+        "operation": "executeQuery",
+        "query": "select apollo_id from leads where apollo_id is not null",
         "options": {}
       }
     },
@@ -101,7 +92,7 @@
         110
       ],
       "parameters": {
-        "jsCode": "// Drop anyone we already hold, BEFORE paying to reveal them.\n//\n// VIO-intake-verify-curate already de-duplicates, and it is the authority — but it runs AFTER the\n// credit is spent. Intake's dedupe protects the Leads tab from double rows; this one protects the\n// credit balance. They are different jobs and both are needed.\n//\n// Matching is on the Apollo person id only. That is deliberate and it is a KNOWN PARTIAL: a person\n// we hold under a different id, or one typed in by hand from the same company, will not be caught\n// here and will cost a credit before intake catches them by email. Matching on anything else is\n// impossible at this point in the chain — we have not bought the address yet, so the id is the only\n// identifier that exists.\n//\n// `lead_id` is checked as well as `apollo_id` because Leads.lead_id IS the Apollo id whenever the\n// lead came from Apollo (see Normalize Lead in VIO-intake-verify-curate), and older rows written by\n// reach-engine populate one column but not always the other.\nconst requested = $('Guard (cap + shape)').all().map((i) => i.json);\n\nconst held = new Set();\nfor (const item of $input.all()) {\n  const r = item.json || {};\n  for (const v of [r.apollo_id, r.lead_id]) {\n    const s = String(v == null ? '' : v).trim();\n    if (s) held.add(s);\n  }\n}\n\nconst toReveal = requested.filter((r) => !held.has(r.apollo_id));\nconst skipped  = requested.filter((r) => held.has(r.apollo_id)).map((r) => r.apollo_id);\n\n// ALWAYS emit at least one item. A node that emits zero stops the chain where it stands, and the\n// terminal report never runs — so \"every one of them was already in the pipeline\", which is a\n// perfectly ordinary outcome, would have looked identical to a crash. This is the same trap that\n// made VIO-sheet-provision silently do nothing for two runs while reporting success.\nif (toReveal.length === 0) {\n  return [{ json: {\n    _reveal: false,\n    product: requested.length ? requested[0].product : '',\n    source_config: requested.length ? requested[0].source_config : '',\n    already_held: skipped,\n    already_held_count: skipped.length,\n    to_reveal_count: 0,\n  } }];\n}\n\nreturn toReveal.map((r) => ({ json: {\n  _reveal: true,\n  apollo_id: r.apollo_id,\n  product: r.product,\n  source_config: r.source_config,\n  already_held: skipped,\n  already_held_count: skipped.length,\n  to_reveal_count: toReveal.length,\n} }));\n"
+        "jsCode": "// Drop anyone we already hold, BEFORE paying to reveal them.\n//\n// VIO-intake-verify-curate already de-duplicates, and it is the authority — but it runs AFTER the\n// credit is spent. Intake's dedupe protects the Leads tab from double rows; this one protects the\n// credit balance. They are different jobs and both are needed.\n//\n// Matching is on the Apollo person id only. That is deliberate and it is a KNOWN PARTIAL: a person\n// we hold under a different id, or one typed in by hand from the same company, will not be caught\n// here and will cost a credit before intake catches them by email. Matching on anything else is\n// impossible at this point in the chain — we have not bought the address yet, so the id is the only\n// identifier that exists.\n//\n// Since the move to Supabase this reads `leads.apollo_id`, a real column with a partial unique\n// index over its non-null values (migration 003). On the sheet the same fact lived in two columns\n// that did not always agree, so both had to be checked; there is one now, and it cannot disagree\n// with itself.\nconst requested = $('Guard (cap + shape)').all().map((i) => i.json);\n\nconst held = new Set();\nfor (const item of $input.all()) {\n  const r = item.json || {};\n  for (const v of [r.apollo_id, r.lead_id]) {\n    const s = String(v == null ? '' : v).trim();\n    if (s) held.add(s);\n  }\n}\n\nconst toReveal = requested.filter((r) => !held.has(r.apollo_id));\nconst skipped  = requested.filter((r) => held.has(r.apollo_id)).map((r) => r.apollo_id);\n\n// ALWAYS emit at least one item. A node that emits zero stops the chain where it stands, and the\n// terminal report never runs — so \"every one of them was already in the pipeline\", which is a\n// perfectly ordinary outcome, would have looked identical to a crash. This is the same trap that\n// made VIO-sheet-provision silently do nothing for two runs while reporting success.\nif (toReveal.length === 0) {\n  return [{ json: {\n    _reveal: false,\n    product: requested.length ? requested[0].product : '',\n    source_config: requested.length ? requested[0].source_config : '',\n    already_held: skipped,\n    already_held_count: skipped.length,\n    to_reveal_count: 0,\n  } }];\n}\n\nreturn toReveal.map((r) => ({ json: {\n  _reveal: true,\n  apollo_id: r.apollo_id,\n  product: r.product,\n  source_config: r.source_config,\n  already_held: skipped,\n  already_held_count: skipped.length,\n  to_reveal_count: toReveal.length,\n} }));\n"
       }
     },
     {
@@ -195,41 +186,26 @@
     {
       "id": "vio-wfA-logevents",
       "name": "Log Reveal (Events)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         1200,
         0
       ],
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
         }
       },
       "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Events",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "matchingColumns": [],
-          "schema": []
-        },
+        "operation": "executeQuery",
+        "query": "with p as (select $1::jsonb as j)\ninsert into events (lead_id, lead_email, actor, action, outcome, workflow,\n                    units, est_cost_usd, payload)\nselect (select id from leads\n         where vio_canon(contact_email::text) = vio_canon(p.j->>'lead_email')),\n       coalesce(p.j->>'lead_email', ''),\n       'n8n', 'revealed',\n       coalesce(p.j->>'result', ''),\n       'VIO-apollo-reveal',\n       (p.j->>'units')::numeric,\n       -- blank while the real rate is unknown in COSTS.md; measure, don't estimate\n       null,\n       jsonb_build_object('apollo_id', p.j->>'lead_id',\n                          'source_config', p.j->>'source_config')\nfrom p\nreturning id",
         "options": {
-          "handlingExtraData": "ignoreIt"
+          "queryReplacement": "={{ JSON.stringify({ lead_email: $json.lead_email || '', result: $json.result || '', units: $json.units, lead_id: $json.lead_id || '', source_config: $json.source_config || 'apollo' }) }}"
         }
       }
     },
@@ -486,7 +462,6 @@
   "settings": {
     "executionOrder": "v1",
     "errorWorkflow": "VIOwfEerroralert"
-  }
-,
+  },
   "active": true
 }
