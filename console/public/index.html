@@ -144,6 +144,16 @@
   .empty{padding:40px 20px;text-align:center;color:var(--muted)}
   code{font-family:var(--mono);font-size:.9em;background:var(--sunk);padding:1px 4px;border-radius:3px}
 
+  /* ---- modal ---- */
+  .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:41;
+    background:var(--surface);border:1px solid var(--rule);border-radius:6px;box-shadow:var(--shadow);
+    padding:22px;width:min(400px,calc(100% - 32px));max-height:90vh;overflow-y:auto}
+  .modal h3{margin:0 0 4px;font-size:16px}
+  .modal p{margin:0 0 16px;color:var(--muted);font-size:12.5px}
+  .modal input{width:100%;margin-bottom:12px}
+  .fldlbl{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+
   .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:var(--ground);
     padding:11px 18px;border-radius:5px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.24);z-index:60;max-width:min(520px,92vw)}
   .toast.bad{background:var(--stop)}
@@ -172,6 +182,7 @@
     <div class="who">
       <span class="live"><span class="dot" id="liveDot"></span><span id="liveTxt">live</span></span>
       <button class="btn sm" id="refreshBtn">Refresh</button>
+      <button class="btn sm" id="pwBtn">Change password</button>
       <button class="btn sm" id="logoutBtn">Sign out</button>
     </div>
   </div>
@@ -256,6 +267,82 @@
     answered yet, not that something is broken.</div>
   </div>
 
+  <!-- ---------- FIND (real Apollo search, via n8n) ---------- -->
+  <div class="view" id="v-find" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Search Apollo</h2>
+        <span class="sub">real search, no credits — change the filters and see who matches</span>
+      </div>
+      <div style="padding:18px 16px">
+        <form class="form" id="findForm">
+          <div class="fld full"><label for="aTitles">Job titles</label>
+            <input type="text" id="aTitles" placeholder="Leave blank for this product's default list">
+            <span class="hint">Comma separated. Blank uses the product's own ideal-customer titles.</span></div>
+
+          <div class="fld"><label for="aSen">Seniority</label>
+            <select id="aSen">
+              <option value="">This product's default</option>
+              <option value="director">Director</option>
+              <option value="vp">VP</option>
+              <option value="c_suite">C-suite</option>
+              <option value="director,vp,c_suite">Director, VP and C-suite</option>
+            </select></div>
+
+          <div class="fld"><label for="aSize">Company size</label>
+            <select id="aSize">
+              <option value="">Any size</option>
+              <option value="11,50">11–50 staff</option>
+              <option value="51,200">51–200 staff</option>
+              <option value="201,1000">201–1,000 staff</option>
+              <option value="1001,10000">1,000+ staff</option>
+            </select></div>
+
+          <div class="fld"><label for="aState">Location</label>
+            <select id="aState"></select>
+            <span class="hint">United States only. Other countries are outside what this pilot is cleared for.</span></div>
+
+          <div class="fld"><label for="aKw">Keywords</label>
+            <input type="text" id="aKw" placeholder="usually leave blank">
+            <span class="hint">A literal full-text match, not an industry. It narrows hard — "government
+            contracting" cut 168,759 people to seven.</span></div>
+
+          <div class="fld"><label for="aProd">Pitch as</label>
+            <select id="aFindProd"></select>
+            <span class="hint">Decides whose ideal-customer list is used.</span></div>
+
+          <div class="fld"><label for="aTake">How many to fetch</label>
+            <select id="aTake">
+              <option value="10" selected>10 people</option>
+              <option value="25">25 people — most per run</option>
+            </select></div>
+
+          <div class="full acts">
+            <button class="btn pri" type="submit" id="aRun">Search — free</button>
+            <span class="hint">Nobody is contacted and no credit is spent.</span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:20px" id="aResPanel" hidden>
+      <div class="panel-head"><h2 id="aResHead">Matches</h2><span class="sub" id="aResSub"></span></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Person</th><th>Title</th><th>Company</th><th>Has an email</th></tr></thead>
+        <tbody id="aRows"></tbody>
+      </table></div>
+    </div>
+
+    <div class="note" style="margin-top:20px"><b>Why the surnames are cut off.</b> Apollo's free
+    search returns a first name and a masked surname, and no address. That is Apollo's boundary, not
+    a bug here. The full name and the email arrive only from a reveal, which spends a lead credit per
+    person — a separate, human-gated step this screen deliberately cannot reach.</div>
+
+    <div class="note warn"><b>So this screen finds people, it does not add them.</b> Until the reveal
+    step is wired in, use it to judge whether a filter set is worth spending credits on. Searching is
+    free and unlimited, so search widely and reveal narrowly.</div>
+  </div>
+
   <!-- ---------- ADD ---------- -->
   <div class="view" id="v-add" hidden>
     <div class="panel">
@@ -283,6 +370,28 @@
     cap decide when, or whether, it is mailed.</div>
   </div>
 </div>
+</div>
+
+<!-- ===================== CHANGE PASSWORD ===================== -->
+<div id="pwHost" hidden>
+  <div class="scrim" data-pwclose="1"></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+    <form id="pwForm">
+      <h3 id="pwTitle">Change the staff password</h3>
+      <p>Everyone shares one password, so changing it signs everybody out, including you.</p>
+      <div class="err" id="pwErr" hidden></div>
+      <label class="fldlbl" for="pwCur">Current password</label>
+      <input type="password" id="pwCur" autocomplete="current-password" required>
+      <label class="fldlbl" for="pwNew">New password</label>
+      <input type="password" id="pwNew" autocomplete="new-password" minlength="8" required>
+      <label class="fldlbl" for="pwNew2">New password again</label>
+      <input type="password" id="pwNew2" autocomplete="new-password" minlength="8" required>
+      <div class="acts">
+        <button class="btn pri" type="submit" id="pwSave">Change it</button>
+        <button class="btn" type="button" data-pwclose="1">Cancel</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <div id="drawerHost"></div>
@@ -433,17 +542,37 @@ function renderReplies() {
     </div>`).join('') : '<div class="empty">No replies yet.</div>';
 }
 
+const productLabel = (p) => (p === 'oryoniq' ? 'OryonIQ' : p === 'visioneerit' ? 'VisioneerIT' : p);
+
 function renderProducts() {
-  const sel = $('#fProd');
   if (!STATE_DATA.campaigns.length) return;
+  const sel = $('#fProd');
   sel.innerHTML = STATE_DATA.campaigns.map(c => {
     const usable = c.instantly_campaign_id && c.active;
-    const label = c.product === 'oryoniq' ? 'OryonIQ' : 'VisioneerIT';
-    return `<option value="${esc(c.product)}"${usable ? '' : ' disabled'}>${esc(label)}${usable ? '' : ' — no campaign yet'}</option>`;
+    return `<option value="${esc(c.product)}"${usable ? '' : ' disabled'}>${esc(productLabel(c.product))}${usable ? '' : ' — no campaign yet'}</option>`;
   }).join('');
   const firstUsable = STATE_DATA.campaigns.find(c => c.instantly_campaign_id && c.active);
   if (firstUsable) sel.value = firstUsable.product;
+
+  // Searching is free and sends nothing, so a product with no campaign is still
+  // a legitimate thing to research. This list is deliberately not disabled the
+  // way the "add a lead" one is.
+  $('#aFindProd').innerHTML = STATE_DATA.campaigns
+    .map(c => `<option value="${esc(c.product)}">${esc(productLabel(c.product))}</option>`).join('');
 }
+
+// The workflow refuses anything that is not a US state, because sending outside
+// the US means a regime this pilot is not cleared for. Offering a free-text box
+// would only produce refusals.
+const US_STATES = ['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
+  'Delaware','District of Columbia','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa',
+  'Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan','Minnesota',
+  'Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire','New Jersey','New Mexico',
+  'New York','North Carolina','North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania',
+  'Rhode Island','South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont','Virginia',
+  'Washington','West Virginia','Wisconsin','Wyoming'];
+$('#aState').innerHTML = '<option value="">United States — anywhere</option>'
+  + US_STATES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 
 function renderAll() { renderStats(); renderLeads(); renderReview(); renderReplies(); }
 

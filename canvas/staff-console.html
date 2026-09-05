@@ -554,9 +554,10 @@
 
   // ---------- find leads (Apollo) ----------
   // A stand-in for Apollo's free `mixed_people/api_search`. The SHAPE is what matters and it is
-  // faithful: a first name, an initial, a title, a company name, and no address — that is all the
-  // free tier returns (verified against the live API on 22 Aug). The pull step is where the surname
-  // and the email appear, because that is the call that spends a credit.
+  // faithful: a first name, a MASKED surname ("Co***n" — measured against the live API on 5 Sep,
+  // not the bare initial an earlier note here claimed), a title, a company name, and no address.
+  // The pull step is where the real surname and the email appear, because that is the call that
+  // spends a credit.
   var SURNAMES = { 'Re***s':'Reyes', 'Tr**n':'Tran', 'Na**r':'Nayar', 'Ko***ki':'Kowalski', 'Br***an':'Brennan',
     'Ga***do':'Garrido', 'Wh***eld':'Whitfield', 'Mb**i':'Mbeki', 'Pe***va':'Petrova', 'Va**e':'Vance', 'So***en':'Sorensen',
     'As***rd':'Ashford', 'De***do':'Delgado', 'Li***ist':'Lindqvist', 'Fa***w':'Farrow', 'Ok***wo':'Okonkwo', 'Ch***ry':'Chaudhry',
