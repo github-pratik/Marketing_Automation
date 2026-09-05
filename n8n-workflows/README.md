@@ -129,7 +129,23 @@ docker exec n8n-stack-n8n-1 n8n update:workflow --id=<WORKFLOW_ID> --active=true
 docker restart n8n-stack-n8n-1
 ```
 
-**Every import of an active workflow must be followed by an activation and a state check:**
+**Every import of an active workflow must be followed by an activation and a state check.**
+`import-workflow.sh` now does this automatically (hardened 2026-09-05): it reads the LIVE `active`
+flag for the workflow's id before importing, and if it was active, re-runs
+`n8n update:workflow --active=true` right after — then prints the post-import state so the operator
+sees it rather than trusting the exit code. Manual equivalent, for a raw `docker exec` import that
+bypasses the script:
+
+```bash
+docker exec n8n-stack-n8n-1 n8n update:workflow --id=<WORKFLOW_ID> --active=true
+docker restart n8n-stack-n8n-1
+```
+
+The script restoring the flag is **not** the same as reloading a running trigger's code — see
+"THE CLI CANNOT RELOAD A RUNNING TRIGGER" below; the script prints that warning too whenever it
+re-activates a workflow.
+
+State check, any time, no import needed:
 
 ```bash
 docker exec n8n-stack-postgres-1 psql -U postgres -d railway -tAc \
@@ -174,17 +190,27 @@ across `VIO-*.json` to reproduce this list): `VIOwf8askhuman1` (ask-human), `VIO
 (intake — called by `VIO-inbox-mapper`'s `Verify + curate (intake)` node), `VIOwfLenrolmail`
 (enrol-email — called by `VIO-run-outreach`'s `Enrol email (no gate — see notes)` node).
 
-**⚠️ None of the JSON backups in this folder carry a top-level `"active": true`** — not even for
-the workflows this document calls LIVE elsewhere. `grep '"active"' VIO-*.json` finds the key
-entirely absent on every file except `VIO-inbound-reply-to-call.json`, `VIO-intake-verify-
-curate.json`, `VIO-operator-agent.json`, `VIO-operator-agent-v2.json`, `VIO-sendr-events.json` and
-`VIO-sendr-generate-page.json`, all six of which are `false`. Per "Imports arrive deactivated"
-above, that is expected — `import-workflow.sh` deactivates on write regardless of what was true on
-the droplet, so **the JSON is never proof of current activation state, in either direction.**
-Every activation claim in this file reflects what was last confirmed on the droplet by a human or
-a live probe, not what the backup file says. The workflow index below is the **2026-09-04** probe
-(`workflow_entity.active` + container bind list + dummy-token webhook POSTs). Re-probe before
-trusting it after an import or droplet move.
+**⚠️ (fixed 2026-09-05) 21 of the 22 JSON backups in this folder disagreed with live `active`.**
+There are 22 `VIO-*.json` files on disk (the workflow index below, written 2026-09-04, only
+tracks 21 — it predates `VIO-db-probe.json`). Audited against a fresh
+`select id, name, active from workflow_entity where name like 'VIO-%'`: 14 files had no `active`
+key at all, 7 had `active: false` for a workflow that is live `true` (`VIO-db-probe`,
+`VIO-inbound-reply-to-call`, `VIO-intake-verify-curate`, `VIO-operator-agent`,
+`VIO-operator-agent-v2`, `VIO-sendr-events`, `VIO-sendr-generate-page`). Only
+`VIO-source-leads.json` already matched. **No live outage was found** — every workflow that
+should be active already was; the mismatches were all in the backup files, waiting to bite on the
+next import. Every file now carries the correct key: `true` for every workflow except
+`VIO-costs-rollup.json` (`false`, the one deliberate exception), verified against the same live
+query. `test-workflow-active-state.mjs` asserts this offline — no SSH needed to catch the next
+drift — and `import-workflow.sh`'s auto re-activation (above) means a future import can no longer
+silently leave one off. **The importer still ignores the key on write** — see "Imports arrive
+deactivated" above — so the JSON being correct is bookkeeping for humans and for the script's
+before/after comparison, not a claim about what a bare `import:workflow` will do at that instant.
+Every activation claim elsewhere in this file reflects what was last confirmed on the droplet by a
+human or a live probe, not what the backup file says. The workflow index below is the
+**2026-09-04** probe (`workflow_entity.active` + container bind list + dummy-token webhook POSTs),
+re-confirmed by the **2026-09-05** database read above. Re-probe before trusting it after an import
+or droplet move.
 
 A healthy blocked approval shows `status: waiting` in `execution_entity` for BOTH the caller and
 `ask-human`. That is the gate armed and a human being asked — not a hang.
@@ -193,10 +219,12 @@ A healthy blocked approval shows `status: waiting` in `execution_entity` for BOT
 
 ### Workflow index
 
-One row per `VIO-*.json` in this folder (21 files). **Active?** is the live `workflow_entity.active`
-flag plus the container bind list from **2026-09-04 ~17:35 UTC** (n8n 2.22.6 recreate). The JSON
-`active` key is still not proof in either direction — see the warning above. Dummy-token POSTs the
-same day bound every VIO webhook (none 404).
+One row per `VIO-*.json` in this folder as of 2026-09-04 (21 files at the time; `VIO-db-probe.json`
+was added after and has no row here yet — see the warning above). **Active?** is the live
+`workflow_entity.active` flag plus the container bind list from **2026-09-04 ~17:35 UTC** (n8n
+2.22.6 recreate). The JSON `active` key is still not proof of what a bare `import:workflow` leaves
+behind at the instant it runs — see the warning above. Dummy-token POSTs the same day bound every
+VIO webhook (none 404).
 
 The send loop was renamed **`VIO-run-outreach`** (same id `VIOwfDsheetdemo1`; file used to be
 `VIO-demo-sheet-run.json`). Older notes in this folder that still say the old name mean this
