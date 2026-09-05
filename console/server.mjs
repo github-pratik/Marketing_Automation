@@ -182,14 +182,6 @@ function readCookie(req, name) {
   return null;
 }
 
-// Constant-time password check, so a wrong guess cannot be narrowed by timing.
-function passwordMatches(given) {
-  const a = Buffer.from(String(given || ''));
-  const b = Buffer.from(STAFF_PASSWORD);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-
 // A crude but sufficient brake on password guessing: a handful of attempts per
 // IP per minute. Without it a public URL with a shared password is a free
 // offline-speed guessing oracle.
@@ -315,8 +307,12 @@ async function handleAPI(req, res, url) {
     const body = await readBody(req);
     const next = String(body.next ?? '');
 
+    // 403, deliberately not 401. The session IS valid; it is this one action
+    // that is refused. The client treats every 401 as "your session died" and
+    // bounces to the sign-in screen, so a 401 here would throw a person out of
+    // the console for a typo in a form.
     if (!passwordMatches(body.current)) {
-      return sendJSON(res, 401, { error: 'The current password is not right.' });
+      return sendJSON(res, 403, { error: 'The current password is not right.' });
     }
     if (next.length < 8) {
       return sendJSON(res, 400, { error: 'The new password must be at least 8 characters.' });
@@ -430,12 +426,18 @@ async function handleAPI(req, res, url) {
     });
     const text = await upstream.text();
     if (!upstream.ok) {
-      // n8n reports a refusal from the filter gate as a 500 with the reason in
-      // the body. Surfacing that reason is the entire point of the gate — the
-      // operator needs to see WHICH filter it would not accept.
+      // ⚠️ The filter gate's refusal reason does NOT survive the webhook. n8n
+      // replies with a bare {"message":"Error in workflow"} and keeps the
+      // `REFUSED: ...` text in its own execution log (measured 2026-09-05). So
+      // the reason is matched for in case a future n8n version passes it
+      // through, and otherwise the message says what to check rather than
+      // inventing a cause it cannot know.
       const reason = (text.match(/REFUSED:[^"'\\}]+/) || [])[0];
+      if (reason) return sendJSON(res, 400, { error: reason });
       return sendJSON(res, 400, {
-        error: reason || `The search could not run (upstream ${upstream.status}).`,
+        error: 'The search was refused. The usual cause is a filter value Apollo does not '
+             + 'recognise, or more than 25 job titles. The exact reason is in the n8n execution log '
+             + 'for VIO-source-leads — the webhook does not pass it back.',
       });
     }
     let data;

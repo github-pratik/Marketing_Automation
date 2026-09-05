@@ -6,6 +6,14 @@ WORKDIR /app
 COPY server.mjs ./
 COPY public ./public
 
+# Where the changed password is stored. Created here, owned by `node`, BEFORE the
+# USER switch: docker seeds a fresh named volume from the image's directory
+# including its ownership, so mounting one here stays writable. Create it only at
+# runtime and the volume arrives owned by root, and the first password change
+# fails with EACCES.
+RUN mkdir -p /data && chown node:node /data
+VOLUME ["/data"]
+
 # Never run as root: this process is reachable from the public internet through
 # Caddy, and it holds the Supabase service key in its environment.
 USER node

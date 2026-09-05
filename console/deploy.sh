@@ -20,6 +20,8 @@ REMOTE_DIR="/root/vio-console"
 NETWORK="n8n-stack_default"
 CONTAINER="vio-console"
 IMAGE="vio-console:latest"
+# Holds the changed staff password. Named, so it outlives every container.
+VOLUME="vio-console-data"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "${1:-}" == "--logs" ]]; then
@@ -57,9 +59,13 @@ ssh "$HOST" "
   docker run -d --name $CONTAINER \
     --network $NETWORK \
     --env-file $REMOTE_DIR/.env \
+    -v $VOLUME:/data \
     --restart unless-stopped \
     $IMAGE >/dev/null
 "
+# The volume is what makes a password change survive a redeploy. Recreating the
+# container is also the only way a change to .env takes effect: docker restart
+# does NOT re-read --env-file.
 
 echo "[5/5] verifying it can reach Supabase"
 sleep 4

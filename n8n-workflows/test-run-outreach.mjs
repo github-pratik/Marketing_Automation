@@ -32,15 +32,25 @@ const row = (o = {}) => ({
 
 ok('a fresh row is picked up', pick([row()]).length === 1);
 ok('the row number is carried', pick([row()])[0].row_number === 2);
-// THE loop guard, now that this polls the same tab the pipeline writes to. Without it, rows the
-// intake workflow appends would re-trigger this schedule against real Reoon and OpenAI spend.
-// The live sheet's dropdown offers Apollo / Warmly-Intent / Referral / Manual — 'demo' cannot be
-// typed. 'Manual' means a human entered this row, which is exactly what a demo row is. The loop
-// guard still holds: pipeline rows carry oryoniq/visioneerit, Apollo-sourced rows carry Apollo.
-for (const sc of ['oryoniq', 'visioneerit', 'Apollo', 'Warmly-Intent', 'Referral', '', 'demo'])
-  ok(`source_config "${sc}" is NOT picked up — only Manual rows are`, pick([row({ source_config: sc })]).length === 0);
-for (const sc of ['Manual', 'manual', 'MANUAL', ' Manual '])
+// The source rule is a WHITELIST, and it changed on 2026-09-05.
+//
+// It used to be `=== 'manual'`, which was two guards in one: "only send rows a human typed" AND
+// "never re-trigger on rows the pipeline itself appended". The second job now belongs entirely to
+// channel_state_email — the claim marker, made reliable by FIX 1 — and the first was starving the
+// pipeline. The first real Apollo pull landed in Leads as `not_sent`, verified safe, and was
+// skipped on every single poll. Sourcing that cannot reach the sender is not sourcing.
+//
+// It is still a whitelist rather than an open door: a source nobody has thought about must not
+// start auto-sending the day someone invents it.
+for (const sc of ['Manual', 'manual', 'MANUAL', ' Manual ', 'Apollo', 'apollo', ' APOLLO '])
   ok(`source_config "${sc}" IS picked up`, pick([row({ source_config: sc })]).length === 1);
+for (const sc of ['oryoniq', 'visioneerit', 'Warmly-Intent', 'Referral', '', 'demo', 'upload'])
+  ok(`source_config "${sc}" is NOT picked up — the whitelist is explicit`, pick([row({ source_config: sc })]).length === 0);
+// The loop guard that actually does the work now. A row the pipeline appended and already claimed
+// must never come round again, whatever its source.
+for (const sc of ['manual', 'apollo'])
+  ok(`a claimed ${sc} row is still not re-picked`,
+     pick([row({ source_config: sc, channel_state_email: 'enrolled' })]).length === 0);
 
 // Idempotence — this polls every minute, so a claimed row must never be re-processed.
 // Leads has no `status` column; channel_state_email is the one that means exactly this.

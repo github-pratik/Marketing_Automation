@@ -134,6 +134,11 @@ guardRefuses('  and so is a short one', { product: 'oryoniq', ids: ['abc'] }, /n
   ok('the DOMAIN the free search withheld is now present, normalised',
      out[0].company_domain === 'cardinalfederal.com', out[0].company_domain);
   ok('Product is the display name intake writes to the sheet', out[0].Product === 'OryonIQ');
+  // source_config is HOW the lead arrived, never who pitches it. Writing the product here made
+  // every Apollo lead invisible to VIO-run-outreach, which selects rows on this column — the lead
+  // reached the sheet, verified clean, and was skipped on every poll forever.
+  ok('source_config says apollo, NOT the product', out[0].source_config === 'apollo', out[0].source_config);
+  ok('  and the two are genuinely different fields', out[0].source_config !== out[0].Product.toLowerCase());
   ok('no phone is ever requested here', out[0].phone === '' && out[0].has_phone === false);
 }
 {

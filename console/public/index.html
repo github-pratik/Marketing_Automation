@@ -706,13 +706,109 @@ $('#addForm').addEventListener('submit', async (e) => {
   finally { $('#bAdd').disabled = false; }
 });
 
+// ---------- find leads ----------
+$('#findForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#aRun');
+
+  // Checked here because the workflow's own refusal reason does not survive its
+  // webhook — the caller would otherwise get a generic failure for something
+  // this specific. Seniority, size and location are dropdowns of the exact
+  // vocabulary the workflow accepts, so titles are the only field left that a
+  // person can get wrong.
+  const titleCount = $('#aTitles').value.split(',').map(s => s.trim()).filter(Boolean).length;
+  if (titleCount > 25) {
+    toast(`${titleCount} job titles; at most 25. A list that long is not a search.`, true);
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Searching…';
+  try {
+    const d = await api('/api/find', { method: 'POST', body: {
+      product: $('#aFindProd').value,
+      titles: $('#aTitles').value.trim() || undefined,
+      seniorities: $('#aSen').value || undefined,
+      employee_ranges: $('#aSize').value || undefined,
+      locations: $('#aState').value || undefined,
+      keywords: $('#aKw').value.trim() || undefined,
+      per_page: Number($('#aTake').value),
+    }});
+
+    const people = d.leads || [];
+    $('#aResPanel').hidden = false;
+    $('#aResHead').textContent = `${people.length} ${people.length === 1 ? 'match' : 'matches'} shown`;
+    // Apollo's own total is the number that decides whether a filter set is any
+    // good. Showing only the page size would make every search look identical.
+    const total = d.total_entries;
+    $('#aResSub').textContent =
+      (typeof total === 'number' ? `${total.toLocaleString()} people match these filters in Apollo · ` : '')
+      + `${d.credits_spent === 0 ? 'no credits spent' : `${d.credits_spent} credits spent`}`
+      + (d.dropped_no_email ? ` · ${d.dropped_no_email} dropped for having no email on file` : '');
+
+    $('#aRows').innerHTML = people.length ? people.map(p => `
+      <tr>
+        <td><div class="nm">${esc(`${p.first_name || ''} ${p.last_name_obfuscated || p.last_name || ''}`.trim())}</div>
+            <div class="em">surname masked until revealed</div></td>
+        <td>${esc(p.title || '—')}</td>
+        <td>${esc(p.company || '—')}${p.company_domain ? `<div class="em">${esc(p.company_domain)}</div>` : ''}</td>
+        <td><span class="tag t-ok">Has one</span></td>
+      </tr>`).join('')
+      : '<tr><td colspan="4" class="empty">Nobody matched those filters. Widen the titles or clear a filter.</td></tr>';
+
+    toast(people.length ? `${people.length} shown. No credits spent — searching is free.` : 'No matches.');
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Search — free';
+  }
+});
+
+// ---------- change password ----------
+const openPw = () => {
+  $('#pwErr').hidden = true;
+  ['pwCur','pwNew','pwNew2'].forEach(i => { $('#' + i).value = ''; });
+  $('#pwHost').hidden = false;
+  $('#pwCur').focus();
+};
+const closePw = () => { $('#pwHost').hidden = true; };
+
+$('#pwForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = $('#pwErr');
+  err.hidden = true;
+  if ($('#pwNew').value !== $('#pwNew2').value) {
+    err.textContent = 'The two new passwords do not match.';
+    err.hidden = false;
+    return;
+  }
+  $('#pwSave').disabled = true;
+  try {
+    await api('/api/password', { method: 'POST', body: {
+      current: $('#pwCur').value, next: $('#pwNew').value,
+    }});
+    closePw();
+    // The change invalidated every session including this one, so there is
+    // nothing to refresh — send them back to the sign-in screen and say why.
+    showGate();
+    $('#loginErr').textContent = 'Password changed. Sign in again with the new one.';
+    $('#loginErr').hidden = false;
+  } catch (e2) {
+    err.textContent = e2.message;
+    err.hidden = false;
+  } finally { $('#pwSave').disabled = false; }
+});
+
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button, tr, .scrim');
   if (!t) return;
+  if (t.dataset.pwclose) return closePw();
+  if (t.id === 'pwBtn') return openPw();
   if (t.dataset.close) return closeDrawer();
   if (t.dataset.v) {
     document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-selected', String(b === t)));
-    ['leads','review','replies','add'].forEach(v => { $('#v-' + v).hidden = (v !== t.dataset.v); });
+    ['leads','review','replies','find','add'].forEach(v => { $('#v-' + v).hidden = (v !== t.dataset.v); });
     return;
   }
   if (t.dataset.ok) return release(t.dataset.ok);
@@ -722,7 +818,7 @@ document.addEventListener('click', (e) => {
   if (t.tagName === 'TR' && t.dataset.id) return openLead(t.dataset.id);
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeDrawer();
+  if (e.key === 'Escape') { closeDrawer(); closePw(); }
   if (e.key === 'Enter' && e.target.tagName === 'TR' && e.target.dataset.id) openLead(e.target.dataset.id);
 });
 $('#q').addEventListener('input', renderLeads);
