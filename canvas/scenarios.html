@@ -1,0 +1,377 @@
+<title>Three Doors, One Corridor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+  :root{
+    --ground:#F5F7F9; --surface:#FFFFFF; --sunk:#ECEFF3; --ink:#191D26; --ink-soft:#414A5A;
+    --muted:#697283; --rule:#D7DDE5; --rule-soft:#E6EAF0;
+    --live:#1B6A9E; --live-bg:#E7F0F7; --send:#A8324A; --send-bg:#F9EBEE;
+    --wait:#6A5B23; --wait-bg:#F5F0DE; --dark:#6B7382; --dark-bg:#EDEFF2;
+    --done:#1F6B44; --done-bg:#E4F2EA;
+    --shadow:0 1px 2px rgba(25,29,38,.05),0 4px 14px -6px rgba(25,29,38,.10);
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --ground:#14161C; --surface:#1B1E25; --sunk:#23272F; --ink:#E8EBF1; --ink-soft:#B6BECC;
+    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
+    --live:#6FB2DF; --live-bg:#17303F; --send:#E8869B; --send-bg:#3A1F27;
+    --wait:#D6BF7A; --wait-bg:#332D18; --dark:#8A93A3; --dark-bg:#262A32;
+    --done:#7CCB9C; --done-bg:#183024;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);}}
+  :root[data-theme="dark"]{
+    --ground:#14161C; --surface:#1B1E25; --sunk:#23272F; --ink:#E8EBF1; --ink-soft:#B6BECC;
+    --muted:#8A93A3; --rule:#333944; --rule-soft:#282D36;
+    --live:#6FB2DF; --live-bg:#17303F; --send:#E8869B; --send-bg:#3A1F27;
+    --wait:#D6BF7A; --wait-bg:#332D18; --dark:#8A93A3; --dark-bg:#262A32;
+    --done:#7CCB9C; --done-bg:#183024;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px -6px rgba(0,0,0,.5);}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1060px;margin:0 auto;padding:56px 28px 96px}
+
+  .eyebrow{font-family:var(--mono);font-size:11.5px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+  h1{font-size:clamp(30px,4.4vw,44px);line-height:1.08;font-weight:600;letter-spacing:-.021em;margin:14px 0 0;text-wrap:balance}
+  .standfirst{font-family:var(--serif);font-size:18px;line-height:1.6;color:var(--ink-soft);max-width:62ch;margin:16px 0 0}
+
+  section{margin-top:66px}
+  .shead{border-top:2px solid var(--ink);padding-top:14px}
+  .shead h2{font-size:22px;font-weight:600;letter-spacing:-.014em;margin:6px 0 0}
+  .shead p{font-family:var(--serif);color:var(--ink-soft);max-width:66ch;margin:9px 0 0;font-size:16.5px}
+
+  .figure{margin:26px 0 0;border:1px solid var(--rule);border-radius:4px;background:var(--surface);overflow:hidden}
+  .figscroll{overflow-x:auto;padding:8px}
+  .figure svg{display:block;width:1000px;height:430px}
+  .figcap{border-top:1px solid var(--rule-soft);padding:11px 16px;font-size:13.5px;color:var(--muted);font-family:var(--serif)}
+  svg .box{fill:var(--surface);stroke:var(--rule);stroke-width:1.25}
+  svg .box.live{fill:var(--live-bg);stroke:var(--live)}
+  svg .box.send{fill:var(--send-bg);stroke:var(--send)}
+  svg .box.data{fill:var(--sunk);stroke:var(--rule)}
+  svg .box.todo{fill:none;stroke:var(--wait);stroke-dasharray:5 3}
+  svg .box.off{fill:none;stroke:var(--dark);stroke-dasharray:3 3}
+  svg .t{font-family:var(--sans);font-size:13px;font-weight:600;fill:var(--ink)}
+  svg .st{font-family:var(--mono);font-size:10.5px;fill:var(--muted)}
+  svg .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.07em;fill:var(--muted);text-transform:uppercase}
+  svg .flow{stroke:var(--rule);stroke-width:1.5;fill:none}
+  svg .flow.strong{stroke:var(--live)}
+  svg .flow.todo{stroke:var(--wait);stroke-dasharray:5 3}
+  svg .flow.off{stroke:var(--dark);stroke-dasharray:3 3}
+
+  .cards{display:flex;flex-direction:column;gap:16px;margin-top:26px}
+  .card{background:var(--surface);border:1px solid var(--rule);border-radius:4px;box-shadow:var(--shadow);padding:18px 22px 20px}
+  .card.a{border-left:3px solid var(--live)}
+  .card.b{border-left:3px solid var(--wait)}
+  .card.c{border-left:3px solid var(--dark)}
+  .ctop{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 12px}
+  .cname{font-size:18px;font-weight:600;letter-spacing:-.01em}
+  .crole{font-size:13.5px;color:var(--muted)}
+  .why{font-family:var(--serif);font-size:15.5px;line-height:1.58;color:var(--ink-soft);margin:9px 0 0;max-width:74ch}
+  ol.steps{list-style:none;margin:14px 0 0;padding:0;counter-reset:s}
+  ol.steps li{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:baseline;font-size:14.5px;margin-bottom:8px}
+  ol.steps li::before{counter-increment:s;content:counter(s);font-family:var(--mono);font-size:11px;color:var(--muted);padding-top:2px}
+  ol.steps b{font-weight:600}
+  ol.steps .d{color:var(--ink-soft)}
+  .stops{margin-top:14px;padding-top:12px;border-top:1px solid var(--rule-soft);font-size:13.5px}
+  .stops .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--send);display:block;margin-bottom:5px}
+  .stops ul{margin:0;padding-left:18px;color:var(--ink-soft);font-family:var(--serif)}
+
+  .pill{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.07em;text-transform:uppercase;padding:3px 7px;border-radius:2px;white-space:nowrap}
+  .pill.live{background:var(--live-bg);color:var(--live)}
+  .pill.wait{background:var(--wait-bg);color:var(--wait)}
+  .pill.dark{background:var(--dark-bg);color:var(--dark)}
+  .pill.send{background:var(--send-bg);color:var(--send)}
+
+  .tblwrap{overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--surface);margin-top:24px;box-shadow:var(--shadow)}
+  table{width:100%;border-collapse:collapse;font-size:14px;min-width:560px}
+  th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:10px 14px;border-bottom:1px solid var(--rule);font-weight:500;white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.m{font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  td .n{font-family:var(--serif);color:var(--ink-soft);font-size:13.5px;margin-top:3px}
+
+  .flag{background:var(--send-bg);border-left:3px solid var(--send);border-radius:3px;padding:16px 20px;margin-top:24px}
+  .flag h3{margin:0;font-size:16px;font-weight:600}
+  .flag p{font-family:var(--serif);font-size:15.5px;line-height:1.58;color:var(--ink-soft);margin:8px 0 0;max-width:74ch}
+  code{font-family:var(--mono);font-size:.9em;background:var(--sunk);padding:1px 4px;border-radius:2px}
+
+  footer{margin-top:70px;padding-top:18px;border-top:1px solid var(--rule);font-family:var(--mono);font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 20px}
+  @media (max-width:620px){.wrap{padding:40px 18px 72px}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">OryonIQ outreach · how a lead actually travels</div>
+  <h1>Three doors, one corridor</h1>
+  <p class="standfirst">A lead can arrive three ways — typed by a person, uploaded as a
+  spreadsheet, or found by Apollo. After the door, all three walk the same corridor and meet the
+  same gates. Learn the corridor once and every scenario is the same story with a different first
+  step.</p>
+</header>
+
+<!-- ================= THE CORRIDOR ================= -->
+<section>
+  <div class="shead">
+    <div class="eyebrow">The model</div>
+    <h2>The corridor is the part that matters</h2>
+    <p>Nothing about verification, drafting or sending changes with the door. That is deliberate:
+    an Apollo lead is not more trusted than a typed one, so it passes the same suppression check
+    and the same verification. A lead is only ever refused by a gate, never by which door it used.</p>
+  </div>
+
+  <div class="figure"><div class="figscroll">
+  <svg viewBox="0 0 1000 430" role="img" aria-label="Three entry doors — manual typing, spreadsheet upload, and Apollo — all converge on one intake gate, then drafting, page generation, sending, and the reply and booking loop.">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,1 L9,5 L0,9" fill="none" stroke="context-stroke" stroke-width="1.6"/></marker></defs>
+
+    <text class="lbl" x="18" y="24">The three doors</text>
+
+    <rect class="box live" x="18" y="38" width="196" height="52" rx="3"/>
+    <text class="t"  x="34" y="62">A · A person types it</text>
+    <text class="st" x="34" y="79">works today</text>
+
+    <rect class="box todo" x="18" y="104" width="196" height="52" rx="3"/>
+    <text class="t"  x="34" y="128">B · Spreadsheet upload</text>
+    <text class="st" x="34" y="145">to build</text>
+
+    <rect class="box off" x="18" y="170" width="196" height="52" rx="3"/>
+    <text class="t"  x="34" y="194">C · Apollo finds them</text>
+    <text class="st" x="34" y="211">built, not connected</text>
+
+    <path class="flow strong" d="M214,64  C255,64  262,120 296,128" marker-end="url(#ah)"/>
+    <path class="flow todo"   d="M214,130 C250,130 258,132 296,133" marker-end="url(#ah)"/>
+    <path class="flow off"    d="M214,196 C255,196 262,146 296,138" marker-end="url(#ah)"/>
+
+    <rect class="box data" x="300" y="106" width="180" height="54" rx="3"/>
+    <text class="t"  x="316" y="130">One intake queue</text>
+    <text class="st" x="316" y="147">any column shape, normalised</text>
+
+    <path class="flow strong" d="M480,133 L534,133" marker-end="url(#ah)"/>
+
+    <rect class="box live" x="538" y="100" width="200" height="66" rx="3"/>
+    <text class="t"  x="554" y="124">The gate</text>
+    <text class="st" x="554" y="141">dedupe · suppression · Reoon</text>
+    <text class="st" x="554" y="156">refuses, never guesses</text>
+
+    <path class="flow strong" d="M738,133 L792,133" marker-end="url(#ah)"/>
+    <rect class="box data" x="796" y="106" width="186" height="54" rx="3"/>
+    <text class="t"  x="812" y="130">Leads</text>
+    <text class="st" x="812" y="147">one row per person</text>
+
+    <path class="flow strong" d="M889,160 L889,196" marker-end="url(#ah)"/>
+    <text class="st" x="899" y="182">ready?</text>
+
+    <text class="lbl" x="18" y="252">The corridor · every lead, every door</text>
+
+    <rect class="box live" x="18" y="264" width="168" height="54" rx="3"/>
+    <text class="t"  x="34" y="288">Draft the email</text>
+    <text class="st" x="34" y="305">OpenAI writes the opener</text>
+
+    <path class="flow strong" d="M186,291 L228,291" marker-end="url(#ah)"/>
+    <rect class="box live" x="232" y="264" width="168" height="54" rx="3"/>
+    <text class="t"  x="248" y="288">Build their page</text>
+    <text class="st" x="248" y="305">Sendr, per lead</text>
+
+    <path class="flow strong" d="M400,291 L442,291" marker-end="url(#ah)"/>
+    <rect class="box send" x="446" y="264" width="188" height="54" rx="3"/>
+    <text class="t"  x="462" y="288">Five checks, then send</text>
+    <text class="st" x="462" y="305">the only place mail leaves</text>
+
+    <path class="flow strong" d="M634,291 L676,291" marker-end="url(#ah)"/>
+    <rect class="box send" x="680" y="264" width="150" height="54" rx="3"/>
+    <text class="t"  x="696" y="288">Instantly</text>
+    <text class="st" x="696" y="305">4 accounts, rotating</text>
+
+    <path class="flow strong" d="M830,291 L872,291" marker-end="url(#ah)"/>
+    <rect class="box" x="876" y="264" width="106" height="54" rx="3"/>
+    <text class="t"  x="892" y="288">Prospect</text>
+    <text class="st" x="892" y="305">4-step sequence</text>
+
+    <path class="flow" d="M929,318 L929,352" marker-end="url(#ah)"/>
+    <rect class="box todo" x="600" y="356" width="382" height="52" rx="3"/>
+    <text class="t"  x="616" y="380">Reply · bounce · unsubscribe · booking</text>
+    <text class="st" x="616" y="397">webhooks come back — reply and booking still to wire</text>
+
+    <path class="flow" d="M600,382 C420,382 300,360 300,322" marker-end="url(#ah)"/>
+    <text class="st" x="330" y="376">updates the same Leads row</text>
+  </svg>
+  </div>
+  <div class="figcap">Solid blue is live today. Dashed amber is built-but-unwired. Dashed grey is
+  built and disconnected. <b>The corridor is entirely solid</b> — every gap is at a door or in the
+  return loop.</div>
+  </div>
+</section>
+
+<!-- ================= SCENARIOS ================= -->
+<section>
+  <div class="shead">
+    <div class="eyebrow">Scenario by scenario</div>
+    <h2>What happens, and what stops it</h2>
+    <p>Each door differs only in how a lead reaches the queue. The "where it stops" list under each
+    is the honest one — these are refusals by design, not faults.</p>
+  </div>
+
+  <div class="cards">
+
+    <article class="card a">
+      <div class="ctop"><span class="cname">A · A person types a lead</span>
+        <span class="pill live">works today</span>
+        <span class="crole">the only door open right now</span></div>
+      <p class="why">Staff put a row into the Inbox tab in whatever shape their source gave them.
+      Column names do not need to match anything — about sixty spellings are recognised, and if a
+      required field is missing <em>and</em> there are unfamiliar columns, OpenAI is asked to find
+      it. A row with no email address is left completely alone, because the poller fires while a
+      person is still typing.</p>
+      <ol class="steps">
+        <li><span><b>Within 2 minutes</b> <span class="d">the mapper claims the row and normalises it.</span></span></li>
+        <li><span><b>Seconds later</b> <span class="d">the gate runs: already in Leads? on the suppression list? then Reoon verifies the mailbox.</span></span></li>
+        <li><span><b>Within 3 minutes</b> <span class="d">the runner picks up one ready lead, drafts it, builds the page, and sends.</span></span></li>
+        <li><span><b>About 5 minutes</b> <span class="d">door to inbox. Measured, not estimated — this is the 1 September test run.</span></span></li>
+      </ol>
+      <div class="stops"><span class="k">Where it legitimately stops</span>
+      <ul>
+        <li><b>Product blank</b> — refused outright rather than guessed. A wrong guess sends the wrong company's pitch to a real person.</li>
+        <li><b>Catch-all domain</b> (your own included) — Reoon cannot confirm the mailbox exists, so it parks at <code>needs_review</code> until a person vouches.</li>
+        <li><b>Address invalid</b> — dropped permanently, never sent.</li>
+        <li><b>Already in Instantly anywhere</b> — silently no-ops. This is workspace-wide across all 14 campaigns.</li>
+      </ul></div>
+    </article>
+
+    <article class="card b">
+      <div class="ctop"><span class="cname">B · A spreadsheet is uploaded</span>
+        <span class="pill wait">to build · small</span>
+        <span class="crole">the boss's file, or any list</span></div>
+      <p class="why">This needs less than it sounds. The queue already accepts arbitrary column
+      shapes — that is exactly what the alias table exists for — so an upload is not a new pipeline,
+      it is a new way of filling the same queue. Every row then behaves precisely as scenario A.</p>
+      <ol class="steps">
+        <li><span><b>Drop the file</b> <span class="d">— CSV or Excel, whatever columns it has.</span></span></li>
+        <li><span><b>Rows land in the queue</b> <span class="d">as one batch, each tagged with who uploaded it and when.</span></span></li>
+        <li><span><b>The same gate runs per row</b> <span class="d">— dedupe, suppression, Reoon. Nothing is trusted because it arrived in bulk.</span></span></li>
+        <li><span><b>Bad rows come back with a reason</b> <span class="d">against the original line, so the uploader fixes that row rather than the whole file.</span></span></li>
+      </ol>
+      <div class="stops"><span class="k">What to expect</span>
+      <ul>
+        <li>A 500-row file does <b>not</b> mean 500 emails. It means 500 verifications, then the daily cap decides the rest — see the limits below.</li>
+        <li>Verification costs a Reoon credit per row, and duplicates are removed <em>before</em> Reoon, so re-uploading the same file is cheap.</li>
+        <li>A file with no email column is refused as a file, not silently half-imported.</li>
+      </ul></div>
+    </article>
+
+    <article class="card c">
+      <div class="ctop"><span class="cname">C · Apollo finds them</span>
+        <span class="pill dark">built, disconnected</span>
+        <span class="crole">the answer to "nobody is typing"</span></div>
+      <p class="why">Search by title, industry and geography; keep only people who already have an
+      email; reveal contact details for the survivors only. The credit discipline is already
+      written — free search first, paid reveal last. What is missing is one connection: the sourcing
+      workflow does not currently hand its results to the gate, so Apollo leads would bypass dedupe,
+      suppression and Reoon. That is why it is switched off rather than half-wired.</p>
+      <ol class="steps">
+        <li><span><b>A search runs on a schedule</b> <span class="d">— your ICP: capture and BD leaders at US government contractors.</span></span></li>
+        <li><span><b>Free filtering first</b> <span class="d">— anyone without an email is discarded before a credit is spent.</span></span></li>
+        <li><span><b>Reveal the survivors</b> <span class="d">then hand them to the same queue as a typed row.</span></span></li>
+        <li><span><b>Identical corridor</b> <span class="d">from there. An Apollo lead gets no more trust than one somebody typed.</span></span></li>
+      </ol>
+      <div class="stops"><span class="k">Before this can be switched on</span>
+      <ul>
+        <li>Route sourcing through the gate — roughly a day, and the single highest-value piece of wiring left.</li>
+        <li>Decide the ICP precisely. A vague search spends reveal credits on people you would never email.</li>
+        <li>Raise the daily cap, or Apollo will find far more than the pipeline will send.</li>
+      </ul></div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ================= LIMITS ================= -->
+<section>
+  <div class="shead">
+    <div class="eyebrow">Limits</div>
+    <h2>What the system will and will not do</h2>
+    <p>Read from the deployed code and the live vendor accounts today, not from documentation.</p>
+  </div>
+
+  <div class="tblwrap"><table>
+    <thead><tr><th>Limit</th><th class="m">Value</th><th>What it means for you</th></tr></thead>
+    <tbody>
+      <tr><td>Emails per day</td><td class="m">20</td>
+        <td><b>Your real ceiling.</b> Set in code as a deliberate safety cap.
+          <div class="n">Counted in Detroit time. Measuring it in UTC once turned 20 into 40.</div></td></tr>
+      <tr><td>Instantly capacity</td><td class="m">120 / day</td>
+        <td>4 warmed accounts × 30, rotating.
+          <div class="n">Six times what the cap allows — the constraint is ours, not theirs.</div></td></tr>
+      <tr><td>Leads per send cycle</td><td class="m">1 every 3 min</td>
+        <td>480/day theoretical, so never the binding limit.</td></tr>
+      <tr><td>Rows read per intake cycle</td><td class="m">50 every 2 min</td>
+        <td>A 500-row upload imports over about 20 minutes.</td></tr>
+      <tr><td>Verification batch</td><td class="m">250</td>
+        <td>Dedupe and suppression run <em>before</em> Reoon, so repeats cost nothing.</td></tr>
+      <tr><td>Apollo search</td><td class="m">2,000 / day</td>
+        <td>400/hour, 200/minute. Search is free; only reveal costs credits.</td></tr>
+      <tr><td>Google Sheets reads</td><td class="m">60 / min</td>
+        <td>Already exhausted once. Removed entirely by the move to Postgres.</td></tr>
+      <tr><td>Follow-up sequence</td><td class="m">4 steps</td>
+        <td>3, then 4, then 6 days apart. Stops the moment somebody replies.</td></tr>
+      <tr><td>Suppression</td><td class="m">permanent</td>
+        <td>Append-only, matches the person not the string — plus-addressing, subdomains and hidden characters cannot get past it.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="flag">
+    <h3>The one number that blocks your target</h3>
+    <p>You want <b>50–100 sends a day</b>. The code caps it at <b>20</b>. Instantly could do 120
+    tomorrow, so nothing needs buying — but the cap is a deliberate safety rail and raising it is a
+    decision, not a fix. Raise it in steps and watch the bounce rate: a cold domain that suddenly
+    sends five times its usual volume is the classic way to get a sending domain burned. My
+    recommendation is 20 → 40 → 80, a week at each, once Apollo is supplying real leads.</p>
+  </div>
+</section>
+
+<!-- ================= INTERFACE ================= -->
+<section>
+  <div class="shead">
+    <div class="eyebrow">The staff interface</div>
+    <h2>Four options, honestly compared</h2>
+    <p>The requirement that decides it is yours: <em>"I have to open Instantly separately — I want
+    one screen."</em> Only one option can actually satisfy that.</p>
+  </div>
+
+  <div class="tblwrap"><table>
+    <thead><tr><th>Option</th><th>Good for</th><th>Why it fails your requirement</th></tr></thead>
+    <tbody>
+      <tr><td><b>Google Sheet</b><div class="n">what you use now</div></td>
+        <td>Free, exists, no build.</td>
+        <td>Your own words: nobody on the team can read the structure. It also cannot show what Instantly, Reoon or HubSpot know.</td></tr>
+      <tr><td><b>HubSpot</b><div class="n">you already have it</div></td>
+        <td>A real UI your boss already uses, free tier, and the calendar already lives there.
+          <div class="n">The strongest no-build option.</div></td>
+        <td>It is a CRM, not an outreach queue — you would fight its model. It still cannot show Reoon verdicts or Sendr pages, so Instantly stays a second tab.</td></tr>
+      <tr><td><b>Apollo</b></td>
+        <td>Lists and filtering where the sourcing happens.</td>
+        <td>It is a data source, not a workflow tool. Staff entering leads into Apollo inverts what it is for.</td></tr>
+      <tr><td><b>Custom, on Supabase</b><div class="n">recommended</div></td>
+        <td>One screen: the lead, its full history, the reply, the page, the booking. Every button writes a recorded action, so "who approved this" always has an answer.</td>
+        <td>It has to be built. That is the only cost — the database underneath it is already live.</td></tr>
+    </tbody>
+  </table></div>
+
+  <p class="why" style="margin-top:22px"><b>The recommendation is custom, and the reason is narrow.</b>
+  Every other option leaves at least two tabs open, because none of them can show what Instantly,
+  Reoon, Sendr and HubSpot each know about one person. That single-screen requirement is the whole
+  point, and it is only possible once all four write into one database — which they now can.
+  If you want something before that exists, <b>HubSpot is the honest interim</b>: your boss already
+  lives there, and it costs nothing to try.</p>
+</section>
+
+<footer>
+  <span>OryonIQ outreach · scenarios and limits</span>
+  <span>read from the live system</span>
+  <span>5 Sep 2026</span>
+</footer>
+
+</div>

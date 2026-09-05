@@ -1,0 +1,113 @@
+{
+  "id": "VIOwfMdbprobe01",
+  "name": "VIO-db-probe",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vio-db-probe",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "n-hook",
+      "name": "Probe Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "vio-db-probe"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fail-closed gate. Same shape as every other VIO webhook: the secret is in the URL or\n// the x-vio-token header, and it is validated before anything else runs.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {}; const h = item.headers || {};\nconst got = q.t || q.token || h['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || {} };"
+      },
+      "id": "n-auth",
+      "name": "Authenticate (fail-closed)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select 'leads' as table, count(*)::int as n from leads union all select 'events', count(*)::int from events union all select 'suppression', count(*)::int from suppression union all select 'campaigns', count(*)::int from campaigns union all select 'leads_ready', count(*)::int from leads_ready union all select '_guard', (is_suppressed('x@example.com'))::int",
+        "options": {}
+      },
+      "id": "n-pg",
+      "name": "Ask Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Report what Supabase actually answered, so this is proof rather than a green tick.\n//\n// n8n's credential store says \"successfully imported\" for a credential that cannot connect,\n// exactly as `n8n import:workflow` says \"successfully imported\" for code the running server\n// will never load. This workflow exists so the Postgres credential has to demonstrate itself.\nconst rows = $input.all().map((i) => i.json || {});\nconst byTable = {};\nfor (const r of rows) if (r.table) byTable[r.table] = Number(r.n);\nreturn [{ json: {\n  ok: rows.length > 0,\n  reached: 'supabase (aws-0-us-west-2 pooler, session mode)',\n  tables: byTable,\n  suppression_guard: rows.find((r) => r.table === '_guard')?.n ?? null,\n  at: new Date().toISOString(),\n} }];"
+      },
+      "id": "n-rep",
+      "name": "Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Probe Webhook": {
+      "main": [
+        [
+          {
+            "node": "Authenticate (fail-closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authenticate (fail-closed)": {
+      "main": [
+        [
+          {
+            "node": "Ask Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Supabase": {
+      "main": [
+        [
+          {
+            "node": "Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "errorWorkflow": "VIOwfEerroralert",
+    "executionOrder": "v1"
+  },
+  "active": false
+}
