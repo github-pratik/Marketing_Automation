@@ -18,6 +18,7 @@
 // Run:  node test-intake-gate.mjs
 
 import { readFileSync } from 'node:fs';
+import { READY_STATES } from './leads-ready-invariant.mjs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -291,13 +292,19 @@ console.log('\n== the row a shaper builds is the row the SQL binds ==');
     const unsure = rowFor({ status: 'catch_all', overall_score: 50, is_catch_all: true });
     ok('an inconclusive address is not marked ready either',
        unsure.channel_state_email !== 'not_sent', unsure.channel_state_email);
-    // The runner's definition of ready and this writer's vocabulary have to agree, or leads
-    // silently pile up in Leads exactly as they did before the handoff was fixed.
-    const runner = JSON.parse(readFileSync(new URL('./VIO-run-outreach.json', import.meta.url)))
-      .nodes.find((n) => n.name === 'Pick demo rows').parameters.jsCode;
-    ok('the runner treats not_sent as ready', /'not_sent'/.test(runner));
-    for (const st of ['dropped', 'needs_review'])
-      ok(`the runner does NOT treat ${st} as ready`, !new RegExp(`!== '${st}'`).test(runner));
+    // THE SEAM. What this node writes has to line up with what the sender is willing to act on, or
+    // leads pile up in the table looking correct and never move — which is exactly what happened on
+    // 2026-08-29 and again on 2026-09-05. The two sides are now JavaScript and SQL, so the ready
+    // set is parsed out of the migration that defines the view and imported by both suites.
+    ok('a PASSING lead is written in a state the sender will act on',
+       READY_STATES.includes(leadRow.channel_state_email), leadRow.channel_state_email);
+    for (const [label, reoon] of [['a rejected address', { status: 'invalid', overall_score: 0 }],
+                                  ['an inconclusive address', { status: 'catch_all', is_catch_all: true }]]) {
+      const st = runNode('Shape Lead Row', {
+        input: [classify({ email: 'jane.doe@acme-fed.com', ...reoon }, gate(LEAD))] })[0].channel_state_email;
+      ok(`${label} is written in a state the sender will NOT act on`,
+         !READY_STATES.includes(st), st);
+    }
   }
 
   // Product must survive Normalize Lead. That node builds an explicit object, so anything not

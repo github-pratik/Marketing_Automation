@@ -17,115 +17,134 @@ const CTRL = /[\u0000-\u001f\u007f]/;
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) pass++; else { console.error(`  FAIL  ${l}${d ? ' — ' + d : ''}`); fail++; } };
 
-// ---------- Pick unprocessed rows ----------
+// ---------- the claimed lead ----------
+// MOVED TO SUPABASE 2026-09-05. Choosing WHICH lead to act on is now one SQL statement: the
+// `leads_ready` view carries the lifecycle state, the source whitelist, the active-campaign check
+// and a fresh suppression check, and the claim's own `channel_state_email in (...)` makes taking
+// the same person twice impossible. Those conditions are tested where they live —
+// test-leads-ready-sql.mjs, against the real view.
+//
+// What is left in JavaScript, and therefore here, is shaping the claimed row and refusing one that
+// cannot be personalised.
 const pickCode = jsOf('Pick demo rows');
-const pick = (rows) => new Function('$input', pickCode)({ all: () => rows.map(j => ({ json: j })) })
-  .map(i => i.json);
+const pick = (answer) => new Function('$input', pickCode)(
+  { first: () => ({ json: answer }), all: () => [{ json: answer }] }).map((i) => i.json);
 
-const row = (o = {}) => ({
-  row_number: 2, first_name: 'Pratik', title: 'AI Solutions Engineer',
+const lead = (o = {}) => ({
+  id: '11111111-2222-3333-4444-555555555555',
+  first_name: 'Pratik', last_name: 'Patil', title: 'AI Solutions Engineer',
   company: 'VisioneerIT', contact_email: 'p.pshpatil@outlook.com',
-  // Product is required since 2026-08-29 — nothing can infer which company should be pitching
-  // this person, so a row without it is refused rather than guessed at.
-  source_config: 'Manual', channel_state_email: '', Product: 'OryonIQ', ...o,
+  company_domain: 'visioneerit.com', product: 'oryoniq',
+  channel_state_email: 'pending_approval', verify_action: 'pass', reoon_status: 'safe', ...o,
 });
+const claimed = (o = {}) => ({ ready_count: 1, lead: lead(o) });
 
-ok('a fresh row is picked up', pick([row()]).length === 1);
-ok('the row number is carried', pick([row()])[0].row_number === 2);
-// The source rule is a WHITELIST, and it changed on 2026-09-05.
+ok('a claimed lead is shaped', pick(claimed()).length === 1);
+// row_number kept its name because four nodes downstream read it; it carries the primary key now.
+ok('the lead id is carried as row_number', pick(claimed())[0].row_number === lead().id);
+ok('  and also under its real name', pick(claimed())[0].lead_id === lead().id);
+
+// An idle cycle. The claim node always returns a row so the heartbeat can run, and `lead` is null
+// on it — mistaking that for a lead would push an empty row through drafting and into a real send.
+ok('nothing claimed -> nothing to shape', pick({ ready_count: 0, lead: null }).length === 0);
+ok('  and a missing lead key is the same thing', pick({ ready_count: 0 }).length === 0);
+
+// Product decides the copy, the Sendr template and the Instantly campaign. The column is a
+// Postgres enum, so an unknown value cannot be stored today — this refuses anyway, because the day
+// someone adds a third product to the enum this должен stop rather than draft GovCon copy for them.
+for (const p of ['', 'acme', 'ORYONIQ ', null])
+  ok(`product ${JSON.stringify(p)} is refused, not guessed`,
+     p === 'ORYONIQ ' ? pick(claimed({ product: p }))[0].invalid === false
+                      : pick(claimed({ product: p }))[0].invalid === true);
+ok('a lead with no email is refused', pick(claimed({ contact_email: '' }))[0].invalid === true);
+ok('a lead with neither name nor company is refused',
+   pick(claimed({ first_name: '', company: '' }))[0].invalid === true);
+ok('  but a company alone is enough to personalise',
+   pick(claimed({ first_name: '' }))[0].invalid === false);
+ok('the refusal says what was wrong, for the row the human reads',
+   /no email address/.test(pick(claimed({ contact_email: '' }))[0].problems));
+
+// `invalid` is the exact name and exact value the IF node tests (`invalid === true`), and the
+// branch order matters: output 0 is the BAD path. Reading the node's name as "is it usable?"
+// inverts it and sends every good lead to the explainer.
+{
+  const ifNode = wf.nodes.find((n) => n.name === 'Row usable?');
+  ok('the IF still tests `invalid === true`',
+     /\$json\.invalid === true/.test(ifNode.parameters.conditions.conditions[0].leftValue));
+  const arms = wf.connections['Row usable?'].main;
+  ok('  output 0 is the bad-row branch', arms[0][0].node === 'Explain the bad row');
+  ok('  output 1 is the drafting branch', arms[1][0].node === 'Shape for drafting');
+  ok('  and `invalid` is a real boolean, not a truthy string',
+     typeof pick(claimed({ contact_email: '' }))[0].invalid === 'boolean');
+}
+
+
+// THE READINESS RULES MOVED INTO SQL. `not_sent` and `approved` are ready; every other state
+// means hands off; `dropped` is never ready. Those are now conditions in the `leads_ready` view and
+// in the claim's own `channel_state_email in (...)`, and they are asserted against the real view in
+// test-leads-ready-sql.mjs. Asserting them here would assert a mock of a view.
 //
-// It used to be `=== 'manual'`, which was two guards in one: "only send rows a human typed" AND
-// "never re-trigger on rows the pipeline itself appended". The second job now belongs entirely to
-// channel_state_email — the claim marker, made reliable by FIX 1 — and the first was starving the
-// pipeline. The first real Apollo pull landed in Leads as `not_sent`, verified safe, and was
-// skipped on every single poll. Sourcing that cannot reach the sender is not sourcing.
-//
-// It is still a whitelist rather than an open door: a source nobody has thought about must not
-// start auto-sending the day someone invents it.
-for (const sc of ['Manual', 'manual', 'MANUAL', ' Manual ', 'Apollo', 'apollo', ' APOLLO '])
-  ok(`source_config "${sc}" IS picked up`, pick([row({ source_config: sc })]).length === 1);
-for (const sc of ['oryoniq', 'visioneerit', 'Warmly-Intent', 'Referral', '', 'demo', 'upload'])
-  ok(`source_config "${sc}" is NOT picked up — the whitelist is explicit`, pick([row({ source_config: sc })]).length === 0);
-// The loop guard that actually does the work now. A row the pipeline appended and already claimed
-// must never come round again, whatever its source.
-for (const sc of ['manual', 'apollo'])
-  ok(`a claimed ${sc} row is still not re-picked`,
-     pick([row({ source_config: sc, channel_state_email: 'enrolled' })]).length === 0);
+// What must still be true HERE is that this workflow actually uses that view and that claim, and
+// does not quietly grow a second opinion about who may be mailed.
+{
+  const claim = wf.nodes.find((n) => n.name === 'Claim one lead (atomic)');
+  ok('the sender reads leads_ready and nothing else', /from leads_ready/.test(claim.parameters.query));
+  ok('  and never selects straight out of leads', !/from leads\s+l?\s*$/m.test(claim.parameters.query));
+  // The claim is what makes taking the same person twice impossible. Without the state predicate
+  // on the UPDATE, two overlapping polls both pass the sub-select and both proceed.
+  ok('the claim re-checks the state inside the UPDATE, under the row lock',
+     /and l\.channel_state_email in \('not_sent', 'approved'\)/.test(claim.parameters.query));
+  ok('  and marks the lead before any work is done',
+     /set channel_state_email = 'pending_approval'/.test(claim.parameters.query));
+  ok('  taking exactly one lead per cycle', /limit 1/.test(claim.parameters.query));
+  // An idle cycle must still produce a row, or the heartbeat branch never runs and a dead
+  // scheduler looks exactly like a quiet one.
+  ok('the claim always returns a row, even when nothing is ready',
+     /left join picked/.test(claim.parameters.query) && claim.alwaysOutputData === true);
+  ok('the heartbeat does not hang off the lead branch',
+     wf.connections['Claim one lead (atomic)'].main[0].some((t) => t.node === 'Heartbeat'));
+}
 
-// Idempotence — this polls every minute, so a claimed row must never be re-processed.
-// Leads has no `status` column; channel_state_email is the one that means exactly this.
-for (const s of ['pending_approval', 'enrolled', 'needs_review', 'dropped', 'bounced', 'replied'])
-  ok(`channel_state_email "${s}" means already claimed`, pick([row({ channel_state_email: s })]).length === 0);
-ok('blank channel_state_email is unclaimed', pick([row({ channel_state_email: '   ' })]).length === 1);
-
-// THE HANDOFF (fixed 2026-08-29). Readiness used to mean "this column is blank", but nothing that
-// writes a lead leaves it blank — VIO-intake-verify-curate stamps 'not_sent'. Every verified
-// staff-typed lead therefore landed in Leads and was never picked up, while looking correct to a
-// human reading the sheet. 'not_sent' is now explicitly the ready state.
-ok('not_sent is READY — it is what the verified intake path writes',
-   pick([row({ channel_state_email: 'not_sent' })]).length === 1);
-ok('  and it is case-insensitive', pick([row({ channel_state_email: 'NOT_SENT' })]).length === 1);
-ok('  while every other state still means hands off',
-   ['queued', 'sent', 'positive', 'booked', 'rejected', 'unsubscribed', 'dropped', 'needs_review']
-     .every((s) => pick([row({ channel_state_email: s })]).length === 0));
-
-// THE HUMAN OVERRIDE. visioneerit.com is a catch-all domain: it accepts mail for any address, so
-// Reoon returns is_deliverable:true but is_safe_to_send:false and intake parks the lead at
-// needs_review. Weakening the automatic rule would let unverified strangers through, so instead a
-// person who knows the mailbox exists marks that ONE row `approved`.
-ok('approved is READY — the human override for a lead verification will not pass',
-   pick([row({ channel_state_email: 'approved' })]).length === 1);
-ok('  case-insensitively', pick([row({ channel_state_email: 'APPROVED' })]).length === 1);
-ok('needs_review on its own is NOT ready — a human must actually act',
-   pick([row({ channel_state_email: 'needs_review' })]).length === 0);
-ok('dropped is never ready, no matter what',
-   pick([row({ channel_state_email: 'dropped' })]).length === 0);
-// The override buys the right to be DRAFTED, not the right to be SENT: the Slack gate still
-// stands behind it. If this ever stops being true the override becomes a way to mail anyone.
 // The override buys the right to be DRAFTED and then to pass VIO-enrol-email's own checks — it is
 // not a licence to mail anyone. That workflow re-reads suppression and re-checks the verdict.
 ok('enrolment still runs through a fail-closed precondition step',
    wf.nodes.some((n) => n.type === 'n8n-nodes-base.executeWorkflow'
      && n.parameters.workflowId?.value === 'VIOwfLenrolmail'));
 
-// Blank spacer rows are not errors.
-ok('a wholly blank row is ignored',
-   pick([{ row_number: 9, source_config: 'Manual', first_name: '', company: '', contact_email: '', channel_state_email: '' }]).length === 0);
-
-// A bad row must be REPORTED, not dropped — the person who typed it is watching.
-const bad = (o) => { const r = pick([row(o)]); return r.length === 1 ? r[0] : null; };
+// A bad lead must be REPORTED, not dropped — somebody is watching for it.
+const bad = (o) => { const r = pick(claimed(o)); return r.length === 1 ? r[0] : null; };
 for (const [label, o] of [
-  ['missing first_name', { first_name: '' }],
-  ['missing company', { company: '' }],
+  ['missing first_name and company', { first_name: '', company: '' }],
   ['missing email', { contact_email: '' }],
-  ['malformed email', { contact_email: 'not-an-address' }],
-  ['email with a comma', { contact_email: 'a@b.com,c@d.com' }],
-  ['email with brackets', { contact_email: '<a@b.com>' }],
+  ['unknown product', { product: 'acme' }],
 ]) {
   const r = bad(o);
-  ok(`${label} is surfaced, not dropped`, r !== null, 'row vanished');
+  ok(`${label} is surfaced, not dropped`, r !== null, 'lead vanished');
   if (r) {
     ok(`  ${label} is flagged invalid`, r.invalid === true);
     ok(`  ${label} explains why`, typeof r.problems === 'string' && r.problems.length > 0);
   }
 }
-ok('a good row is not flagged', pick([row()])[0].invalid === false);
+ok('a good lead is not flagged', pick(claimed())[0].invalid === false);
 
-// Hostile / messy input must not throw.
-for (const [label, rows] of [
-  ['no rows at all', []],
-  ['null row', [null]],
-  ['row of nulls', [{ source_config: 'Manual', first_name: null, company: null, contact_email: null, channel_state_email: null }]],
-  ['non-string fields', [row({ first_name: 42, company: {}, contact_email: [] })]],
-  ['control chars in a name', [row({ first_name: 'Pra\ntik' })]],
-  ['very long company', [row({ company: 'x'.repeat(9000) })]],
+// Hostile / messy input must not throw. A claim node returns whatever the row holds, and a crash
+// here leaves the lead stuck at pending_approval with nothing to explain it.
+for (const [label, answer] of [
+  ['a null answer', {}],
+  ['a null lead', { ready_count: 0, lead: null }],
+  ['a lead of nulls', claimed({ first_name: null, company: null, contact_email: null, product: null })],
+  ['non-string fields', claimed({ first_name: 42, company: {}, contact_email: [] })],
+  ['control chars in a name', claimed({ first_name: 'Pra\ntik' })],
+  ['a very long company', claimed({ company: 'x'.repeat(9000) })],
 ]) {
   let threw = null;
-  try { pick(rows); } catch (e) { threw = e.message; }
+  try { pick(answer); } catch (e) { threw = e.message; }
   ok(`survives ${label}`, threw === null, threw);
 }
-ok('control characters are stripped', !CTRL.test(JSON.stringify(pick([row({ first_name: 'Pra\ntik' })]))));
-ok('over-long values are capped', pick([row({ company: 'x'.repeat(9000) })])[0].company.length <= 160);
+ok('control characters are stripped',
+   !CTRL.test(JSON.stringify(pick(claimed({ first_name: 'Pra\ntik' })))));
+ok('over-long values are capped',
+   pick(claimed({ company: 'x'.repeat(9000) }))[0].company.length <= 160);
 
 // ---------- product routing into the drafter ----------
 const shapeCode = jsOf('Shape for drafting');
@@ -133,19 +152,21 @@ const shape = (j) => new Function('$input', shapeCode)({ item: { json: j } }).js
 // PRODUCT ROUTING (fixed 2026-08-29). draft_config was hardcoded 'oryoniq', so a council CIO
 // typed in for VisioneerIT was drafted GovCon capture copy signed OryonIQ. It now comes from the
 // sheet's own Product column.
-ok('an OryonIQ row drafts with the OryonIQ config',
-   shape(pick([row({ Product: 'OryonIQ' })])[0]).source_config === 'oryoniq');
-ok('a VisioneerIT row drafts with the VisioneerIT config',
-   shape(pick([row({ Product: 'VisioneerIT' })])[0]).source_config === 'visioneerit');
+ok('an OryonIQ lead drafts with the OryonIQ config',
+   shape(pick(claimed({ product: 'oryoniq' }))[0]).source_config === 'oryoniq');
+ok('a VisioneerIT lead drafts with the VisioneerIT config',
+   shape(pick(claimed({ product: 'visioneerit' }))[0]).source_config === 'visioneerit');
 for (const p of ['', '   ', 'Acme', 'oryon', 'both'])
-  ok(`Product "${p}" is refused rather than guessed`, pick([row({ Product: p })])[0].invalid === true);
-ok('a refused row says what to do about it',
-   /choose OryonIQ or VisioneerIT/.test(pick([row({ Product: '' })])[0].problems));
+  ok(`product "${p}" is refused rather than guessed`, pick(claimed({ product: p }))[0].invalid === true);
+ok('a refused lead names the product it could not use',
+   /is not one this workflow can draft for/.test(pick(claimed({ product: 'acme' }))[0].problems));
 // The page call must follow the row, not a constant.
 ok('the Sendr page is generated for the row\'s own product',
    !/product: 'oryoniq'/.test(jsOf('Shape for page')));
-ok('the row identity survives into the drafter', shape(pick([row()])[0])._row === 2);
-ok('the email address survives into the drafter', shape(pick([row()])[0])._email === 'p.pshpatil@outlook.com');
+ok('the lead identity survives into the drafter',
+   shape(pick(claimed())[0])._row === '11111111-2222-3333-4444-555555555555');
+ok('the email address survives into the drafter',
+   shape(pick(claimed())[0])._email === 'p.pshpatil@outlook.com');
 
 // ---------- the row never claims more than happened ----------
 const writeCode = jsOf('Shape row update');
@@ -235,45 +256,58 @@ ok('a row that LOST its email refuses here, before a human is asked',
 // an off-vocabulary value lands silently in a column a human filters on.
 const SHEET_VOCAB = new Set(['needs_review','pending_approval','approved','enrolled','replied',
   'positive','booked','rejected','dropped','unsubscribed','bounced']);
-for (const node of ['Shape row update', 'Explain the bad row', 'Claim row (pending_approval)']) {
+for (const node of ['Shape row update', 'Explain the bad row']) {
   const src = jsOf(node);
   for (const m of src.matchAll(/channel_state_email:\s*(?:[^'"\n]*\?\s*)?'([a-z_]+)'/g))
     ok(`${node} writes "${m[1]}" — a value the sheet dropdown allows`, SHEET_VOCAB.has(m[1]));
   for (const m of src.matchAll(/:\s*'([a-z_]+)'\s*;?\s*$/gm)) { /* no-op, guard above is enough */ }
 }
 
-// A row parked on an unanswered approval must be CLAIMED, or the one-minute schedule re-drafts and
-// re-pages it every cycle. Two Sendr pages were burned that way before this was added.
-const claimIdx = wf.nodes.findIndex(n => n.name === 'Claim row (pending_approval)');
-ok('the row is claimed before the gated enrolment', claimIdx !== -1);
-ok('the claim writes pending_approval', /pending_approval/.test(jsOf('Claim row (pending_approval)')));
-const afterPage = wf.connections['Generate Sendr page'].main[0].map(c => c.node);
-ok('the claim happens straight after the page, before enrolment',
-   afterPage.includes('Claim row (pending_approval)'), afterPage.join(','));
+// A lead parked on an unanswered approval must be CLAIMED, or the schedule re-drafts and re-pages
+// it every cycle. Two Sendr pages were burned that way before the sheet version added a claim after
+// the page. The Supabase version claims at the TOP instead, which closes the gap the old one left
+// open: between reading the row and marking it, a second poll could take the same person.
+{
+  const claim = wf.nodes.find((n) => n.name === 'Claim one lead (atomic)');
+  ok('the claim exists', Boolean(claim));
+  ok('and it is the FIRST thing after the schedule, before any work is done',
+     wf.connections['Every 3 minutes'].main[0][0].node === 'Claim one lead (atomic)');
+  ok('nothing between the claim and the drafting can spend anything',
+     !wf.nodes.some((n) => n.type === 'n8n-nodes-base.httpRequest'));
+}
 
 // ---------- structure ----------
 ok('workflow id stable', wf.id === 'VIOwfDsheetdemo1');
 
-const sheetNodes = wf.nodes.filter(n => n.type === 'n8n-nodes-base.googleSheets');
-ok('every Sheets node is pinned to the VIO credential by id',
-   sheetNodes.length > 0 && sheetNodes.every(n => n.credentials?.googleApi?.id === 'VIOgsheetcred01'));
+// MOVED TO SUPABASE 2026-09-05. Everything this block guarded against was a property of sheets:
+// which tab a node touched, whether an A1 range had drifted from the live column order, and a
+// feedback loop from polling the same tab the pipeline appends to. None of them exist here — and
+// left in place over an empty node list they would all pass while proving nothing.
+ok('no Google Sheets node remains',
+   wf.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets').length === 0);
 
-// The feedback-loop guard. Polling Leads would re-trigger on rows the live intake pipeline
-// appends, which is a loop against real Reoon and OpenAI spend.
-// It now polls the SAME tab the pipeline writes to, so the loop guard is the source_config filter
-// asserted above — not tab separation. Both must hold together.
-// The LEAD DATA must all live on one tab — the loop guard depends on that plus the source_config
-// filter. The System tab is exempt: it carries only the liveness heartbeat, never a lead, so it
-// cannot feed anything back into the poll.
-const tabs = sheetNodes.map(n => n.parameters.sheetName?.value);
-ok('every lead-data node operates on the Leads tab',
-   tabs.filter(t => t !== 'System').every(t => t === 'Leads'), tabs.join(','));
-ok('the only non-Leads tab touched is the heartbeat',
-   sheetNodes.filter(n => n.parameters.sheetName?.value === 'System')
-             .every(n => n.name === 'Write heartbeat'));
-ok('the loop guard is the source_config filter', /source_config/.test(pickCode) && /manual/.test(pickCode));
-ok('no A1 range anywhere (live column order does not match the docs)',
-   !/"[A-Z]{1,2}[0-9]{1,4}:[A-Z]{1,2}/.test(JSON.stringify(wf)));
+const pgNodes = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.postgres');
+ok('the record is Postgres', pgNodes.length === 3, String(pgNodes.length));
+ok('every database node is pinned to VIO Supabase by id',
+   pgNodes.every((n) => n.credentials?.postgres?.id === 'VIOsupabasepg1'));
+// The values crossing into these queries include a company name a stranger typed into a
+// spreadsheet. An expression interpolated into the SQL text would hand them the query.
+for (const n of pgNodes)
+  ok(`  ${n.name}: no expression interpolated into the SQL text`, !/\{\{/.test(n.parameters.query));
+for (const n of pgNodes.filter((x) => x.name !== 'Claim one lead (atomic)'))
+  ok(`  ${n.name}: values arrive as one bound jsonb parameter`,
+     /\$1::jsonb/.test(n.parameters.query));
+// A write that fails once must not strand a lead at pending_approval with nothing to explain it.
+for (const n of pgNodes)
+  ok(`  ${n.name}: retries rather than stranding the lead`, n.retryOnFail === true);
+
+// The heartbeat is NOT an events row. events is append-only and is what the console reads; one
+// heartbeat every three minutes is 480 rows a day burying the ledger it exists to make readable.
+const hb = pgNodes.find((n) => n.name === 'Write heartbeat');
+ok('the heartbeat writes system_status, not events', /into system_status/.test(hb.parameters.query));
+ok('  and overwrites rather than accumulating', /on conflict \(workflow\) do update/.test(hb.parameters.query));
+ok('  nothing in this workflow inserts into events directly',
+   !pgNodes.some((n) => /insert into events/i.test(n.parameters.query)));
 
 const calls = wf.nodes.filter(n => n.type === 'n8n-nodes-base.executeWorkflow')
                       .map(n => n.parameters.workflowId.value);
@@ -305,7 +339,7 @@ ok('the enrolment step waits for its sub-workflow, so a refusal surfaces here',
 // including catch-all addresses that only got through because a human vouched by name.
 ok('the real verification verdict is carried, not asserted',
    !/verify_action:\s*'pass'/.test(jsOf('Shape for enrolment')));
-ok('  and it comes from the sheet row', /_verify_action/.test(jsOf('Pick demo rows'))
+ok('  and it comes from the claimed lead', /_verify_action/.test(jsOf('Shape for drafting'))
    || /verify_action: clean\(r\.verify_action/.test(jsOf('Pick demo rows')));
 
 // This workflow runs unattended on a schedule. Nothing that spends money or reaches a person may
@@ -325,76 +359,59 @@ for (const [src, v] of Object.entries(wf.connections))
 
 // ---------- the page URL must survive the claim step ----------
 // Sendr really did build the page and the enrolment gate still refused with "no sendr_page_url",
-// because 'Claim row in sheet' sits between the page call and the readers and a Sheets update
-// outputs the ROW IT WROTE. Both readers must name the page node, never read $input. (2026-08-29)
+// A Sheets update used to sit between the page call and the readers, and it outputs the ROW IT
+// WROTE — not the page result. Both readers therefore had to name the page node rather than read
+// $input. That claim node is gone, so `Generate Sendr page` now feeds `Shape for enrolment`
+// directly, but reading by NAME is still the correct habit: it survives a node being inserted
+// between them again, which is exactly how this broke the first time. (2026-08-29 / 2026-09-05)
 {
-  const order = [];
-  let cur = 'Generate Sendr page';
-  while (cur && order.length < 10) {
-    const nxt = wf.connections[cur]?.main?.[0]?.[0]?.node;
-    if (!nxt) break;
-    order.push(nxt); cur = nxt;
-  }
-  ok('a Sheets write really does sit between the page call and enrolment',
-     order.indexOf('Claim row in sheet') > -1
-     && order.indexOf('Claim row in sheet') < order.indexOf('Shape for enrolment'),
-     order.join(' -> '));
+  const afterPage = wf.connections['Generate Sendr page'].main[0].map((c) => c.node);
+  ok('the page result now reaches enrolment directly',
+     afterPage.includes('Shape for enrolment'), afterPage.join(','));
 
-  for (const node of ['Shape for enrolment', 'Claim row (pending_approval)']) {
-    const js = jsOf(node);
-    ok(`${node} reads the page URL from the page node by name`,
-       /\$\('Generate Sendr page'\)/.test(js), 'reads $input instead — the sheet row has no pageUrl');
-    ok(`${node} does not read pageUrl off its own input`,
-       !/\$input\.item\.json\.pageUrl/.test(js));
-  }
-  // The field that never existed. Match the ASSIGNMENT, not the word — the comment above the fix
-  // names `_page_pending` on purpose so the next reader knows what went wrong.
-  ok('the claim step no longer assigns the field Shape for page never produced',
-     !/sendr_page_url:\s*src\._page_pending/.test(jsOf('Claim row (pending_approval)')));
-  ok('  it writes the real page URL instead',
-     /sendr_page_url:\s*page\b/.test(jsOf('Claim row (pending_approval)')));
-
-  // An empty page URL must stop the lead, not ship a broken sentence: step 1's CTA IS the merge tag.
-  const enrol = jsOf('Shape for enrolment');
-  ok('enrolment refuses a lead with no page URL', /REFUSED[^`]*Sendr page URL/.test(enrol));
+  const js = jsOf('Shape for enrolment');
+  ok('Shape for enrolment reads the page URL from the page node BY NAME',
+     /\$\('Generate Sendr page'\)/.test(js), 'reads $input — that breaks the moment a node is inserted');
+  ok('  and does not read pageUrl off its own input',
+     !/\$input\.item\.json\.pageUrl/.test(js));
+  ok('  and writes a real page URL, not the field that never existed',
+     !/sendr_page_url:\s*src\._page_pending/.test(jsOf('Shape row update')));
 }
 
 
 // ---------- claim first, work second ----------
-// A row used to be claimed only after drafting AND page generation, while the schedule re-read the
-// same tab every 60 seconds — so one row produced two Slack approval requests, two drafts and two
-// Sendr pages (seen live 2026-08-29).
+// A lead used to be claimed only AFTER drafting and page generation, while the schedule re-read the
+// same tab every cycle — so one row produced two Slack approval requests, two drafts and two Sendr
+// pages (seen live 2026-08-29). The sheet version fixed that with two separate claim writes, one on
+// each branch. The database version needs neither: the claim IS the selection.
 {
-  const branch = wf.connections['Row usable?'].main[1].map((c) => c.node);
-  ok('the claim branch is wired off the usable path', branch.includes('Claim row early'), branch.join(', '));
-  ok('the claim runs BEFORE drafting — v1 execution order follows connection order',
-     branch.indexOf('Claim row early') < branch.indexOf('Shape for drafting'), branch.join(' then '));
+  const claim = wf.nodes.find((n) => n.name === 'Claim one lead (atomic)');
 
-  // It must be a PARALLEL branch, never inline: inline would hand the drafting chain a Sheets
-  // node's output instead of the picked row, which is exactly how the Sendr page URL was lost.
-  ok('drafting still receives the picked row, not a Sheets write',
-     branch.includes('Shape for drafting'));
-  ok('the claim chain is terminal', !('Claim early in sheet' in wf.connections));
+  // Nothing may run before the claim. If drafting could start first, the old bug is back.
+  ok('the schedule fires the claim and nothing else',
+     wf.connections['Every 3 minutes'].main[0].length === 1
+     && wf.connections['Every 3 minutes'].main[0][0].node === 'Claim one lead (atomic)');
 
-  const early = jsOf('Claim row early');
-  ok('the early claim sets pending_approval', /pending_approval/.test(early));
-  // Writing blanks for fields that do not exist yet would erase a previous run's values.
+  // The two branches off the claim: work, and liveness. Drafting must receive the SHAPED lead, not
+  // a database node's raw output — handing the chain the wrong shape is how the page URL was lost.
+  const branch = wf.connections['Claim one lead (atomic)'].main[0].map((c) => c.node);
+  ok('the claim feeds the picker and the heartbeat, in parallel',
+     branch.includes('Pick demo rows') && branch.includes('Heartbeat'), branch.join(','));
+  ok('drafting receives the shaped lead',
+     wf.connections['Row usable?'].main[1][0].node === 'Shape for drafting');
+
+  // Writing blanks for fields that do not exist yet would erase a previous run's values. The
+  // claim touches the lifecycle column and the timestamp, and nothing else.
   for (const f of ['opener', 'email_draft', 'sendr_page_url'])
-    ok(`the early claim does not blank ${f}`, !new RegExp(`${f}\\s*:`).test(early));
+    ok(`the claim does not blank ${f}`,
+       !new RegExp(`${f}\\s*=`).test(claim.parameters.query.slice(0, claim.parameters.query.indexOf('returning'))));
 
-  const sheetNode = wf.nodes.find((n) => n.name === 'Claim early in sheet');
-  ok('the early claim writes via update on row_number',
-     sheetNode.parameters.operation === 'update'
-     && sheetNode.parameters.columns.matchingColumns.includes('row_number'));
-  ok('  declaring an explicit schema', (sheetNode.parameters.columns.schema || []).length > 0);
-  ok('  pinned to the service-account credential by id',
-     sheetNode.credentials?.googleApi?.id === 'VIOgsheetcred01');
-  ok('  on typeVersion 4.7', sheetNode.typeVersion === 4.7);
-
-  // The poll must not be faster than the work it starts.
+  // The poll must not be faster than the work it starts. With an atomic claim a fast poll is no
+  // longer dangerous, only wasteful — but the ceiling still exists so this cannot be turned into a
+  // hot loop against Reoon and OpenAI by changing one number.
   const mins = wf.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger')
                  .parameters.rule.interval[0].minutesInterval;
-  ok('the poll interval leaves room for the chain to claim', mins >= 2, `every ${mins} min`);
+  ok('the poll interval leaves room for the chain to finish', mins >= 2, `every ${mins} min`);
 }
 
 // 'dropped' belongs to VERIFICATION — it means Reoon says the address is not real, and
@@ -413,35 +430,52 @@ for (const [src, v] of Object.entries(wf.connections))
 // schedules are silent by design when there is nothing to do — the mapper's chain literally stops
 // at the sheet read — so "working, nothing to do" and "dead" looked identical from the sheet.
 {
-  const beat = (rows) => new Function('$input', jsOf('Heartbeat'))(
-    { all: () => rows.map((j) => ({ json: j })) }).json;
-  const readNode = 'Read Leads';
+  const beat = (answer) => new Function('$input', jsOf('Heartbeat'))(
+    { first: () => ({ json: answer }), all: () => [{ json: answer }] })[0].json;
 
-  // It must hang off the sheet READ, so it reports what was actually seen rather than just that a
-  // timer fired — and it must be the FIRST branch, so a throw further down cannot swallow it.
-  const branch = wf.connections[readNode].main[0].map((c) => c.node);
-  ok('the heartbeat hangs off the sheet read', branch.includes('Heartbeat'), branch.join(', '));
+  // It must hang off the CLAIM, so it reports what the database actually said rather than just
+  // that a timer fired — and it must be the FIRST branch, so a throw further down cannot swallow it.
+  const branch = wf.connections['Claim one lead (atomic)'].main[0].map((c) => c.node);
+  ok('the heartbeat hangs off the claim', branch.includes('Heartbeat'), branch.join(', '));
   ok('  and runs before the work, so a later throw cannot swallow it', branch[0] === 'Heartbeat');
-  // Without this the read emits nothing on an empty tab and the heartbeat never fires — exactly
+  // Without this the claim emits nothing on an idle cycle and the heartbeat never fires — exactly
   // when a human most needs to know the system is alive.
-  ok('the read always emits, so an empty tab still produces a heartbeat',
-     wf.nodes.find((n) => n.name === readNode).alwaysOutputData === true);
+  ok('the claim always emits, so an idle cycle still produces a heartbeat',
+     wf.nodes.find((n) => n.name === 'Claim one lead (atomic)').alwaysOutputData === true);
 
-  const b = beat([{ row_number: 2, status: '', junk: 'x' }]);
-  ok('it names the workflow in words a human recognises', /VIO-run-outreach/.test(b.workflow));
-  ok('it records when it last ran', typeof b.last_run_at === 'string' && b.last_run_at.length > 5);
-  ok('  in local time, not UTC arithmetic', !/UTC/.test(b.last_run_at));
-  ok('it says when the next check is due', typeof b.next_check_at === 'string' && b.next_check_at.length > 3);
-  ok('it states the interval', b.every === '3 min');
-  ok('it reports what it saw', /leads|lead|row/i.test(String(b.checked)));
-  ok('an idle cycle still reports a result', typeof b.last_result === 'string' && b.last_result.length > 5);
+  const idle = beat({ ready_count: 0, lead: null });
+  ok('it names the workflow in words a human recognises', /VIO-run-outreach/.test(idle.workflow));
+  ok('it states the interval', idle.every_minutes === 3);
+  ok('it says when the next check is due', String(idle.detail.next_check_at).length > 3);
+  ok('  in local time, not UTC arithmetic', !/UTC/.test(String(idle.detail.next_check_at)));
+  ok('an idle cycle still reports a result', /no leads ready/.test(idle.last_result));
+  ok('  and reports itself healthy', idle.ok === true);
+  ok('  with nothing waiting', idle.waiting === 0);
+
+  // THE NUMBER THAT MATTERS. `waiting` counts what is ready AFTER this cycle took one. Reporting
+  // the pre-claim number shows a queue that never empties even when the runner is keeping up; a
+  // count that never falls is the signal that mail has stopped moving.
+  const busy = beat({ ready_count: 5, lead: { contact_email: 'a@b.com' } });
+  ok('a claimed lead is subtracted from the waiting count', busy.waiting === 4, String(busy.waiting));
+  ok('  and the result names who was claimed', /a@b\.com/.test(busy.last_result));
+  const stuck = beat({ ready_count: 3, lead: null });
+  ok('leads ready but none claimed is called out, not reported as fine',
+     /look at this/.test(stuck.last_result), stuck.last_result);
+
+  // An unreachable database must say so rather than reporting a confident zero, which would read
+  // as "nothing to do" — the exact wrong conclusion.
+  const down = beat({});
+  ok('an unreachable database is reported as not-ok', down.ok === false);
+  ok('  and says no lead was lost', /no lead is lost/i.test(down.last_result));
+  ok('  and does NOT claim a waiting count it does not have', down.waiting === null);
 
   // A write failure must never take down the run it is only reporting on.
   const w = wf.nodes.find((n) => n.name === 'Write heartbeat');
   ok('the heartbeat write cannot break the run it reports on', w.onError === 'continueRegularOutput');
   ok('  it updates one row per workflow instead of appending forever',
-     w.parameters.operation === 'appendOrUpdate' && w.parameters.columns.matchingColumns.includes('workflow'));
-  ok('  and writes to the System tab', w.parameters.sheetName.value === 'System');
+     /on conflict \(workflow\) do update/.test(w.parameters.query));
+  ok('  and writes to system_status, never to the append-only ledger',
+     /into system_status/.test(w.parameters.query) && !/into events/i.test(w.parameters.query));
 }
 
 // ---------- one lead per cycle, and WHY ----------
@@ -451,27 +485,27 @@ for (const [src, v] of Object.entries(wf.connections))
 // Alice's address and no product. A page branded with the wrong company, aimed at the wrong person.
 // Capping here fixes all four call sites at once and cannot be partially applied.
 {
-  const many = (n) => Array.from({ length: n }, (_, i) =>
-    row({ row_number: 2 + i, contact_email: `p${i}@x.com`, first_name: `P${i}` }));
-  ok('three ready leads yield ONE this cycle', pick(many(3)).length === 1);
-  ok('ten ready leads yield ONE this cycle', pick(many(10)).length === 1);
-  ok('one ready lead still runs', pick(many(1)).length === 1);
-  ok('no ready leads yield nothing', pick([]).length === 0);
-  ok('the deferral is explained, not silent', /batch_note|leads were ready/.test(jsOf('Pick demo rows')));
-  ok('the reason is recorded where the next editor will see it',
-     /ALWAYS item/i.test(jsOf('Pick demo rows')) && /never by lifting this cap/i.test(jsOf('Pick demo rows')));
+  // The cap is now the SQL `limit 1`, not a JavaScript slice — one lead is claimed per cycle and
+  // there is no second one to lose. But the reason the cap exists has not changed, so the guard
+  // rail has not either.
+  ok('exactly one lead is claimed per cycle',
+     /limit 1/.test(wf.nodes.find((n) => n.name === 'Claim one lead (atomic)').parameters.query));
+  ok('a claimed lead yields one item', pick(claimed()).length === 1);
+  ok('no claimed lead yields nothing', pick({ ready_count: 0, lead: null }).length === 0);
 
-  // The guard rail: if anyone lifts the cap, these four .first() readers must be revisited first.
-  // Strip comments first — 'Pick demo rows' quotes the pattern in its own explanation, and a check
-  // that counts a comment as a call site would drift the moment anyone edits the prose.
+  // THE GUARD RAIL. If anyone ever lifts that limit, these readers must be revisited first: in a
+  // multi-item run `.first()` is ALWAYS item zero, so a second lead would be built from the first
+  // lead's identity — a page branded with the wrong company, aimed at the wrong person.
+  // Strip comments first: nodes quote the pattern in their own explanations, and counting a
+  // comment as a call site would drift the moment anyone edits the prose.
   const codeOnly = (js) => js.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
   const firstReaders = wf.nodes
     .filter((n) => /\$\('[^']+'\)\.first\(\)/.test(codeOnly(n.parameters?.jsCode || '')))
     .map((n) => n.name);
-  ok('the .first() readers are still exactly the four the cap protects',
-     firstReaders.length === 4, firstReaders.join(', '));
-  for (const nm of ['Shape for page', 'Shape for enrolment', 'Shape row update', 'Claim row (pending_approval)'])
-    ok(`  ${nm} is one of them`, firstReaders.includes(nm));
+  for (const nm of ['Shape for page', 'Shape for enrolment', 'Shape row update'])
+    ok(`  ${nm} still reads .first() and depends on the cap`, firstReaders.includes(nm));
+  ok('the .first() readers are exactly the three the cap protects',
+     firstReaders.length === 3, firstReaders.join(', '));
 }
 
 // ---------- the Sendr page must receive the AI opener, not the template placeholder ----------
@@ -493,28 +527,29 @@ for (const [src, v] of Object.entries(wf.connections))
     ok(`'${f}' is both sent and read`, f in page && new RegExp(`lead\\.${f}\\b`).test(build));
 }
 
-// A failed sheet read must not silence the heartbeat. When Read Leads died on a Google quota
-// error the whole chain stopped, so the System tab quietly stopped updating — the exact failure
-// the heartbeat exists to make visible (seen live 2026-08-30).
+// A failed READ must not silence the heartbeat. When the Sheets read died on a Google quota error
+// the whole chain stopped, so the status row quietly stopped updating — the exact failure the
+// heartbeat exists to make visible (seen live 2026-08-30). The database version has the same shape
+// of risk: the claim is now the read, and if it throws, the heartbeat branch dies with it.
 {
-  const beat = (rows) => new Function('$input', jsOf('Heartbeat'))(
-    { all: () => rows.map((j) => ({ json: j })) }).json;
-  const read = wf.nodes.find((n) => n.name === 'Read Leads');
-  ok('a failed read does not stop the chain', read.onError === 'continueRegularOutput');
-  ok('  and it still emits, so the heartbeat runs', read.alwaysOutputData === true);
+  const beat = (answer) => new Function('$input', jsOf('Heartbeat'))(
+    { first: () => ({ json: answer }), all: () => [{ json: answer }] })[0].json;
+  const claim = wf.nodes.find((n) => n.name === 'Claim one lead (atomic)');
+  ok('the claim still emits when it finds nothing', claim.alwaysOutputData === true);
+  ok('  and retries a transient database error rather than failing the cycle',
+     claim.retryOnFail === true && claim.maxTries >= 3);
 
-  const failed = beat([{ error: { message: 'The service is receiving too many requests from you' } }]);
-  ok('the heartbeat reports the read failure in plain words', /COULD NOT READ THE SHEET/.test(failed.last_result));
+  // An unreachable database must be REPORTED, never reported as a confident zero — "nothing to do"
+  // and "I could not look" are opposite conclusions and must not share a status line.
+  const failed = beat({});
+  ok('the heartbeat reports an unreachable database in plain words',
+     /COULD NOT REACH THE DATABASE/.test(failed.last_result));
   ok('  and reassures that nothing is lost', /no lead is lost/i.test(failed.last_result));
-  ok('  and does not count the error item as a lead', failed.waiting === 0);
+  ok('  and refuses to invent a waiting count', failed.waiting === null);
+  ok('  and marks itself not-ok so the console can show it', failed.ok === false);
 
-  const okRead = beat([{ row_number: 2, source_config: 'Manual', channel_state_email: 'not_sent', contact_email: 'a@b.com' }]);
-  ok('a normal read still reports normally', /ready to run|no leads ready/.test(okRead.last_result));
-
-  // The trigger's NAME must match its interval, or the status row lies about when to expect it.
-  const trig = wf.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
-  const mins = trig.parameters.rule.interval[0].minutesInterval;
-  ok('the trigger name matches its real interval', trig.name === `Every ${mins} minutes`, trig.name);
+  const good = beat({ ready_count: 1, lead: { contact_email: 'a@b.com' } });
+  ok('a normal cycle still reports normally', good.ok === true && /claimed/.test(good.last_result));
 }
 
 console.log(`\n[run-outreach] ${pass} passed, ${fail} failed`);

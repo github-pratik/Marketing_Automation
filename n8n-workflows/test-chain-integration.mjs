@@ -23,6 +23,9 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+// The ready-state set, parsed from the migration that defines `leads_ready`. Both halves of the
+// intake -> sender seam read it from there rather than each declaring their own copy.
+import { READY_STATES } from './leads-ready-invariant.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const loadWf = (file) => JSON.parse(readFileSync(path.join(DIR, file)));
@@ -131,8 +134,11 @@ const runClassify = (reoonResponse, gateLead) => {
 };
 const runShapeLeadRow = (classifyItemJson) =>
   new Function('$input', shapeLeadRowCode)({ all: () => [{ json: classifyItemJson }] });
-const runPickDemoRows = (rows) =>
-  new Function('$input', pickDemoRowsCode)({ all: () => rows.map((j) => ({ json: j })) });
+// The runner no longer filters rows in JavaScript — `leads_ready` does it in SQL. So the seam this
+// suite exists to guard is now "does the state intake WRITES appear in the set the sender ACTS ON",
+// and both halves are read from one place: leads-ready-invariant.mjs, which parses the view's own
+// migration. A constant copied into two languages is how this seam broke twice already.
+const senderWouldAct = (leadsRow) => READY_STATES.includes(leadsRow.channel_state_email);
 
 const baseLead = {
   lead_id: 'abc123def456', source_config: 'Manual', Product: 'VisioneerIT', apollo_id: '',
@@ -161,13 +167,13 @@ for (const { label, status, extra, runnable } of scenarios) {
   ok(`setup: ${label} is written to Leads with a Product (column-name check, see SEAM 3)`,
      leadsRow.Product === 'VisioneerIT', JSON.stringify(leadsRow));
 
-  const picked = runPickDemoRows([leadsRow]);
+  const acted = senderWouldAct(leadsRow);
   if (runnable) {
-    ok(`${label} (verdict "${verdict.action}", channel_state_email="${leadsRow.channel_state_email}") IS picked up by the runner`,
-       picked.length === 1, JSON.stringify(picked));
+    ok(`${label} (verdict "${verdict.action}", channel_state_email="${leadsRow.channel_state_email}") IS acted on by the sender`,
+       acted === true, leadsRow.channel_state_email);
   } else {
-    ok(`${label} (verdict "${verdict.action}", channel_state_email="${leadsRow.channel_state_email}") is NOT picked up automatically — bug (b) would have shipped this row`,
-       picked.length === 0, JSON.stringify(picked));
+    ok(`${label} (verdict "${verdict.action}", channel_state_email="${leadsRow.channel_state_email}") is NOT acted on automatically — bug (b) would have shipped this row`,
+       acted === false, leadsRow.channel_state_email);
   }
 }
 
@@ -181,10 +187,15 @@ for (const { label, status, extra, runnable } of scenarios) {
   const leadsRow = runShapeLeadRow(verdict)[0].json;
   ok('setup: the catch-all row really was parked at needs_review before the override',
      leadsRow.channel_state_email === 'needs_review');
-  leadsRow.channel_state_email = 'approved'; // a human, editing the live sheet, vouches for it
-  const picked = runPickDemoRows([leadsRow]);
-  ok('a human-approved catch-all row IS picked up by the runner (the override that exists for exactly this)',
-     picked.length === 1, JSON.stringify(picked));
+  // A human vouches for it — historically by editing the sheet, now by clicking Release in the
+  // console, which writes exactly this value.
+  leadsRow.channel_state_email = 'approved';
+  ok('a human-approved catch-all lead IS acted on (the override that exists for exactly this)',
+     senderWouldAct(leadsRow), leadsRow.channel_state_email);
+  // And the override has to survive the trip: the console writes `approved`, and the view has to
+  // still call that ready. Two words for one idea is how the 2026-08-29 handoff broke.
+  ok('  and `approved` is in the sender\'s ready set, not merely tolerated',
+     READY_STATES.includes('approved'), JSON.stringify(READY_STATES));
 }
 
 // ============================================================================================
@@ -199,8 +210,8 @@ ok('Normalize Lead still exposes it as "Product"', n.Product !== undefined);
 ok('intake\'s Shape Lead Row writes it to the Leads row as "Product"',
    runShapeLeadRow(runClassify({ email: baseLead.email, status: 'safe', is_safe_to_send: true,
      is_deliverable: true, is_catch_all: false }, baseLead)[0].json)[0].json.Product === 'VisioneerIT');
-ok('"Pick demo rows" reads the column back as "Product" (capital P) as its PRIMARY key',
-   /r\.Product\s*\?\?\s*r\.product/.test(pickDemoRowsCode));
+ok('the sender reads the product from the lead\'s own column, not a default',
+   /lead\.product/.test(pickDemoRowsCode) && !/'oryoniq'\s*;/.test(pickDemoRowsCode));
 
 // Every Google Sheets WRITE node in the whole repo whose schema declares a product-ish column
 // must spell it EXACTLY "Product" — derived dynamically from every VIO-*.json on disk, not from a
@@ -234,21 +245,30 @@ const runShapeForDrafting = (row) => new Function('$input', draftingCode)({ item
 const runValidateConfig = (item) =>
   new Function('$input', validateConfigCode)({ first: () => ({ json: item }) })[0].json;
 
-const baseSheetRow = (productCol) => ({
-  row_number: 12, first_name: 'Pat', company: 'Acme Water Authority',
-  contact_email: 'pat.okonkwo@acmewater.gov', title: 'CIO', company_domain: 'acmewater.gov',
-  source_config: 'Manual', channel_state_email: 'not_sent', Product: productCol,
-  verify_action: 'pass', reoon_status: 'safe',
+// A claimed lead, in the shape the atomic claim returns it — `product` is a Postgres enum now,
+// lowercase, where the sheet's column was capital-P display text.
+const claimedLead = (product) => ({
+  ready_count: 1,
+  lead: {
+    id: '99999999-8888-7777-6666-555555555555',
+    first_name: 'Pat', company: 'Acme Water Authority',
+    contact_email: 'pat.okonkwo@acmewater.gov', title: 'CIO', company_domain: 'acmewater.gov',
+    source: 'manual', channel_state_email: 'not_sent', product,
+    verify_action: 'pass', reoon_status: 'safe',
+  },
 });
+const runPick = (answer) => new Function('$input', pickDemoRowsCode)(
+  { first: () => ({ json: answer }), all: () => [{ json: answer }] });
 
-for (const productCol of ['OryonIQ', 'VisioneerIT']) {
-  const picked = runPickDemoRows([baseSheetRow(productCol)])[0]?.json;
+for (const productCol of ['oryoniq', 'visioneerit']) {
+  const picked = runPick(claimedLead(productCol))[0]?.json;
   ok(`setup: a "${productCol}" row is picked up as valid, not refused`, !!picked && picked.invalid === false,
      JSON.stringify(picked));
   const drafted = runShapeForDrafting(picked);
   const cfg = runValidateConfig(drafted);
-  ok(`demo-sheet-run's product handoff resolves the operator agent's OWN "${productCol}" config, not a default`,
-     cfg.product === productCol, `config_used=${cfg.config_used}, product=${cfg.product}, defaulted=${cfg.config_defaulted}`);
+  ok(`the sender's product handoff resolves the operator agent's OWN "${productCol}" config, not a default`,
+     String(cfg.product).toLowerCase() === productCol,
+     `config_used=${cfg.config_used}, product=${cfg.product}, defaulted=${cfg.config_defaulted}`);
 }
 
 // ============================================================================================
@@ -335,74 +355,27 @@ for (const [f, wf] of allWfs) {
 ok('setup: more than one workflow was found writing channel_state_email (the seam this section checks)',
    vocabByFile.size > 1, `writers: ${[...vocabByFile.keys()].join(', ')}`);
 
-// The reader side, extracted from its own literal Set(...) rather than retyped.
-const readyMatch = stripLineComments(pickDemoRowsCode).match(/READY\s*=\s*new Set\(\[([^\]]*)\]\)/);
-ok('setup: found "Pick demo rows"\' own READY set literal to test every writer against', !!readyMatch);
-const READY = new Set(((readyMatch && readyMatch[1].match(/'([^']*)'/g)) || []).map((s) => s.slice(1, -1)));
-
-// GENERIC, self-referential invariant (no invented list): a workflow must never write, as a claim
-// marker on a row IT ITSELF is responsible for claiming, a value that its own downstream READY
-// check would treat as still-unclaimed. If 'Shape row update' or 'Claim row ...' in
-// VIO-demo-sheet-run ever regresses to writing '', 'not_sent' or 'approved' by mistake (a
-// copy-paste from the wrong branch), this goes red — that is bug-class (a)/(b), generalised.
-const demoWriterValues = vocabByFile.get('VIO-run-outreach.json') || new Set();
-ok('setup: demo-sheet-run itself was found writing at least one channel_state_email value',
-   demoWriterValues.size > 0, `got ${[...demoWriterValues]}`);
-for (const v of demoWriterValues) {
-  ok(`demo-sheet-run's own claim/terminal marker "${v}" is excluded from its own READY set (a claimed row must never be re-picked)`,
-     !READY.has(v), `READY=${[...READY]}`);
-}
-
-// SPECIFIC cross-file checks tied directly to the two named historical bugs. These tokens are not
-// an invented vocabulary — 'not_sent' / 'dropped' / 'needs_review' come from intakeWriterValues
-// (extracted from intake's own code above), and their required READY-membership is exactly what
-// bug (b) got backwards.
-const intakeWriterValues = vocabByFile.get('VIO-intake-verify-curate.json') || new Set();
-ok('setup: intake was found writing all three of its documented verdict values',
-   ['not_sent', 'dropped', 'needs_review'].every((v) => intakeWriterValues.has(v)),
-   `got ${[...intakeWriterValues]}`);
-ok('intake\'s verified-and-ready value "not_sent" is inside demo-sheet-run\'s own extracted READY set',
-   READY.has('not_sent'));
-for (const rejected of ['dropped', 'needs_review']) {
-  ok(`intake's own rejection value "${rejected}" is correctly EXCLUDED from demo-sheet-run's READY set`,
-     !READY.has(rejected));
-}
-
-// The other end of the same override checked in SEAM 2: whichever file writes 'approved' as a
-// human-vouch marker, demo-sheet-run's READY set must actually honour it.
-// A writer may assign the value through a VARIABLE constrained by an allow-list rather than as a
-// bare literal — VIO-sheet-repair does exactly that, so it can record `enrolled` for a send
-// Instantly confirmed but the sheet missed. Extracting only direct assignments made this invariant
-// silently unsatisfiable the moment that refactor landed, so it also reads allow-list literals
-// from any workflow that writes the Leads tab.
-const writesLeads = (wf) => wf.nodes.some((n) => n.type === 'n8n-nodes-base.googleSheets'
-  && (n.parameters?.sheetName?.value === 'Leads')
-  && n.parameters?.operation && n.parameters.operation !== 'read');
-for (const [f, wf] of allWfs) {
-  if (!writesLeads(wf)) continue;
-  const code = stripLineComments(wf.nodes.map((n) => n.parameters?.jsCode || '').join('\n\n'));
-  // an allow-list guarding what may be written into the lifecycle column
-  for (const m of code.matchAll(/new Set\(\[([^\]]*)\]\)/g)) {
-    if (!/channel_state_email/.test(code)) continue;
-    for (const lit of m[1].matchAll(/'([a-z_]+)'/g)) {
-      if (!vocabByFile.has(f)) vocabByFile.set(f, new Set());
-      vocabByFile.get(f).add(lit[1]);
-    }
-  }
-}
-const approvedWriters = [...vocabByFile.entries()].filter(([, v]) => v.has('approved')).map(([f]) => f);
-ok('setup: some workflow was found writing the human-override value "approved"', approvedWriters.length > 0,
-   `writers checked: ${[...vocabByFile.keys()].join(', ')}`);
-ok('"approved" is inside demo-sheet-run\'s own extracted READY set (the override actually works)',
-   READY.has('approved'));
+// THE READY SET NOW LIVES IN SQL. It used to be a `new Set([...])` literal inside the sender's
+// JavaScript, and this block extracted it and checked every writer's value against it. The set is
+// now a condition in the `leads_ready` view, so it is parsed out of that view's migration by
+// leads-ready-invariant.mjs — and both sides of this seam import it from there rather than each
+// keeping a copy. A copy is how this broke on 2026-08-29 and again on 2026-09-05.
+for (const st of ['not_sent', 'approved'])
+  ok(`intake's ready value "${st}" is in the set the sender acts on`, READY_STATES.includes(st),
+     JSON.stringify(READY_STATES));
+for (const st of ['dropped', 'needs_review', 'pending_approval', 'enrolled'])
+  ok(`"${st}" is NOT in it — a lead in that state must not be mailed`, !READY_STATES.includes(st));
+// And the whole point of parsing rather than declaring: this fails if the view stops saying it.
+ok('the ready set came from the view definition, not from this file',
+   READY_STATES.length >= 2 && READY_STATES.length <= 4, JSON.stringify(READY_STATES));
 
 // 'enrolled' means "already sent" everywhere it is written — every writer of it must agree that it
 // is a terminal state, i.e. NONE of them should also be treating it as still-runnable.
 const enrolledWriters = [...vocabByFile.entries()].filter(([, v]) => v.has('enrolled')).map(([f]) => f);
 ok('setup: more than one workflow was found writing "enrolled" (push-instantly / enrol-email / demo-sheet-run)',
    enrolledWriters.length > 1, `writers: ${enrolledWriters.join(', ')}`);
-ok('"enrolled" is excluded from demo-sheet-run\'s READY set everywhere it is written (an enrolled lead must never restart)',
-   !READY.has('enrolled'));
+ok('"enrolled" is excluded from the sender\'s ready set everywhere it is written (an enrolled lead must never restart)',
+   !READY_STATES.includes('enrolled'));
 
 // ---------------------------------------------------------------------------
 // A CALLABLE WORKFLOW MUST HAVE EXACTLY ONE TERMINAL NODE.

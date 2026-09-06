@@ -25,48 +25,9 @@
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "read",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        }
-      },
-      "id": "vio-wfd-read",
-      "name": "Read Leads",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        -920,
-        0
-      ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
-      "onError": "continueRegularOutput",
-      "notes": "onError:continueRegularOutput + alwaysOutputData so a transient Sheets quota failure still lets the Heartbeat branch run. Without it the read dies, nothing downstream executes, and the System tab silently stops updating — the exact failure the heartbeat exists to make visible."
-    },
-    {
-      "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Pick up rows a human typed into the Leads tab and marked as ready to run.\n//\n// TWO filters, and both matter:\n//   source_config === 'manual' — the marker for a row a HUMAN typed.\n//\n//     Not 'demo'. The live sheet has a data-validation dropdown on this column offering exactly\n//     Apollo / Warmly-Intent / Referral / Manual, so 'demo' cannot be entered at all. Note that\n//     this disagrees with SHEET_SCHEMA.md, which documents the column as the PRODUCT config\n//     ('oryoniq' / 'visioneerit'). The live sheet's meaning is \"how did this lead arrive\"; the\n//     doc's is \"which product owns it\". Matching the sheet, since the sheet is what a human types\n//     into — but the two need reconciling.\n//\n//     The loop guard still holds: the intake pipeline writes 'oryoniq'/'visioneerit', and Apollo-\n//     sourced rows carry 'Apollo'. Neither matches 'manual', so this schedule cannot re-trigger on\n//     rows the system itself appended.\n//   channel_state_email blank — the claim marker. This polls every minute, so a row already picked\n//                               up must never be picked up again. Leads has no `status` column;\n//                               channel_state_email is the column that means exactly this\n//                               (not_sent / queued / sent / bounced), so it is the honest one to use.\nconst rows = $input.all().map((i) => i.json || {});\nconst clean = (v, cap = 160) => (typeof v === 'string'\n  ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, cap) : '');\n\n// FIX 3 (2026-09-05) — 'manual' alone was starving the pipeline.\n//\n// This used to read `!== 'manual'`, which was two guards wearing one hat: \"only send rows a human\n// typed\" AND \"never re-trigger on rows the system appended\". The second job now belongs entirely to\n// channel_state_email (FIX 1 made that column reliable), and the first was blocking the path Apollo\n// leads have to take. The first real Apollo pull — a verified, safe address for a genuine federal\n// contractor — landed in Leads as not_sent and was skipped on every poll, silently and forever.\n//\n// So this is a WHITELIST, not a removal. Dropping the check entirely would mean any future source\n// auto-sends the moment someone invents it, which is exactly the kind of implicit widening that\n// puts mail in front of people nobody decided to contact. A new source has to be added here on\n// purpose.\nconst SOURCES = new Set(['manual', 'apollo']);\n\nconst out = [];\nfor (const r of rows) {\n  if (!SOURCES.has(clean(r.source_config).toLowerCase())) continue;\n  // FIX 1 (2026-08-29) — the handoff column.\n  //\n  // This used to require `channel_state_email` to be BLANK. Nothing that writes a lead leaves it\n  // blank: VIO-intake-verify-curate stamps 'not_sent' and VIO-inbox-mapper used to stamp\n  // 'needs_review'. So every staff-typed lead landed in Leads, looked perfectly correct to a human\n  // reading the sheet, and was never picked up. The two halves disagreed about one cell.\n  //\n  // READY is now an explicit list rather than the absence of a value. Blank still counts (a row\n  // typed straight into Leads by hand), and 'not_sent' is what the verified intake path writes.\n  // Everything else — queued, sent, pending_approval, replied, bounced, unsubscribed — means this\n  // row is already somewhere in the pipeline and must not be restarted.\n  // READY is an explicit list, never \"this cell is empty\".\n  //   ''            a row typed straight into Leads by hand\n  //   not_sent      verification passed and wrote it; ready to run\n  //   approved      a HUMAN vouched for a lead verification would not pass on its own\n  //\n  // `approved` is the human override, added 2026-08-29, and it exists because of a real case:\n  // visioneerit.com is a CATCH-ALL domain. It accepts mail for any address, so no verifier can\n  // confirm that a specific mailbox exists there — Reoon returns is_deliverable:true but\n  // is_safe_to_send:false, and intake correctly parks the lead at needs_review.\n  //\n  // Weakening the automatic rule to let catch-alls through would let unverified strangers into\n  // the pipeline, which is exactly what verification is for. Instead a person who KNOWS the\n  // mailbox exists sets the row to `approved` and takes responsibility for that one lead. The\n  // Slack approval gate still stands after this — `approved` buys a lead the right to be drafted,\n  // not the right to be sent.\n  //\n  // Everything else — queued, sent, pending_approval, replied, bounced, unsubscribed, dropped,\n  // needs_review — means hands off.\n  const READY = new Set(['', 'not_sent', 'approved']);\n  const state = clean(r.channel_state_email).toLowerCase();\n  if (!READY.has(state)) continue;\n\n  const first_name = clean(r.first_name, 80);\n  const company    = clean(r.company, 160);\n  const email      = clean(r.contact_email, 160).toLowerCase();\n  if (!first_name && !company && !email) continue;\n\n  // FIX 3 (2026-08-29) — which product is this lead being pitched?\n  //\n  // `draft_config` was hardcoded 'oryoniq', so a council CIO typed in for VisioneerIT was drafted\n  // GovCon capture copy signed OryonIQ. The product now comes from the sheet's `Product` column\n  // (capital P — that is the live column name).\n  //\n  // An unknown or missing product REFUSES the row rather than guessing. A wrong guess sends the\n  // wrong company's pitch to a real person, and that cannot be taken back; a refused row costs\n  // somebody ten seconds with a dropdown. `source_config` is deliberately NOT consulted as a\n  // fallback — on the live sheet it means how the lead ARRIVED (Apollo / Warmly-Intent / Referral\n  // / Manual), which says nothing about which product owns it.\n  const PRODUCTS = { oryoniq: 'oryoniq', visioneerit: 'visioneerit' };\n  const productRaw = clean(r.Product ?? r.product, 40);\n  const product = PRODUCTS[productRaw.toLowerCase().replace(/[^a-z]/g, '')] || '';\n\n  const problems = [];\n  if (!product) {\n    problems.push(productRaw\n      ? `'${productRaw}' is not a product — use OryonIQ or VisioneerIT`\n      : 'Product is blank — choose OryonIQ or VisioneerIT');\n  }\n  if (!first_name) problems.push('first_name is blank');\n  if (!company)    problems.push('company is blank');\n  if (!/^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/.test(email)) {\n    problems.push(email ? `'${email}' is not a single valid address` : 'contact_email is blank');\n  }\n\n  out.push({ json: {\n    row_number: r.row_number ?? null,\n    first_name, company, email,\n    // The REAL verification state, carried through so the enrolment step can decide for itself.\n    // It used to be hardcoded 'pass' two nodes later, which would have told the ungated email path\n    // that every lead was Reoon-verified — including the ones a human had to vouch for by hand.\n    verify_action: clean(r.verify_action, 40),\n    reoon_status: clean(r.reoon_status, 40),\n    lead_state: state,\n    title: clean(r.title, 120) || '(role)',\n    company_domain: clean(r.company_domain, 160),\n    // Was `product: 'demo'`, which pointed at a throwaway campaign carrying OryonIQ's copy. The\n    // lead's own product is the only thing that decides now; 'demo' is gone from the send path.\n    product,\n    draft_config: product,\n    invalid: problems.length > 0,\n    problems: problems.join('; '),\n  }});\n}\n// ⚠️ ONE LEAD PER CYCLE. This is a correctness constraint, not throttling.\n//\n// Four nodes downstream — Shape for page, Shape for enrolment, Claim row, Shape row update — read\n// their lead with `$('Shape for drafting').first()`. In a multi-item run `.first()` is ALWAYS item\n// zero, so with two leads in one cycle the second one is built from the FIRST one's identity.\n// Proven by running the real node code: processing \"Bob\" produced Alice's company, Alice's address\n// and no product at all. That is a personalized page branded with the wrong company, and an\n// enrolment aimed at the wrong person.\n//\n// It has never fired only because exactly one lead has been ready per cycle so far. At 15-20 sends\n// a day, with staff pasting lists, that stops being true immediately.\n//\n// Capping here fixes every one of those four call sites at once and cannot be partially applied.\n// The alternative — correlating each node to its own item — is four separate edits where getting\n// any single one wrong reintroduces the same silent mix-up. At a 3-minute poll this still clears\n// 20 leads an hour, comfortably above the daily target.\n//\n// If throughput ever needs to rise, raise it by SHORTENING THE POLL, never by lifting this cap,\n// unless all four nodes have been re-verified against a genuine multi-item batch.\nif (out.length > 1) {\n  const first = out[0];\n  first.batch_note = `${out.length} leads were ready; taking one this cycle, the rest follow on the next polls`;\n  return [{ json: first.json ? first.json : first }].map((x) => (x.json ? x : { json: x }));\n}\nreturn out;\n"
+        "jsCode": "// Shape the lead this run CLAIMED, or emit nothing.\n//\n// REWRITTEN 2026-09-05 for Supabase. This used to read the whole Leads tab, filter it in\n// JavaScript for a source whitelist and a ready state, and take the first survivor. All of that\n// moved into one SQL statement, and two things improved on the way:\n//\n//   * THE CLAIM IS NOW ATOMIC. On the sheet, a row was read, then processed, then marked — and\n//     the claim for a good lead did not happen until AFTER its Sendr page was generated. Two\n//     overlapping polls could take the same person. Three minutes apart it never bit, but it was\n//     luck rather than design. `update ... where id = (...) and channel_state_email in (...)`\n//     can only succeed once: the second run's UPDATE re-reads under the row lock, sees the\n//     changed state, and matches nothing.\n//   * THE SUPPRESSION RE-CHECK IS PART OF THE QUERY. `leads_ready` folds it into the view, so a\n//     lead that landed on the never-contact list between verification and sending cannot be\n//     picked up by a future edit that forgets to re-check.\n//\n// What is left here is shaping: the names downstream expects, and the guards that stop a\n// half-filled row reaching a real person.\nconst answer = $input.first().json || {};\nconst lead = answer.lead || null;\n\n// Nothing ready. Emitting zero items stops this branch, which is correct — the Heartbeat runs on\n// its own branch off the same claim node, so an idle cycle still reports that it happened.\nif (!lead) return [];\n\nconst clean = (v, cap = 160) => (typeof v === 'string'\n  ? v.replace(/[\\u0000-\\u001f\\u007f]+/g, ' ').trim().slice(0, cap) : '');\n\nconst email = clean(lead.contact_email);\nconst first_name = clean(lead.first_name, 80);\nconst company = clean(lead.company);\n\n// Which product pitches this person. It decides the copy, the Sendr template and the Instantly\n// campaign, so a wrong value puts the wrong company's claim in front of a real human. The column\n// is NOT NULL and constrained to an enum in Postgres, but this refuses anyway: the day someone\n// adds a third product to the enum, this should stop rather than guess.\nconst PRODUCTS = ['oryoniq', 'visioneerit'];\nconst product = clean(lead.product, 40).toLowerCase();\n\nconst problems = [];\nif (!email) problems.push('no email address');\nif (!PRODUCTS.includes(product)) {\n  problems.push(`product '${lead.product}' is not one this workflow can draft for`);\n}\nif (!first_name && !company) problems.push('neither a first name nor a company to personalise with');\n\nreturn [{ json: {\n  // The lead's identity for the rest of the run. `row_number` kept its name because four nodes\n  // downstream read it; it now carries the primary key instead of a spreadsheet line number.\n  row_number: lead.id,\n  lead_id: lead.id,\n  email,\n  first_name,\n  last_name: clean(lead.last_name, 80),\n  title: clean(lead.title, 120),\n  company,\n  company_domain: clean(lead.company_domain),\n  draft_config: product,\n  lead_state: clean(lead.channel_state_email, 40),\n  verify_action: clean(lead.verify_action, 40),\n  reoon_status: clean(lead.reoon_status, 40),\n  // `invalid` is the name the IF node tests, and `problems` is the string the bad-row explainer\n  // puts into verify_reason. Renaming either would route every lead down the wrong branch, and\n  // the IF reads `invalid === true` — so a truthy-but-not-true value routes it wrong too.\n  invalid: problems.length > 0,\n  problems: problems.join('; '),\n  claimed_at: new Date().toISOString(),\n} }];\n"
       },
       "id": "vio-wfd-pick",
       "name": "Pick demo rows",
@@ -250,361 +211,35 @@
       ]
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "matchingColumns": [
-            "row_number"
-          ],
-          "value": {},
-          "schema": [
-            {
-              "id": "row_number",
-              "displayName": "row_number",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "channel_state_email",
-              "displayName": "channel_state_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "opener",
-              "displayName": "opener",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "email_draft",
-              "displayName": "email_draft",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "sendr_page_url",
-              "displayName": "sendr_page_url",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "verify_reason",
-              "displayName": "verify_reason",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "updated_at",
-              "displayName": "updated_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "Product",
-              "displayName": "Product",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "signal",
-              "displayName": "signal",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ]
-        }
-      },
       "id": "vio-wfd-upd",
       "name": "Write result back",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         1080,
         0
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
         }
       },
-      "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
-    },
-    {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "language": "javaScript",
-        "jsCode": "// ⚠️ THE PAGE URL MUST BE READ FROM 'Generate Sendr page' BY NAME.\n//\n// Not from the item in front of this node. The chain is\n//     Generate Sendr page -> Claim row (pending_approval) -> Claim row in sheet -> Shape for enrolment\n// and 'Claim row in sheet' is a Sheets UPDATE whose output is the ROW IT WROTE, not the page\n// result. Anything reading $input for pageUrl past that point gets the sheet row and finds\n// nothing. Found live 2026-08-29: Sendr really did build the page\n// (https://sendrpage.com/... , page id returned, no warnings) and the enrolment gate still\n// refused with \"no sendr_page_url\", because the URL had been overwritten one node earlier.\n// The claim step was inserted between them later, which silently invalidated both readers.\n//\n// This node also wrote `src._page_pending`, a field 'Shape for page' has never produced — so the\n// sheet's sendr_page_url column was being filled with an empty string on every run.\nconst src = $('Shape for page').first().json;\nconst page = $('Generate Sendr page').first().json.pageUrl || '';\nreturn { json: {\n  row_number: src._row,\n  channel_state_email: 'pending_approval',\n  opener: src._opener || '',\n  email_draft: src._email_draft || '',\n  sendr_page_url: page,\n  Product: src._product || '',\n  signal: src._signal || '',\n  updated_at: new Date().toISOString(),\n} };"
-      },
-      "id": "vio-wfd-claim",
-      "name": "Claim row (pending_approval)",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        480,
-        -60
-      ]
-    },
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
+        "operation": "executeQuery",
+        "query": "-- Write the outcome back onto the lead, and record it in the ledger.\n--\n-- `channel_state_email` uses the SENDER's vocabulary, and 'dropped' is deliberately not in it:\n-- that word belongs to verification and means \"Reoon says this address is not real\".\n-- VIO-enrol-email refuses a dropped address outright as a verified negative no human may override,\n-- so writing it here for \"enrolment did not land\" once locked a perfectly good lead out of the\n-- pipeline permanently — gavriel.legynd@visioneerit.com on 2026-08-30, whose address was fine.\n-- Two writers, one column, two vocabularies.\nwith p as (select $1::jsonb as j)\nupdate leads l set\n  channel_state_email = (p.j->>'channel_state_email')::vio_email_state,\n  opener              = coalesce(p.j->>'opener', ''),\n  email_draft         = coalesce(p.j->>'email_draft', ''),\n  sendr_page_url      = coalesce(p.j->>'sendr_page_url', ''),\n  updated_at          = now()\nfrom p\nwhere l.id = (p.j->>'lead_id')::uuid\nreturning l.id, l.contact_email, l.channel_state_email",
         "options": {
-          "handlingExtraData": "ignoreIt"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "matchingColumns": [
-            "row_number"
-          ],
-          "value": {},
-          "schema": [
-            {
-              "id": "row_number",
-              "displayName": "row_number",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "channel_state_email",
-              "displayName": "channel_state_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "opener",
-              "displayName": "opener",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "email_draft",
-              "displayName": "email_draft",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "sendr_page_url",
-              "displayName": "sendr_page_url",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "verify_reason",
-              "displayName": "verify_reason",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "updated_at",
-              "displayName": "updated_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "Product",
-              "displayName": "Product",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "signal",
-              "displayName": "signal",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ]
-        }
-      },
-      "id": "vio-wfd-upd2",
-      "name": "Claim row in sheet",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        1080,
-        0
-      ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+          "queryReplacement": "={{ JSON.stringify({ lead_id: $json.row_number, channel_state_email: $json.channel_state_email, opener: $json.opener || '', email_draft: $json.email_draft || '', sendr_page_url: $json.sendr_page_url || '' }) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
-    },
-    {
-      "parameters": {
-        "jsCode": "// CLAIM FIRST, WORK SECOND.\n//\n// The row used to be claimed only after drafting AND page generation — roughly half a minute of\n// OpenAI and Sendr calls — while the schedule re-read the same tab every 60 seconds. So the next\n// cycle could read a row that was already being worked on, and propose it to a human twice. Seen\n// live 2026-08-29: one row produced two Slack approval requests, two drafts and two Sendr pages.\n//\n// This node runs on a PARALLEL branch off 'Row usable?', not inline. That is deliberate: n8n's v1\n// execution order runs the first connected branch to completion before the second, so the claim\n// lands before drafting starts — while 'Shape for drafting' still receives the picked row itself.\n// Putting the claim inline would hand the drafting chain a Google Sheets node's output instead,\n// which is precisely the bug that cost the Sendr page URL earlier today.\n//\n// Only the state is written here. Everything else the row eventually carries (opener, draft, page\n// URL) does not exist yet, and writing blanks for them would erase a previous run's values.\nconst r = $input.item.json;\nreturn { json: {\n  row_number: r.row_number,\n  channel_state_email: 'pending_approval',\n  updated_at: new Date().toISOString(),\n} };"
-      },
-      "id": "vio-demo-claim-early",
-      "name": "Claim row early",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -320,
-        320
-      ]
-    },
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "update",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [
-            "row_number"
-          ],
-          "schema": [
-            {
-              "id": "row_number",
-              "displayName": "row_number",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "channel_state_email",
-              "displayName": "channel_state_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "updated_at",
-              "displayName": "updated_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ]
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        }
-      },
-      "id": "vio-demo-claim-early-sheet",
-      "name": "Claim early in sheet",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        -120,
-        320
-      ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// HEARTBEAT — so a human can tell \"working, nothing to do\" from \"dead\".\n//\n// Staff type into this spreadsheet and nothing on screen tells them the poller is alive. Both\n// scheduled workflows are silent by design when there is nothing to pick up: the mapper's chain\n// literally stops at the sheet read when no row is claimable, so an idle system and a broken one\n// look identical from the sheet. This writes one row per workflow into the `System` tab on EVERY\n// cycle, whether or not it found work.\n//\n// It hangs off the sheet READ rather than the schedule trigger, so it reports what was actually\n// seen, not merely that a timer fired. It is a parallel branch and the first one connected, so it\n// records the check even if the work that follows throws.\nconst EVERY_MIN = 3;\nconst raw = $input.all().map((i) => i.json || {});\n// A failed sheet read arrives as a single item carrying an error. Report that plainly instead of\n// counting it as a lead — \"could not read the sheet\" is the single most useful thing this row can\n// say, and it used to say nothing at all because the failure stopped the chain before this node.\nconst readFailed = raw.length === 1 && raw[0] && typeof raw[0].error !== 'undefined';\nconst rows = readFailed ? [] : raw;\nconst real = rows.filter((r) => Object.keys(r).some((k) => k !== 'row_number' && String(r[k] ?? '').trim()));\n// Must use the SAME source rule as `Pick demo rows`, or the liveness board tells staff a number\n// the sender does not act on — \"3 waiting\" that never move is worse than no number at all.\nconst WAITING_SOURCES = new Set(['manual', 'apollo']);\nconst waiting = real.filter((r) => ['', 'not_sent', 'approved'].includes(String(r.channel_state_email ?? '').trim().toLowerCase()) && WAITING_SOURCES.has(String(r.source_config ?? '').trim().toLowerCase())).length;\nconst now = new Date();\nconst next = new Date(now.getTime() + EVERY_MIN * 60000);\n// Local time, not UTC. This row exists to be glanced at by staff mid-typing — \"17:48\" is a thing\n// a person can compare to the clock on their wall; \"21:48 UTC\" needs arithmetic first, which is\n// exactly the friction that makes a status row go unread.\nconst TZ = 'America/Detroit';\nconst local = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true,\n  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });\nconst hhmm = (d) => d.toLocaleString('en-US', { timeZone: TZ, hour12: true, hour: 'numeric', minute: '2-digit' });\nreturn { json: {\n  workflow: \"VIO-run-outreach (sends the email)\",\n  last_run_at: local(now),\n  checked: `${real.length} lead(s) in Leads`,\n  waiting: waiting,\n  last_result: readFailed\n    ? 'COULD NOT READ THE SHEET — Google rate-limited us. It retries on the next cycle; no lead is lost.'\n    : (waiting ? `${waiting} lead(s) ready to run` : 'no leads ready'),\n  every: `${EVERY_MIN} min`,\n  next_check_at: hhmm(next),\n} };"
+        "jsCode": "// The liveness board: is this thing still running, and is mail still moving?\n//\n// Ported to Supabase 2026-09-05. It answers a question the events ledger cannot: a healthy\n// pipeline with nothing to do writes no events, and so does a scheduler that stopped firing three\n// days ago. Those two look identical from the ledger and completely different here.\n//\n// `waiting` is the number that matters. A count that never falls means leads are arriving and not\n// going out — which is exactly the state this system sat in for three days in August while every\n// workflow reported success.\nconst EVERY_MIN = 3;\nconst answer = $input.first().json || {};\n\nconst ready = Number(answer.ready_count);\nconst claimed = Boolean(answer.lead);\nconst failed = !Number.isFinite(ready);\n\n// After the claim, one fewer is waiting. Reporting the pre-claim number would show a queue that\n// never empties even when the runner is keeping up.\nconst waiting = failed ? null : Math.max(0, ready - (claimed ? 1 : 0));\n\nconst now = new Date();\nconst next = new Date(now.getTime() + EVERY_MIN * 60000);\n// Local time, not UTC. This row exists to be glanced at by a person deciding whether to worry,\n// and \"17:48\" is a thing a person can compare to their own clock without arithmetic.\nconst hhmm = (d) => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });\n\nlet last_result;\nif (failed) {\n  last_result = 'COULD NOT REACH THE DATABASE — no lead is lost; the next cycle retries.';\n} else if (claimed) {\n  last_result = `claimed ${$input.first().json.lead.contact_email || 'one lead'} and started drafting`;\n} else if (waiting === 0) {\n  last_result = 'no leads ready';\n} else {\n  last_result = `${waiting} lead(s) ready but none claimed — look at this`;\n}\n\nreturn [{ json: {\n  workflow: 'VIO-run-outreach (sends the email)',\n  every_minutes: EVERY_MIN,\n  ok: !failed,\n  waiting,\n  checked: failed ? 'database unreachable' : `${ready} lead(s) ready at the start of this run`,\n  last_result,\n  detail: {\n    claimed,\n    next_check_at: hhmm(next),\n    source: 'supabase.leads_ready',\n  },\n} }];\n"
       },
       "id": "vio-run-beat",
       "name": "Heartbeat",
@@ -616,68 +251,60 @@
       ]
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "appendOrUpdate",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "System",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [
-            "workflow"
-          ],
-          "schema": []
-        },
-        "options": {
-          "handlingExtraData": "insertInNewColumn"
-        }
-      },
       "id": "vio-run-beat-w",
       "name": "Write heartbeat",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         -520,
         300
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
         }
       },
-      "onError": "continueRegularOutput",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- One row per poller, overwritten each cycle. Not an events row: events is\n-- append-only and is what the console reads, and a heartbeat every three minutes would bury the\n-- ledger it exists to make readable.\nwith p as (select $1::jsonb as j)\ninsert into system_status (workflow, last_run_at, every_minutes, last_result, checked, waiting, ok, detail)\nselect p.j->>'workflow', now(), (p.j->>'every_minutes')::int,\n       coalesce(p.j->>'last_result',''), coalesce(p.j->>'checked',''),\n       nullif(p.j->>'waiting','')::int, (p.j->>'ok')::boolean,\n       coalesce(p.j->'detail', '{}'::jsonb)\nfrom p\non conflict (workflow) do update set\n  last_run_at   = now(),\n  every_minutes = excluded.every_minutes,\n  last_result   = excluded.last_result,\n  checked       = excluded.checked,\n  waiting       = excluded.waiting,\n  ok            = excluded.ok,\n  detail        = excluded.detail\nreturning workflow, last_run_at, waiting",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ workflow: $json.workflow, every_minutes: $json.every_minutes, last_result: $json.last_result, checked: $json.checked, waiting: $json.waiting, ok: $json.ok, detail: $json.detail }) }}"
+        }
+      },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "vio-wfD-claim",
+      "name": "Claim one lead (atomic)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -620,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Claim exactly one lead, atomically, and report how many were ready.\n--\n-- THE CLAIM IS THE POINT. On the sheet a row was read, processed, and only then marked — and for a\n-- good lead the mark did not happen until after its Sendr page was generated. Two overlapping polls\n-- could take the same person and mail them twice. Here the UPDATE re-reads the row under its own\n-- lock, so a second run sees `pending_approval` and matches nothing. It cannot be claimed twice.\n--\n-- `leads_ready` carries the state filter, the campaign check AND the suppression re-check, so a\n-- person who landed on the never-contact list after being verified cannot be picked up by a future\n-- edit here that forgets to look.\n--\n-- The count is taken in the same statement, before the update lands, so it says how many were\n-- ready when this cycle started rather than a number from a separate round trip that may already\n-- be stale.\nwith ready as (\n  select count(*)::int as n from leads_ready\n),\npicked as (\n  update leads l\n     set channel_state_email = 'pending_approval',\n         updated_at = now()\n   where l.id = (select id from leads_ready order by created_at limit 1)\n     and l.channel_state_email in ('not_sent', 'approved')\n  returning l.*\n)\n-- LEFT JOIN so this returns exactly one row even when nothing was claimed: the heartbeat has to\n-- run on an idle cycle too, and a query that returns nothing would stop that branch dead.\nselect r.n as ready_count, to_jsonb(p) as lead\n  from ready r\n  left join picked p on true",
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
-    "Read Leads": {
-      "main": [
-        [
-          {
-            "node": "Heartbeat",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Pick demo rows",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Pick demo rows": {
       "main": [
         [
@@ -699,11 +326,6 @@
           }
         ],
         [
-          {
-            "node": "Claim row early",
-            "type": "main",
-            "index": 0
-          },
           {
             "node": "Shape for drafting",
             "type": "main",
@@ -749,7 +371,7 @@
       "main": [
         [
           {
-            "node": "Claim row (pending_approval)",
+            "node": "Shape for enrolment",
             "type": "main",
             "index": 0
           }
@@ -789,39 +411,6 @@
         ]
       ]
     },
-    "Claim row (pending_approval)": {
-      "main": [
-        [
-          {
-            "node": "Claim row in sheet",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Claim row in sheet": {
-      "main": [
-        [
-          {
-            "node": "Shape for enrolment",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Claim row early": {
-      "main": [
-        [
-          {
-            "node": "Claim early in sheet",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Enrol email (no gate — see notes)": {
       "main": [
         [
@@ -848,7 +437,23 @@
       "main": [
         [
           {
-            "node": "Read Leads",
+            "node": "Claim one lead (atomic)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim one lead (atomic)": {
+      "main": [
+        [
+          {
+            "node": "Heartbeat",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Pick demo rows",
             "type": "main",
             "index": 0
           }
@@ -862,7 +467,6 @@
   },
   "meta": {
     "idNote": "id VIOwfDsheetdemo1 is historical. Renaming the workflow is safe; changing the ID is not — importing under a new id creates a SECOND workflow and leaves this one active, giving two schedules on the same Leads tab and duplicate sends."
-  }
-,
+  },
   "active": true
 }
