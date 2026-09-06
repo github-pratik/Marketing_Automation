@@ -318,24 +318,24 @@ depends on n8n scheduler behaviour.**
 ## Q8 — Clock/timezone: the 20/day cap vs. midnight
 
 **Verdict: a real, code-confirmed compliance-control weakening — not a "wrong person emailed" bug,
-but the stated 15-20/day ceiling is not actually enforced against a Detroit calendar day.**
+but the stated 15-20/day ceiling is not actually enforced against an Eastern calendar day.**
 
 - `VIO-enrol-email.json`, `Preconditions (fail closed)`: `const today = new
   Date().toISOString().slice(0, 10);` — `.toISOString()` is always UTC. The per-lead loop then
   compares `String(e.timestamp || '').slice(0, 10) !== today` against `Events` rows to count
   `sentToday`.
 - The rest of this same codebase demonstrably knows better: `VIO-run-outreach.json`'s own
-  `Heartbeat` node uses `const TZ = 'America/Detroit'; ... d.toLocaleString('en-US', { timeZone: TZ,
+  `Heartbeat` node uses `const TZ = 'America/New_York'; ... d.toLocaleString('en-US', { timeZone: TZ,
   ... })` explicitly because (per its comment) a person compares the time "to the clock on their
   wall." The Instantly campaign's own send window is documented elsewhere in this repo as
   Mon–Fri 09:00–17:00 **Detroit** time. The cap-day boundary in `VIO-enrol-email` is the one place in
   this chain that didn't get the same treatment.
-- Detroit is UTC-4 (EDT, currently in effect) or UTC-5 (EST). The UTC date rolls over at 8pm/7pm
-  Detroit time — mid-business-evening, not at Detroit midnight. Concretely: 20 leads could be
-  enrolled by, say, 3pm Detroit (cap reached, `sentToday >= 20` refuses further calls for the rest
-  of the UTC day); at 8:01pm Detroit the UTC date has already advanced to the next day, `sentToday`
+- Fairfax (US Eastern) is UTC-4 (EDT, currently in effect) or UTC-5 (EST). The UTC date rolls over at 8pm/7pm
+  Eastern time — mid-business-evening, not at Eastern midnight. Concretely: 20 leads could be
+  enrolled by, say, 3pm Eastern (cap reached, `sentToday >= 20` refuses further calls for the rest
+  of the UTC day); at 8:01pm Eastern the UTC date has already advanced to the next day, `sentToday`
   resets to 0 against the new UTC-dated `Events` rows, and up to 20 more could be enrolled before the
-  Detroit calendar day itself is even over (Detroit midnight is still ~4-5 hours away). This is a
+  Detroit calendar day itself is even over (Eastern midnight is still ~4-5 hours away). This is a
   genuine path to roughly double the stated daily ceiling within one Detroit business day — not a
   crash, not a wrong recipient, but the cap CLAUDE.md and the code comments both describe as "the
   owner's stated ceiling" is not the control it's presented as.
@@ -419,8 +419,8 @@ one number CLAUDE.md calls "the owner's stated ceiling," which matters for deliv
 pacing and for anyone relying on the cap as a compliance control.*
 Cite: `VIO-enrol-email.json`, `Preconditions (fail closed)`: `new Date().toISOString().slice(0, 10)`,
 contrasted with `VIO-run-outreach.json`'s own `Heartbeat` node explicitly using `timeZone:
-'America/Detroit'` elsewhere in the same repo.
-**Fix:** compute `today` with the same `America/Detroit` `toLocaleString`/`Intl.DateTimeFormat`
+'America/New_York'` elsewhere in the same repo.
+**Fix:** compute `today` with the same `America/New_York` `toLocaleString`/`Intl.DateTimeFormat`
 pattern already used in the `Heartbeat` nodes, or explicitly document (and accept) that the cap is
 UTC-bounded if that's actually fine.
 

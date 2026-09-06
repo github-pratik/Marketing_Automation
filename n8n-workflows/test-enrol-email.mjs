@@ -75,9 +75,9 @@ const LEAD = (o = {}) => ({
   sendr_page_url: 'https://sendrpage.com/abc123', ...o,
 });
 const REQ = (o = {}) => ({ product: 'oryoniq', leads: [LEAD()], ...o });
-// Stamped with the actual current instant, so the event lands in whatever Detroit day it is right
+// Stamped with the actual current instant, so the event lands in whatever Eastern day it is right
 // now. Using the UTC date here silently put every fixture event into TOMORROW for the several
-// hours each evening when UTC has rolled over and Detroit has not — which is exactly the bug the
+// hours each evening when UTC has rolled over and Fairfax has not — which is exactly the bug the
 // cap fix addresses, and it made these assertions pass or fail depending on the time of day.
 const NOW_ISO = new Date().toISOString();
 const sends = (n, iso = NOW_ISO) => Array.from({ length: n },
@@ -196,14 +196,14 @@ ok('over the cap refuses', /daily cap/.test(refuses(REQ(), [], sends(25))));
 ok('a batch that would CROSS the cap refuses whole, not partially',
    /daily cap/.test(refuses(REQ({ leads: [LEAD(), LEAD({ contact_email: 'b@northgate.com' })] }), [], sends(19))));
 // WHICH ROWS COUNT is now the query's job, and it is asserted against the query itself. The date
-// window in particular: the UTC day rolls over about five hours before Detroit's, so counting in
+// window in particular: the UTC day rolls over about five hours before Fairfax's, so counting in
 // UTC would let a send made this evening fall into tomorrow's allowance — up to a whole extra
 // day's mail inside one real day. The first cut of this migration dropped that and used UTC.
 {
   const askNode = wf.nodes.find((n) => n.name === 'Ask the database (cap + suppression + history)');
   const q = askNode.parameters.query;
   ok('the cap window follows the sending team\'s day, not UTC',
-     /America\/Detroit/.test(q), q.match(/at time zone '[^']+'/)?.[0]);
+     /America\/New_York/.test(q), q.match(/at time zone '[^']+'/)?.[0]);
   ok('  and it counts attempts as well as confirmed outcomes',
      /action in \('enrolled', 'enroll_attempt'\)/.test(q));
   ok('  so a send whose outcome was lost still counts against the cap',
