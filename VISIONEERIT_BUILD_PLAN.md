@@ -45,7 +45,7 @@ that's what actually drives Bucket B into the top decile.
 | n8n access (SSH + `docker exec`, no web login needed for JSON workflows) | `[DONE]` |
 | Apollo, Reoon, OpenAI, Instantly, Sendr keys live in `.secrets.env` | `[DONE]` |
 | Thoughtly `THOUGHTLY_API_TOKEN` + `THOUGHTLY_TEAM_ID` | `[PARKED 2026-08-17]` — voice skipped at the user's direction. No longer a prerequisite for anything; notes kept in `INTEGRATIONS.md` if it is ever revived |
-| Google Sheets credential (dashboard, dedupe, suppression log) | `[DONE 2026-08-16]` — service-account auth, not OAuth (installs headlessly). n8n credential `VIO Google Sheets` (`VIOgsheetcred01`); Leads / Events / Costs / Suppression / Segments / Inbox / System live (re-confirmed 2026-09-04). Setup: `n8n-workflows/setup-google-sheets.py` |
+| Google Sheets credential (dashboard, dedupe, suppression log) | `[SUPERSEDED 2026-09-06]` — credential `VIO Google Sheets` (`VIOgsheetcred01`) **deleted**. Supabase + staff console are the record. Do not run `setup-google-sheets.py`. |
 | n8n AI Agent node's human-in-the-loop channel (Slack / Telegram / email) | `[DONE]` — Slack, verified end-to-end with a real Approve button click |
 | Caller-ID / spam-likely registration for Thoughtly's outbound number | `[N/A 2026-08-17]` — no outbound number; voice skipped. Becomes required again only if voice is revived |
 | ICP one-pager approved by the boss (Gav) | `[OPEN]` — draft it FOR approval, don't assume sign-off |

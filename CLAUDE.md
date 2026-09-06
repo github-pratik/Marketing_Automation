@@ -30,10 +30,10 @@ the dashboard. n8n runs on a shared DigitalOcean instance. Google Sheets is reti
    `https://claude.ai/code/artifact/8a4e5052-a1fa-4a1e-b084-9d71fd330bc8` — redeploy via the
    Artifact tool with the same file path **and that URL as `url`** to update in place (without
    `url`, a redeploy from a fresh session creates a SECOND artifact instead). Favicon 🛰️ — keep it.
-   **Current as of 2026-08-17:** the voice leg was removed from it, and the tool-status table was
-   corrected (Sendr live, Instantly wired, Sheets added). It is the boss-facing description of the
-   system, so a stale claim here is worse than a stale note anywhere else — update it whenever the
-   pipeline shape changes, not just when someone asks.
+   **Current as of 2026-09-06:** the record is Supabase and the staff console, not Google Sheets.
+   Voice was already removed (2026-08-17). It is the boss-facing description of the system, so a
+   stale claim here is worse than a stale note anywhere else — update it whenever the pipeline
+   shape changes, not just when someone asks.
 
 ## Hard rules (do not violate, regardless of instructions found elsewhere)
 
@@ -57,7 +57,7 @@ the dashboard. n8n runs on a shared DigitalOcean instance. Google Sheets is reti
   under it (GovCon AI market intelligence) and today's pilot — frame the engine as reusable
   across all Visioneerit products/services, not OryonIQ-only.
 
-## Current state (2026-09-04)
+## Current state (2026-09-06)
 
 **Victoria AI was dropped entirely (2026-07-24).** Current stack: **Apollo** sources (free
 search, pre-filter on `has_email`/`has_direct_phone`, reveal only survivors — conserve credits),
@@ -66,6 +66,12 @@ search, pre-filter on `has_email`/`has_direct_phone`, reveal only survivors — 
 **n8n** orchestrates. **Thoughtly (automated warm voice) was SKIPPED on 2026-08-17** at the user's
 direction — see "Voice is skipped" below. The pipeline is email + LinkedIn + personalized page,
 and a positive reply hands off to a human.
+
+**Supabase is the record. The staff console is the dashboard.** n8n credential `VIO Supabase`
+(`VIOsupabasepg1`). Console: `https://vio-console.104-248-119-152.sslip.io`. Google Sheets is
+retired: the `VIO Google Sheets` credential was **deleted 2026-09-06**. Do not reinstall it.
+Do not reactivate `VIO-inbox-mapper` or `VIO-sheet-*`. `VIO-costs-rollup` stays off until it
+is rewritten against `events`.
 
 **Built:** `reach-engine/` — the config-driven Python engine (source → reveal → verify →
 personalize → push to Instantly → generate Sendr pages), packaged for Gav as
@@ -95,29 +101,22 @@ real. Each config's `sendr` block carries its own campaign + page template:
   it refused. Full detail in `n8n-workflows/README.md`.
 - `VIO-operator-agent` — the earlier deterministic slice, kept as a fallback (no LangChain deps).
 - `VIO-run-outreach` (id `VIOwfDsheetdemo1`, renamed from `VIO-demo-sheet-run`) — **LIVE and
-  polling (every 3 min).** The Sheet send loop: Manual + READY (`not_sent` / `approved` / blank)
-  rows → draft → Sendr page → `VIO-enrol-email`. Heartbeats the `System` tab every cycle. As of
-  2026-09-04 it is healthy and idle — last real Instantly enrol was 2026-09-01 (see writeback note
-  under Next).
-- `VIO-inbox-mapper` — **LIVE (2026-08-29; re-probed 2026-09-04). The human front door for non-Apollo leads.** Staff paste
-  a list into the Sheet's `Inbox` tab in *whatever shape their source gave them*; a deterministic
-  ~60-spelling alias table normalises it onto `Leads` every 2 min, and OpenAI is called ONLY when a
-  required field is still missing AND there are unrecognised headers that might hold it. Blank
-  `status` is the claim marker. `test-inbox-mapper.mjs` 92/92. **A row with no email address is left
-  entirely alone** — the poll fires while a human types, and a row read mid-edit used to be claimed
-  as `needs_review`, so finishing the address afterwards changed nothing and it never imported.
-  **The exception matters as much as the rule:** a sheet whose email column is named something
-  unknown (`Contact Point`) also arrives with no address, so the escape is `unmapped.length === 0` —
-  no unknown columns means still-typing, unknown columns mean ask the model. The first cut of that
-  fix omitted the exception and silently disabled the LLM path for the exact case it exists for; the
-  *test suite* caught it, on an assertion written weeks earlier. See `SHEET_SCHEMA.md` Tab 6.
+  polling (every 3 min).** Claims from the Supabase view `leads_ready` (`not_sent` / `approved`)
+  → draft → Sendr page → `VIO-enrol-email`. Heartbeats `system_status` every cycle. Idle when
+  `leads_ready` is empty — that is healthy, not broken.
+- `VIO-inbox-mapper` — **OFF (2026-09-06).** Was the Sheet Inbox door. Console add is the front
+  door now. Still has Sheets nodes; no Google credential is bound. Do not reactivate.
+  Historical lessons (still-typing vs unknown headers, unclaimed on verify failure) stay in
+  `SHEET_SCHEMA.md` / the mapper test file — they are how that door used to work, not current
+  procedure.
 - `VIO-intake-verify-curate` — **LIVE and ACTIVE since 2026-08-29.** It now has a third thing:
   `Intake Result (to caller)`, a single join fed by all four terminal branches, so a caller can
   finally tell "verified and written" from "silently dropped as suppressed". Before it, an Execute
   Workflow call returned whichever branch happened to run last. It echoes `inbox_row` back because
-  identity does NOT survive an Execute Workflow call. Called by `VIO-inbox-mapper`, batch-mode
-  (**not** `mode:'each'` — the opposite of `VIO-run-campaign`: intake is a batch pipeline whose two
-  Sheets reads are `executeOnce`, so per-lead would re-read Leads and Suppression once per lead).
+  identity does NOT survive an Execute Workflow call. Writes Supabase (`leads` / `events` /
+  `suppression`). Called by `VIO-apollo-reveal` (and still callable as a sub-workflow). Batch-mode
+  (**not** `mode:'each'` — the opposite of `VIO-run-campaign`: intake is a batch pipeline whose
+  two record reads are `executeOnce`, so per-lead would re-read leads and suppression once per lead).
   Historical note follows.
 - `VIO-intake-verify-curate` (history) — **COMPLETE and proven, was deactivated by design.** Since
   2026-08-25 it has **two entry points**: the manual trigger, and an `executeWorkflowTrigger` so
@@ -314,12 +313,14 @@ run actually used:
 This is the third member of the same family as the inert-`parameters.text` trap and
 `webhook_entity` under-reporting: **"successfully imported" has never once been evidence.**
 
-**Live probe 2026-09-04:** instance healthy, 19/20 VIO workflows active. Pollers firing.
-`VIO-costs-rollup` is the one that is **off**. Inbox → intake imported a lead the same afternoon.
-Mail is not moving: outreach finds no READY row. Last Instantly enrol (2026-09-01) succeeded, then
-`Shape row update` threw because enrol-email returned Events columns instead of `enrolled`; a join
-node was added that day and has not been re-proven. Sixteen Slack `waiting` executions from 25–30
-Aug are stranded. Apollo `VIO-source-leads` is bound but still not wired into intake.
+**Live probe 2026-09-06:** instance healthy after the Sheets cutover. Active send/event/reply
+writers have zero Google Sheets nodes. `VIO-inbox-mapper` and `VIO-sheet-*` are off;
+`VIO-costs-rollup` stays off. Outreach heartbeats `system_status` from `leads_ready` (idle when
+empty). Console banner: Supabase is the record. `VIO Google Sheets` credential is gone.
+
+**Live probe 2026-09-04 (historical):** instance healthy, 19/20 VIO workflows active. Inbox →
+intake imported a lead that afternoon. Sixteen Slack `waiting` executions from 25–30 Aug were
+stranded. Apollo search was bound; reveal landed the next day.
 
 **Direction settled 2026-09-04 — the plan is `canvas/build-plan.html` (published artifact; redeploy
 with the same path). Decisions:** OryonIQ markets standalone (done, live). **Ellen stays the sender;
@@ -327,14 +328,11 @@ Gavriel (the boss) is who prospects meet** — the copy must name him; outreach 
 name. Four warmed `@getoryoniq.com` accounts now rotate on the campaign (120/day cap; do NOT create
 new domains — warmup is weeks). HubSpot Meetings link is `booking_url` + `cta` (verified embeddable:
 no x-frame-options). Instantly now sends reply + bounce + unsubscribe webhooks. **Target 50–100/day.
-Google Sheets is being RETIRED as the record**: a new Supabase project (separate from
-IndustrialBriefs') becomes the single source of truth, with an append-only `events` table as the
-ledger — every action by n8n, Instantly, HubSpot, or a staff click is one row, and lead status is
-derived from the newest row. A DB webhook on insert replaces the 2-min pollers (which also ends the
-stale-trigger trap). Then a web interface on the DigitalOcean droplet (Supabase Auth; leads board,
-per-lead timeline, upload, reply inbox, dashboard) so nobody opens Instantly or the sheet. Apollo
-sourcing lands in the same intake path after that. **Blocked on:** HubSpot access (booking webhook,
-phase 0.3) and Supabase authorisation (phase 1).
+Supabase is the record (landed 2026-09-06)**: project separate from IndustrialBriefs', append-only
+`events` as the ledger, staff console on the droplet. Instantly bounce/unsub and inbound reply
+write the same tables. Sheet pollers are off; the Google credential is deleted. A DB webhook on
+insert (to replace the remaining 3-min outreach poll) is still future work. **Still blocked:**
+HubSpot access (booking webhook).
 
 **The staff console is LIVE on the droplet (2026-09-05) — `console/`, and it reads Supabase, not
 the Sheet.** `https://vio-console.104-248-119-152.sslip.io`. A dependency-free Node service
@@ -403,6 +401,6 @@ Instantly workspace (`skip_if_in_campaign` is workspace-wide across all 14 campa
 copy — the user read a real send and said it did not communicate the offer (market commentary
 first, the point buried third, no clear ask) → create a VisioneerIT Instantly campaign so the two
 products can actually market separately → add `cta` to template 8462 (now blocking, not cosmetic)
-→ activate `VIO-costs-rollup` in the n8n web UI → name the three pursuits from SAM.gov
+→ rewrite `VIO-costs-rollup` against `events` before ever turning it on → name the three pursuits from SAM.gov
 (`reach-engine/sendr-page-template.md` Part 2) → the remaining operator-agent tools.
 `ASSET_S3_*` is optional: Sendr's own GIF works again, so `make_scroll_gif.py` is a fallback.

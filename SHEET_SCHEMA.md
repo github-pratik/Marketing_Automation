@@ -1,17 +1,20 @@
-# VisioneerIT Outbound — Google Sheet schema
+# VisioneerIT Outbound — Google Sheet schema (archive)
 
-The Sheet is the data bus (every `VIO-` workflow reads/writes it), the dashboard, the pilot's
+**Retired 2026-09-06.** Supabase is the record; the staff console is the dashboard. The n8n
+credential `VIO Google Sheets` is deleted. `setup-google-sheets.py` refuses to put it back.
+This file is the old column contract so a future reader can decode the archived spreadsheet
+and the retired `VIO-inbox-mapper` / `VIO-sheet-*` JSON. Do not treat it as live procedure.
+
+The Sheet *was* the data bus (every `VIO-` workflow read/wrote it), the dashboard, the pilot's
 cost meter, and — since 2026-08-21 — its targeting memory. **Specified here: seven tabs** —
 `Inbox`, `System`, `Leads`, `Suppression`, `Events`, `Costs`, `Segments`. Live sheet-audit on
 **2026-09-04** also saw `Demo` and `Pipeline` on the spreadsheet (this doc does not yet specify
 their columns). Header = row 1. Workflows key on exact column names — don't rename a
 column without updating every workflow that reads/writes it.
 
-**LIVE since 2026-08-16.** Spreadsheet `VisioneerIT Outbound`, id `1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`.
-`Leads`, `Events`, `Costs`, `Suppression`, `Segments`, `Inbox`, and `System` all exist on the live
-sheet (re-confirmed 2026-09-04). Creating tabs is idempotent; existing tabs and their headers are
-left alone. Shared with `vio-n8n-sheets@visioneerit-outbound.iam.gserviceaccount.com` as Editor, and the n8n credential
-`VIO Google Sheets` is installed and verified.
+**Was live 2026-08-16 through 2026-09-06.** Spreadsheet `VisioneerIT Outbound`, id
+`1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`, may still exist as an archive. Nothing in VIO
+can open it. Shared historically with `vio-n8n-sheets@visioneerit-outbound.iam.gserviceaccount.com`.
 
 **Writes are live since 2026-08-17**, in `VIO-intake-verify-curate` (WF-1) — it reads `Leads` +
 `Suppression` as gates and appends to `Leads` + `Events`. See `n8n-workflows/README.md` for the
@@ -30,14 +33,8 @@ which a headless session cannot do. The Sheet must then be **shared with the ser
 `client_email` as Editor**; a valid key on an unshared sheet is the single most common failure and
 returns a bare 403.
 
-**One command does the whole setup:**
-```bash
-python3 n8n-workflows/setup-google-sheets.py --key <path-to-sa.json> --sheet-id <id>
-```
-It verifies access first (so you get one clear reason rather than a cascade), creates any missing
-tabs, writes these header rows, installs the credential into n8n as `VIO Google Sheets`
-(id `VIOgsheetcred01`), and then shreds the loose key file. `--verify-only` checks access and
-changes nothing. Restart n8n afterwards — it caches decrypted credentials in memory.
+**Do not re-run setup.** `n8n-workflows/setup-google-sheets.py` now exits with `REFUSED` rather
+than reinstalling the deleted credential.
 
 ---
 

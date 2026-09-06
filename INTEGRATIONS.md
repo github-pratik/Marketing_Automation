@@ -322,7 +322,8 @@ Was the data bus & dashboard through 2026-09-05. The n8n credential `VIO Google 
 - **Auth:** a Google **service account** (n8n credential type `googleApi`), NOT OAuth. n8n's Sheets
   node supports both; the service account was chosen because it installs headlessly via the CLI,
   whereas OAuth needs a human to finish a browser consent flow.
-- **n8n credential:** `VIO Google Sheets` (id `VIOgsheetcred01`), installed 2026-08-16.
+- **n8n credential:** `VIO Google Sheets` (id `VIOgsheetcred01`), installed 2026-08-16,
+  **deleted 2026-09-06**. Do not recreate it.
 - **Service account:** `vio-n8n-sheets@visioneerit-outbound.iam.gserviceaccount.com`
   — created with **no project roles at all**. A service account needs zero project IAM to use
   Sheets; its access comes entirely from the spreadsheet being shared with it. Granting it project

@@ -36,7 +36,8 @@ ones do.
 ## Portability — moving to a NEW droplet
 These JSON files are the source of truth, so a droplet move is 3 steps (no rebuild):
 1. Stand up a fresh n8n; recreate the `VIO ` **credentials** in its UI (same names: `VIO Reoon`,
-   later `VIO Google Sheets`, `VIO Thoughtly`). Credentials never live in the JSON.
+   `VIO Supabase`, `VIO Instantly`, `VIO Sendr` — **not** `VIO Google Sheets`; that credential
+   was deleted 2026-09-06). Credentials never live in the JSON.
 2. Set the same **env vars** on the new host (see below) and restart n8n.
 3. `for f in VIO-*.json; do ./import-workflow.sh "$f" root@NEW_IP; done` then activate in the UI.
 Because secrets are by-name (credentials) or by-env (tokens), nothing here is tied to one droplet.
@@ -152,7 +153,8 @@ docker exec n8n-stack-postgres-1 psql -U postgres -d railway -tAc \
   "select name, active from workflow_entity where name like 'VIO-%' and active = false"
 ```
 
-Only `VIO-costs-rollup` should appear. Anything else in that list is an outage in progress.
+Expected inactive: `VIO-costs-rollup`, `VIO-inbox-mapper`, `VIO-sheet-audit`,
+`VIO-sheet-provision`, `VIO-sheet-repair`. Anything else off is an outage.
 
 ### ⚠️ A Google Sheets node needs `authentication: "serviceAccount"` (found live 2026-09-05)
 
@@ -699,7 +701,10 @@ diagnose it — do not "simplify" it by re-fetching the page, because the REST A
 answer.
 
 
-### `VIO-inbox-mapper.json` — WF-8 (id `VIOwfHinboxmap`) — **LIVE**
+### `VIO-inbox-mapper.json` — WF-8 (id `VIOwfHinboxmap`) — **OFF (2026-09-06)**
+
+Sheet Inbox door, retired. Console add is the front door. No Google credential is bound.
+The rest of this section is how it used to work.
 
 **The front door for leads that do not come from Apollo.** Staff paste a list into the `Inbox` tab
 in whatever shape their source gave them; this normalises it onto the `Leads` schema. Every two
