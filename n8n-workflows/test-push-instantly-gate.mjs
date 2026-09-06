@@ -442,14 +442,11 @@ ok(`end-to-end: ${e2e} approval shapes, only the boolean-true one enrols anybody
 // 2026-09-01, when a cached schema on appendOrUpdate turned out to be the thing breaking sends.
 { const schemaBad = schemaViolations(wf);
   ok('Sheets caches obey the schema rule', schemaBad.length === 0, schemaBad.join(' | ')); }
-for (const n of wf.nodes.filter((x) => x.type === 'n8n-nodes-base.googleSheets')) {
-  ok(`${n.name} is typeVersion 4.7`, n.typeVersion === 4.7, `got ${n.typeVersion}`);
-  ok(`${n.name} has a columns.schema key (absent at 4.5, which threw)`,
-     Array.isArray(n.parameters.columns?.schema));
-  ok(`${n.name} pins the Sheets credential by id`,
-     n.credentials?.googleApi?.id === 'VIOgsheetcred01');
-  if (n.parameters.operation === 'appendOrUpdate')
-    ok(`${n.name} names a matching column`, (n.parameters.columns?.matchingColumns || []).length > 0);
+ok('no Google Sheets nodes remain on the gated enrol',
+   wf.nodes.every((x) => x.type !== 'n8n-nodes-base.googleSheets'));
+for (const n of wf.nodes.filter((x) => x.type === 'n8n-nodes-base.postgres')) {
+  ok(`${n.name} pins VIO Supabase by id`, n.credentials?.postgres?.id === 'VIOsupabasepg1');
+  ok(`${n.name} is executeQuery`, n.parameters.operation === 'executeQuery');
 }
 
 // ---------------------------------------------------------------------------

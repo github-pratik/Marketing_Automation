@@ -55,12 +55,6 @@
         -220,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "notes": "Fails with a 400 when the tab already exists — the NORMAL case on every run after the first. onError:continueRegularOutput alone was not enough: the failed node emitted ZERO items, so the chain stopped here and the header row was never written while the execution still reported success. alwaysOutputData makes it emit an empty item so the header write always runs. Found live 2026-08-29.",
       "alwaysOutputData": true,
@@ -187,12 +181,6 @@
         180,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 15000
@@ -218,12 +206,6 @@
         400,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "notes": "400s when the tab exists — the normal case. Both flags needed: continueRegularOutput alone still emits zero items and stops the chain.",
@@ -340,12 +322,6 @@
         800,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 15000
@@ -433,7 +409,6 @@
   "settings": {
     "executionOrder": "v1",
     "errorWorkflow": "VIOwfEerroralert"
-  }
-,
-  "active": true
+  },
+  "active": false
 }

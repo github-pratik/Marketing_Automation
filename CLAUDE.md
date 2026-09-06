@@ -5,8 +5,8 @@ config-driven engine (source → verify → personalize → send email+LinkedIn 
 built from Apollo, Reoon, OpenAI, Instantly, Sendr, and n8n (Thoughtly/voice skipped 2026-08-17 —
 see "Voice is skipped"). No single tool is "the spine" — n8n orchestrates, OpenAI is the LLM brain. VisioneerIT is the parent company; OryonIQ
 (GovCon AI market intelligence) is the current pilot product, but the engine is meant to run any
-Visioneerit product off a swapped config file. Google Sheets is the dashboard. n8n runs on a
-shared DigitalOcean instance.
+Visioneerit product off a swapped config file. Supabase is the record; the staff console is
+the dashboard. n8n runs on a shared DigitalOcean instance. Google Sheets is retired as the queue.
 
 ## Read these before doing integration or build work
 
@@ -141,15 +141,9 @@ IndustrialBriefs' OpenAI key. All `VIO-*.json` now carry explicit ids; audit com
 401, but that is **no longer a blocker** — voice is out of scope (below). Nothing is missing for
 the current pipeline.
 
-**Google Sheets is LIVE (2026-08-16).** Service-account auth (not OAuth — it installs headlessly),
-n8n credential `VIO Google Sheets` (`VIOgsheetcred01`), spreadsheet id
-`1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c`. **Seven tabs now** — `Inbox` (2026-08-29) is the one staff
-type into, and `System` (2026-08-30) is the liveness board that tells them the pollers are alive;
-every other tab is written by workflows and read by humans. Live sheet-audit on 2026-09-04 also
-saw `Demo` and `Pipeline` on the spreadsheet (not fully specified in `SHEET_SCHEMA.md`). Setup is
-one command: `n8n-workflows/setup-google-sheets.py`. **Sheet writes are wired** — intake, mapper,
-outreach, enrol-email, instantly-events, and sheet-repair all write. A leftover sentence here used
-to say they were not; that has been false since 2026-08-17.
+**Google Sheets credential deleted (2026-09-06).** The queue is Supabase; the staff console is
+the dashboard. n8n no longer holds `VIO Google Sheets` (`VIOgsheetcred01`). Do not run
+`setup-google-sheets.py` to put it back. The spreadsheet may still exist as an archive.
 
 **Sendr GIF: FIXED 2026-08-16.** Root cause was exactly what the webhook said —
 `pageGifTask: missing recordingFileUrl`, i.e. the page templates had a GIF element but no template
@@ -360,9 +354,10 @@ unrelated edit can't recreate n8n as a side effect. Facts worth keeping:
   `payload.backfilled` and render as **reconstructed** in the timeline, because the sheet never kept
   a ledger and a reconstruction must not read as an observation. Send times come from Instantly's
   `last_contact`, not the sheet, whose timestamp stopped at a failed write.
-- **A banner on every tab says n8n still sends from the Sheet.** Releasing a lead in the console
-  records the decision; it does not queue mail. Removing that banner before the cutover would be the
-  single most misleading change available.
+- **The console banner now says n8n sends from Supabase.** Releasing a lead marks it `approved`;
+  `VIO-run-outreach` claims from `leads_ready`. The Google Sheet is no longer the queue.
+  Instantly bounce/unsub and inbound reply write `events` / `leads` / `suppression` / `replies`.
+  `VIO-inbox-mapper` and the `VIO-sheet-*` tools are deactivated — console add is the front door.
 - **⚠️ A lead cannot be deleted.** `events.lead_id` is `on delete set null`, but that null-out is an
   UPDATE and the append-only trigger refuses it, so `on delete set null` is unreachable and every row
   ever created is permanent. `supabase/003_allow_lead_delete_to_orphan_events.sql` fixes it by

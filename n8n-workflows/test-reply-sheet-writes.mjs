@@ -270,10 +270,10 @@ console.log('\n== the Events row ==');
   eq('  lead_email', e.lead_email, EMAIL);
   eq('  source_config comes off the matched row', e.source_config, 'oryoniq');
   ok('  result describes the classification', /reply positive/.test(e.result), e.result);
-  eq('  columns are exactly the Events schema',
+  eq('  Events keys include the schema plus reply fields for Postgres',
     JSON.stringify(Object.keys(e)),
     JSON.stringify(['timestamp', 'lead_id', 'lead_email', 'tool', 'action', 'units', 'est_cost_usd',
-      'result', 'workflow', 'source_config']));
+      'result', 'workflow', 'source_config', 'reply_sentiment', 'is_reply']));
 
   const opened = run({ event_type: 'email_opened', email_id: 'o-1', lead_email: EMAIL }, POS, { leads: [LEAD_ROW] });
   eq('an open writes nothing at all', opened.events.length + opened.suppression.length
@@ -368,7 +368,7 @@ console.log('\n== the workflow file itself ==');
     /duplicate email_id/.test(jsOf('Dedup + TCPA Gate')) && /warm-only/.test(jsOf('Dedup + TCPA Gate')));
   ok('the Slack approval still hangs off the IF, unchanged',
     WF.connections['Propose a call?'].main[0][0].node === 'Propose Call to Human (Slack)');
-  ok('the Sheet path runs alongside the Slack path, not instead of it',
+  ok('the ledger path runs alongside the Slack path, not instead of it',
     WF.connections['Dedup + TCPA Gate'].main[0].map((c) => c.node).join(',')
       === 'Propose a call?,Read Leads (reply lookup)',
     JSON.stringify(WF.connections['Dedup + TCPA Gate'].main[0]));
@@ -391,46 +391,29 @@ console.log('\n== the workflow file itself ==');
     WF.nodes.every((n) => reachable.has(n.name)),
     WF.nodes.filter((n) => !reachable.has(n.name)).map((n) => n.name).join(','));
 
-  const sheetsNodes = WF.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
-  eq('five Sheets nodes: one read + four writes', sheetsNodes.length, 5);
-  ok('all of them authenticate as a service account',
-    sheetsNodes.every((n) => n.parameters.authentication === 'serviceAccount'));
-  ok('the Google credential is pinned by ID, not by name alone',
-    sheetsNodes.every((n) => n.credentials.googleApi
-      && n.credentials.googleApi.id === 'VIOgsheetcred01'
-      && n.credentials.googleApi.name === 'VIO Google Sheets'),
-    JSON.stringify(sheetsNodes.map((n) => n.credentials)));
-  ok('they all point at the live spreadsheet id',
-    sheetsNodes.every((n) => n.parameters.documentId.value === '1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c'));
-  ok('appends ignore extra fields instead of adding columns to the Sheet',
-    sheetsNodes.filter((n) => n.parameters.operation === 'append')
-      .every((n) => n.parameters.options.handlingExtraData === 'ignoreIt'));
-  ok('the read runs once and never stalls an empty tab',
-    sheetsNodes.filter((n) => !n.parameters.operation)
+  eq('zero Google Sheets nodes',
+    WF.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets').length, 0);
+  const pgNodes = WF.nodes.filter((n) => n.type === 'n8n-nodes-base.postgres');
+  eq('five Postgres nodes: one read + four writes', pgNodes.length, 5);
+  ok('every Postgres node pins VIO Supabase by id',
+    pgNodes.every((n) => n.credentials?.postgres?.id === 'VIOsupabasepg1'
+      && n.credentials.postgres.name === 'VIO Supabase'),
+    JSON.stringify(pgNodes.map((n) => n.credentials)));
+  ok('the read runs once and still emits on a miss',
+    pgNodes.filter((n) => n.name.startsWith('Read '))
       .every((n) => n.executeOnce === true && n.alwaysOutputData === true));
-
-  // No A1 letters, anywhere: the live column order does not match SHEET_SCHEMA.md.
-  ok('every write maps by header name (autoMapInputData)',
-    sheetsNodes.filter((n) => n.parameters.operation)
-      .every((n) => n.parameters.columns.mappingMode === 'autoMapInputData'));
-  ok('no node addresses the Sheet by an A1 range',
-    !sheetsNodes.some((n) => JSON.stringify(n.parameters).match(/"range"|![A-Z]{1,2}\d*:/)),
-    JSON.stringify(sheetsNodes.map((n) => n.parameters.options)));
-
-  const updates = sheetsNodes.filter((n) => n.parameters.operation === 'update');
-  eq('two update nodes: lead_id and its contact_email fallback', updates.length, 2);
-  eq('  matching columns',
-    JSON.stringify(updates.map((n) => n.parameters.columns.matchingColumns).flat().sort()),
-    JSON.stringify(['contact_email', 'lead_id']));
-  ok('  both update the Leads tab', updates.every((n) => n.parameters.sheetName.value === 'Leads'));
-
-  const supp = sheetsNodes.filter((n) => n.parameters.sheetName.value === 'Suppression');
-  eq('exactly one Suppression node', supp.length, 1);
-  eq('  and it can only APPEND — never update, never delete', supp[0].parameters.operation, 'append');
-
-  const events = sheetsNodes.filter((n) => n.parameters.sheetName.value === 'Events');
-  eq('exactly one Events node, append-only', events.length, 1);
-  eq('  operation', events[0].parameters.operation, 'append');
+  ok('lead updates are UPDATE, never insert',
+    pgNodes.filter((n) => n.name.startsWith('Update Lead'))
+      .every((n) => /update leads/i.test(n.parameters.query)
+        && !/insert into leads/i.test(n.parameters.query)));
+  const supp = pgNodes.filter((n) => /Suppression/.test(n.name));
+  eq('exactly one Suppression writer', supp.length, 1);
+  ok('  and it can only INSERT', /insert into suppression/i.test(supp[0].parameters.query)
+    && !/update suppression|delete from suppression/i.test(supp[0].parameters.query));
+  const events = pgNodes.filter((n) => /Event/.test(n.name));
+  eq('exactly one Events writer', events.length, 1);
+  ok('  inserts into events', /insert into events/i.test(events[0].parameters.query));
+  ok('  also writes replies the dashboard reads', /insert into replies/i.test(events[0].parameters.query));
 
   const creds = WF.nodes.filter((n) => n.credentials).flatMap((n) => Object.values(n.credentials));
   ok('every credential in the file is pinned by id AND name',

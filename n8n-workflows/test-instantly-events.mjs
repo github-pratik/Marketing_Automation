@@ -103,17 +103,21 @@ ok('webhook has an explicit webhookId',
 ok('auth is fail-closed',
    /REFUSED/.test(jsOf('Authenticate (fail-closed)')) && /VIO_WEBHOOK_TOKEN/.test(jsOf('Authenticate (fail-closed)')));
 
-const sheetNodes = wf.nodes.filter(n => n.type === 'n8n-nodes-base.googleSheets');
-ok('every Sheets node pins the credential by id',
-   sheetNodes.every(n => n.credentials?.googleApi?.id === 'VIOgsheetcred01'));
-ok('every Sheets node is typeVersion 4.7', sheetNodes.every(n => n.typeVersion === 4.7));
-ok('every Sheets node declares a schema',
-   sheetNodes.every(n => (n.parameters.columns?.schema || []).length > 0));
-ok('the Suppression node can only append',
-   sheetNodes.find(n => n.name.includes('Suppression'))?.parameters.operation === 'append');
-ok('the Leads node matches on contact_email',
-   (sheetNodes.find(n => n.name.includes('Lead Stage'))?.parameters.columns?.matchingColumns || [])
-     .includes('contact_email'));
+ok('no Google Sheets nodes remain',
+   wf.nodes.every(n => n.type !== 'n8n-nodes-base.googleSheets'));
+const pgNodes = wf.nodes.filter(n => n.type === 'n8n-nodes-base.postgres');
+ok('three Postgres writers', pgNodes.length === 3, String(pgNodes.length));
+ok('every Postgres node pins VIO Supabase by id',
+   pgNodes.every(n => n.credentials?.postgres?.id === 'VIOsupabasepg1'));
+ok('suppression insert happens in SQL',
+   /insert into suppression/i.test(pgNodes.find(n => n.name.includes('Suppression'))?.parameters.query || ''));
+ok('lead update is an UPDATE, never an upsert',
+   /update leads/i.test(pgNodes.find(n => n.name.includes('Lead Stage'))?.parameters.query || '')
+   && !/insert into leads/i.test(pgNodes.find(n => n.name.includes('Lead Stage'))?.parameters.query || ''));
+ok('events land in the ledger',
+   /insert into events/i.test(pgNodes.find(n => n.name.includes('Event'))?.parameters.query || ''));
+ok('suppression is wired before the lead stage write',
+   (wf.connections['Append Suppression']?.main || []).flat().some(c => c.node === 'Update Lead Stage (Leads)'));
 ok('no A1 range anywhere', !/"[A-Z]{1,2}[0-9]{1,4}:[A-Z]{1,2}/.test(JSON.stringify(wf)));
 
 const names = new Set(wf.nodes.map(n => n.name));

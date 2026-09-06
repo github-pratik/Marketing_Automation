@@ -302,7 +302,22 @@ dynamic video background — see `reach-engine/sendr-page-template.md` Part 3.
   placeholders. Fill those four and uploads start working with no code change. Without them the GIF
   still builds locally.
 
-## Google Sheets — the data bus & dashboard
+## Supabase — the record (2026-09-06)
+
+- **Status:** `[LIVE]` — n8n credential `VIO Supabase` id `VIOsupabasepg1` (session-mode pooler).
+  Staff console at `https://vio-console.104-248-119-152.sslip.io` reads the same project; the
+  browser never holds the service key.
+- **Tables:** `leads`, `events` (append-only, timestamp column `at`), `suppression` (append-only,
+  `is_suppressed()`), `replies`, `campaigns`, `system_status`, view `leads_ready`.
+- **In use by:** outreach, enrol-email, intake, apollo-reveal, instantly-events, inbound-reply,
+  push-instantly, db-probe, the console.
+- **Not in use by:** `VIO-inbox-mapper` and `VIO-sheet-*` (deactivated, credential unbound).
+  `VIO-costs-rollup` stays off.
+
+## Google Sheets — connection deleted (2026-09-06)
+
+Was the data bus & dashboard through 2026-09-05. The n8n credential `VIO Google Sheets`
+(`VIOgsheetcred01`) is **deleted**. Do not reinstall it. Do not point new writers at the Sheet.
 
 - **Auth:** a Google **service account** (n8n credential type `googleApi`), NOT OAuth. n8n's Sheets
   node supports both; the service account was chosen because it installs headlessly via the CLI,
@@ -328,9 +343,8 @@ dynamic video background — see `reach-engine/sendr-page-template.md` Part 3.
   account managed by `pccoepune.org`. It cannot create Cloud projects at all —
   *"You do not have the required `resourcemanager.projects.create` permission"*. Managed accounts
   commonly block this. Use a personal or properly-owned account.
-- **Status:** `[LIVE]` — credential installed and verified against the real sheet. Sheet **writes
-  are wired** (intake, inbox-mapper, run-outreach, enrol-email, instantly-events, sheet-repair).
-  A 2026-09-04 live probe saw intake write Leads + Events the same afternoon.
+- **Status:** `[DELETED 2026-09-06]` — n8n credential removed after the Supabase cutover. The
+  spreadsheet may still exist as an archive; nothing in VIO can open it.
 
 ## Thoughtly — warm voice call · `[PARKED 2026-08-17]`
 
@@ -382,18 +396,8 @@ notes are kept so voice can be revived without re-researching the API — nothin
 
 ## Google Sheets — dashboard
 
-- **Status:** `[LIVE]` since 2026-08-16 (credential) / 2026-08-17 (first workflow reads+writes).
-- **Auth: a service account, NOT OAuth** — n8n credential `VIO Google Sheets`, id `VIOgsheetcred01`,
-  type `googleApi`. The Sheets node defaults to `authentication: oAuth2` and will not offer this
-  credential at all unless the node explicitly sets `authentication: "serviceAccount"`.
-- **Schema:** `SHEET_SCHEMA.md`. Live sheet-audit on 2026-09-04 read `Leads`, `Suppression`,
-  `Events`, `Costs`, `Segments`, `Inbox`, `System`, plus `Demo` and `Pipeline`. The live header
-  **order** differs from the doc's listed order, so match on column names, never on A1 letters.
-- **In use by:** `VIO-inbox-mapper` (Inbox + System heartbeat), `VIO-intake-verify-curate`
-  (Leads + Suppression + Events), `VIO-run-outreach` (Leads + System), `VIO-enrol-email`
-  (Leads + Events + Suppression), `VIO-instantly-events`, `VIO-sheet-repair`, `VIO-sheet-audit`.
-  See `n8n-workflows/README.md` for live execution evidence and the node-level gotchas (notably
-  `handlingExtraData: ignoreIt`, without which an unexpected input key silently adds a new column).
+- **Status:** `[DELETED 2026-09-06]`. The staff console + Supabase replaced this. Historical
+  notes below are how it was wired, not a licence to reconnect it.
 
 ## Orphaned
 

@@ -48,12 +48,6 @@
         -960,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "alwaysOutputData": true,
       "retryOnFail": true,
       "maxTries": 5,
@@ -306,12 +300,6 @@
         640,
         160
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 15000
@@ -400,12 +388,6 @@
         -560,
         220
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "retryOnFail": true,
       "maxTries": 5,
@@ -579,7 +561,6 @@
   "settings": {
     "executionOrder": "v1",
     "errorWorkflow": "VIOwfEerroralert"
-  }
-,
-  "active": true
+  },
+  "active": false
 }

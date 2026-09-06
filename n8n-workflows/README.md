@@ -233,12 +233,12 @@ workflow.
 | Workflow | id | Trigger(s) | Active? (2026-09-04) | Purpose |
 |---|---|---|---|---|
 | `VIO-intake-verify-curate` | `VIOwf1intake0001` | manual + `executeWorkflowTrigger` (`Leads In`) | **ACTIVE** — ran today (Inbox → Reoon → Leads) | Reoon-verify a lead, gate on dedupe/suppression, classify pass/drop/needs_review |
-| `VIO-inbound-reply-to-call` | `VIOwf3inbound001` | webhook (`vio-inbound-reply`) | **ACTIVE**, route bound; no retained traffic | Instantly reply → OpenAI sentiment → dedup/TCPA gate → Slack "take this follow-up?" |
+| `VIO-inbound-reply-to-call` | `VIOwf3inbound001` | webhook (`vio-inbound-reply`) | **ACTIVE**, route bound | Instantly reply → OpenAI sentiment → Slack + Supabase `events`/`leads`/`replies`/`suppression` |
 | `VIO-operator-agent` | `VIOwf4agent0001` | webhook (test) + `executeWorkflow` target | **ACTIVE** (called by `VIO-run-outreach`, `VIO-run-campaign`) | Deterministic draft: validate config → personalize → assemble email |
 | `VIO-sendr-generate-page` | `VIOwf6sendrgen01` | webhook + `executeWorkflow` target | **ACTIVE**, route bound (called by `VIO-run-outreach`) | Lead + product → personalized Sendr page URL, fails closed on unknown product |
 | `VIO-sendr-events` | `VIOwf5sendrevt01` | webhook (`vio-sendr-events`) | **ACTIVE**, route bound; no retained traffic | Sendr workspace webhook → heat classification → Slack on hot/booked/error |
 | `VIO-operator-agent-v2` | `VIOwf7agentv201` | webhook (`vio-operator-agent`) | **ACTIVE**, route bound; unused on the daily path | True autonomous LangChain Agent node; tool-gated, no send/dial/reveal tools wired |
-| `VIO-inbox-mapper` | `VIOwfHinboxmap` | schedule (2 min) | **ACTIVE** — 2,511 successes in retained history; imported a row today | Normalises Inbox onto the `Leads` schema; calls intake |
+| `VIO-inbox-mapper` | `VIOwfHinboxmap` | schedule (2 min) | **INACTIVE (2026-09-06)** — Sheet Inbox door retired; console add is the front door | Still has Sheets nodes; do not reactivate without a port |
 | `VIO-agent-tool-ask-human` | `VIOwf8askhuman1` | `executeWorkflowTrigger` only | **ACTIVE** — 6 Slack waits stranded since 25–30 Aug | Shared Slack approve/adjust/deny gate |
 | `VIO-agent-tool-reveal-contacts` | `VIOwfArevealcon1` | `executeWorkflowTrigger` only | **ACTIVE**; never invoked in retained history | Human-gated Apollo `people/match` reveal, cap 10, email-only |
 | `VIO-apollo-reveal` | `VIOwfApolloRev1` | webhook (`vio-apollo-reveal`) + `executeWorkflowTrigger` | **ACTIVE** (2026-09-05), route bound and exercised | The console's paid pull: ids in → work addresses out → handed to intake. Cap 25, dedupes before spending |
@@ -247,11 +247,11 @@ workflow.
 | `VIO-run-campaign` | `VIOwfCruncamp001` | webhook (`vio-run-campaign`) | **ACTIVE**, route bound; unused | Free run: source → draft, no reveal/enrol |
 | `VIO-run-outreach` | `VIOwfDsheetdemo1` | schedule (3 min; node `Every 3 minutes`) | **ACTIVE** — 1,673 successes, almost all idle heartbeats | Polls `Leads` for Manual + READY rows → draft → page → ungated enrol |
 | `VIO-enrol-email` | `VIOwfLenrolmail` | `executeWorkflowTrigger` only | **ACTIVE** (called by `VIO-run-outreach`). One live enrol 2026-09-01; writeback fix untested | Ungated Instantly enrolment; 5 throw-checks replace the Slack click |
-| `VIO-instantly-events` | `VIOwfGinstevents` | webhook (`vio-instantly-events`) | **ACTIVE**, route bound; no retained traffic | Delivery/bounce/unsub → Events + Leads stage + Suppression |
+| `VIO-instantly-events` | `VIOwfGinstevents` | webhook (`vio-instantly-events`) | **ACTIVE**, route bound | Delivery/bounce/unsub → Supabase `events` + `leads` + `suppression` |
 | `VIO-costs-rollup` | `VIOwfKcostsroll` | schedule (daily, 02:00) | **INACTIVE** — only VIO workflow that did not bind. Costs tab is not rolling up. | Full recompute of Events into Costs buckets |
-| `VIO-sheet-audit` | `VIOwfFsheetaudit` | webhook (`vio-sheet-audit`) | **ACTIVE**, route bound; ran today | Read-only audit of the live tabs vs this doc |
-| `VIO-sheet-provision` | `VIOwfIprovision` | webhook (`vio-sheet-provision`) | **ACTIVE**, route bound; unused (tabs already exist) | Writes Inbox / System header rows |
-| `VIO-sheet-repair` | `VIOwfJrepairsht` | webhook (`vio-sheet-repair`) | **ACTIVE**, route bound; used 2026-09-01 to vouch a catch-all | Seed an Inbox test row, or vouch-approve one Leads address |
+| `VIO-sheet-audit` | `VIOwfFsheetaudit` | webhook (`vio-sheet-audit`) | **INACTIVE (2026-09-06)** — Sheet audit retired; use `VIO-db-probe` | Read-only audit of the live tabs vs this doc |
+| `VIO-sheet-provision` | `VIOwfIprovision` | webhook (`vio-sheet-provision`) | **INACTIVE (2026-09-06)** | Writes Inbox / System header rows |
+| `VIO-sheet-repair` | `VIOwfJrepairsht` | webhook (`vio-sheet-repair`) | **INACTIVE (2026-09-06)** | Seed an Inbox test row, or vouch-approve one Leads address |
 | `VIO-error-alert` | `VIOwfEerroralert` | error trigger | **ACTIVE** — posted the 2026-09-01 writeback throw to Slack | One Slack message per VIO failure; refusal vs outage |
 
 

@@ -154,6 +154,10 @@ def main():
     ap.add_argument("--keep-key", action="store_true", help="don't shred the JSON key afterwards")
     ap.add_argument("--host", default=DROPLET)
     args = ap.parse_args()
+    sys.exit(
+        "REFUSED: VIO Google Sheets was deleted 2026-09-06 after the Supabase cutover. "
+        "Do not reinstall this credential."
+    )
 
     key_path = os.path.abspath(os.path.expanduser(args.key))
     if not os.path.exists(key_path):

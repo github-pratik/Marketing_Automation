@@ -150,12 +150,6 @@
         -100,
         120
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 15000
@@ -183,12 +177,6 @@
         100,
         120
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "alwaysOutputData": true,
       "retryOnFail": true,
       "maxTries": 5,
@@ -261,12 +249,6 @@
         -100,
         -180
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "alwaysOutputData": true,
       "retryOnFail": true,
       "maxTries": 5,
@@ -357,12 +339,6 @@
         300,
         -180
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 15000
@@ -434,12 +410,6 @@
         -100,
         -360
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "alwaysOutputData": true,
       "retryOnFail": true,
       "maxTries": 5,
@@ -516,12 +486,6 @@
         500,
         -360
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "retryOnFail": true,
       "maxTries": 5,
       "waitBetweenTries": 15000,
@@ -700,7 +664,6 @@
         ]
       ]
     }
-  }
-,
-  "active": true
+  },
+  "active": false
 }

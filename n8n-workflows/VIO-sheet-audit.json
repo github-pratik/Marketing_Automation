@@ -58,12 +58,6 @@
         -200,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -94,12 +88,6 @@
         -20,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -130,12 +118,6 @@
         160,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -166,12 +148,6 @@
         340,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -202,12 +178,6 @@
         520,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -238,12 +208,6 @@
         700,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -289,12 +253,6 @@
         880,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -325,12 +283,6 @@
         1060,
         0
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "onError": "continueRegularOutput",
       "alwaysOutputData": true,
       "retryOnFail": true,
@@ -360,12 +312,6 @@
         1060,
         160
       ],
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
       "alwaysOutputData": true,
       "onError": "continueRegularOutput",
       "retryOnFail": true,
@@ -499,7 +445,6 @@
   "settings": {
     "executionOrder": "v1",
     "errorWorkflow": "VIOwfEerroralert"
-  }
-,
-  "active": true
+  },
+  "active": false
 }

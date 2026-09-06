@@ -196,14 +196,12 @@
   </nav>
 
   <!-- ---------- LEADS ---------- -->
-  <!-- The single most misleading thing this console could do is imply that a
-       click here moves mail. It does not yet: n8n still reads the Google Sheet.
-       Saying so on every tab is cheaper than one person believing otherwise. -->
+  <!-- n8n claims from leads_ready. Releasing a lead here is what puts it in that view. -->
   <div class="banner" id="cutoverBanner">
-    <b>Reading Supabase · n8n still sends from the Sheet</b>
-    <span>This console reads and writes the new Supabase record, and every action is
-    written to the ledger. The sending workflow has <em>not</em> been switched over yet, so
-    releasing a lead here records your decision but does not itself put mail in the queue.</span>
+    <b>Supabase is the record · n8n sends from here</b>
+    <span>This console and the send loop share one database. Releasing a lead marks it
+    <code>approved</code>; <code>VIO-run-outreach</code> picks that up on the next cycle.
+    The Google Sheet is no longer the queue.</span>
   </div>
 
   <div class="view" id="v-leads">

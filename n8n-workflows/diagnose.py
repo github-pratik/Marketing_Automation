@@ -263,37 +263,24 @@ def main():
 
     # ---------------- liveness ----------------------------------------------
     section("POLLERS")
-    audit = get("vio-sheet-audit")
-    if audit:
-        sysvals = (audit.get("System") or {}).get("values") or {}
-        names = sysvals.get("workflow") or []
-        if not names:
-            print("  System tab empty — the pollers have not written a heartbeat.")
-        for i, wf in enumerate(names):
-            def col(k):
-                v = sysvals.get(k) or []
-                return v[i] if i < len(v) else (v[0] if v else "?")
-            print(f"  {wf}")
-            print(f"     last run {col('last_run_at')} · every {col('every')} "
-                  f"· {col('checked')} · {col('last_result')}")
+    probe = get("vio-db-probe")
+    if probe:
+        tables = probe.get("tables") or {}
+        print(f"  supabase {probe.get('reached')}")
+        print(f"  leads={tables.get('leads')}  events={tables.get('events')}  "
+              f"suppression={tables.get('suppression')}  "
+              f"leads_ready={tables.get('leads_ready')}")
+        if tables.get("leads_ready") == 0:
+            print("  leads_ready is empty — outreach is idle on purpose.")
+    else:
+        print("  vio-db-probe did not answer. Heartbeats live in system_status,")
+        print("  not the Sheet System tab (VIO-sheet-audit is retired).")
 
     # ---------------- what is stuck -----------------------------------------
     section("PIPELINE")
-    if audit:
-        for tab in SHEET_TABS:
-            t = audit.get(tab) or {}
-            if isinstance(t, dict) and t.get("data_rows") is not None:
-                print(f"  {tab:12} {t['data_rows']} row(s), {t.get('header_count')} column(s)")
-        leads = (audit.get("Leads") or {}).get("values") or {}
-        states = leads.get("channel_state_email") or []
-        # READY must stay in step with VIO-run-outreach's own allow-list.
-        ready = {"", "not_sent", "approved"}
-        print(f"\n  Leads states present: {states}")
-        blocked = [s for s in states if s not in ready]
-        if blocked and not [s for s in states if s in ready]:
-            print(f"  Nothing is ready to send. Every lead sits in: {blocked}")
-            print("  `needs_review` means verification could not confirm the mailbox")
-            print("  (catch-all domain). A person vouches via VIO-sheet-repair approve.")
+    if probe:
+        print("  Record is Supabase. Ready queue is the leads_ready view.")
+        print("  A person vouches in the staff console (approved), not VIO-sheet-repair.")
 
     print()
 

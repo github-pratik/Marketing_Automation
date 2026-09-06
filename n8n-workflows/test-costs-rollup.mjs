@@ -178,8 +178,8 @@ ok('has a schedule trigger', wf.nodes.some((n) => n.type === 'n8n-nodes-base.sch
 
 const sheetNodes = wf.nodes.filter((n) => n.type === 'n8n-nodes-base.googleSheets');
 ok('at least one Sheets node exists', sheetNodes.length >= 2);
-ok('every Sheets node pins the credential by id',
-   sheetNodes.every((n) => n.credentials?.googleApi?.id === 'VIOgsheetcred01'));
+ok('retired Sheet rollup has no Google credential bound',
+   sheetNodes.every((n) => !n.credentials?.googleApi));
 ok('every Sheets node is typeVersion 4.7', sheetNodes.every((n) => n.typeVersion === 4.7));
 
 const readNode = nodeNamed('Read Events');

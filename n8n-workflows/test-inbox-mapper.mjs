@@ -270,8 +270,8 @@ ok('a verified lead is claimed as mapped',
 // ---------- structure ----------
 ok('workflow id stable', wf.id === 'VIOwfHinboxmap');
 const sheetNodes = wf.nodes.filter(n => n.type === 'n8n-nodes-base.googleSheets');
-ok('every Sheets node pins the credential by id',
-   sheetNodes.every(n => n.credentials?.googleApi?.id === 'VIOgsheetcred01'));
+ok('retired Sheet door has no Google credential bound',
+   sheetNodes.every(n => !n.credentials?.googleApi));
 ok('every Sheets node is typeVersion 4.7', sheetNodes.every(n => n.typeVersion === 4.7));
 const schemaBad = schemaViolations(wf);
 ok('Sheets caches obey the schema rule (empty on appendOrUpdate+autoMap, present on defineBelow)',

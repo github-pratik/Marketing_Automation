@@ -126,7 +126,7 @@
         520,
         80
       ],
-      "notes": "Warm signals and render lifecycle events land here. TODO: append a Google Sheets Events write once the Sheet + VIO Google Sheets OAuth exist \u2014 until then the execution log is the record."
+      "notes": "Warm signals and render lifecycle events land here. Slack is the alert; the ledger is Supabase. Do not add a Google Sheets write."
     }
   ],
   "connections": {

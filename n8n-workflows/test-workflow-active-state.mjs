@@ -33,7 +33,7 @@ const INTENDED_ACTIVE = {
   'VIO-enrol-email': true,
   'VIO-error-alert': true,
   'VIO-inbound-reply-to-call': true,
-  'VIO-inbox-mapper': true,
+  'VIO-inbox-mapper': false, // Sheet Inbox door — console add is the front door now
   'VIO-instantly-events': true,
   'VIO-intake-verify-curate': true,
   'VIO-operator-agent': true,
@@ -42,9 +42,9 @@ const INTENDED_ACTIVE = {
   'VIO-run-outreach': true,
   'VIO-sendr-events': true,
   'VIO-sendr-generate-page': true,
-  'VIO-sheet-audit': true,
-  'VIO-sheet-provision': true,
-  'VIO-sheet-repair': true,
+  'VIO-sheet-audit': false,
+  'VIO-sheet-provision': false,
+  'VIO-sheet-repair': false,
   'VIO-source-leads': true,
 };
 

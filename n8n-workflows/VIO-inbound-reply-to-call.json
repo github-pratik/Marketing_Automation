@@ -23,7 +23,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Fail-closed auth: reject unless ?t= matches VIO_WEBHOOK_TOKEN. No env set at all = reject\n// everything, not \"allow everything\" — a forged event here could eventually reach a real call.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {};\nconst headers = item.headers || {};\nconst got = q.t || q.token || headers['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };"
+        "jsCode": "// Fail-closed auth: reject unless ?t= matches VIO_WEBHOOK_TOKEN. No env set at all = reject\n// everything, not \"allow everything\" \u2014 a forged event here could eventually reach a real call.\nconst expected = $env.VIO_WEBHOOK_TOKEN;\nconst item = $input.item.json;\nconst q = item.query || {};\nconst headers = item.headers || {};\nconst got = q.t || q.token || headers['x-vio-token'];\nif (!expected) throw new Error('REFUSED: VIO_WEBHOOK_TOKEN not set (fail-closed)');\nif (!got || String(got) !== String(expected)) throw new Error('REFUSED: bad or missing token');\nreturn { json: item.body || item };"
       },
       "id": "vio-wf3-auth",
       "name": "Authenticate (fail-closed)",
@@ -43,7 +43,7 @@
           "messages": [
             {
               "role": "system",
-              "content": "Classify a prospect's email reply for a B2B sales outreach gate. Respond with ONLY a raw JSON object and nothing else — no markdown code fences, no commentary, no explanation. Exact shape: {\"sentiment\":\"positive|neutral|negative\",\"out_of_office\":true|false}. positive = wants to talk, learn more, or is clearly interested. negative = declining, unsubscribe, or hostile. neutral = anything else (questions, confusion, unclear intent). out_of_office = true for ANY auto-reply/vacation/OOO message regardless of apparent sentiment."
+              "content": "Classify a prospect's email reply for a B2B sales outreach gate. Respond with ONLY a raw JSON object and nothing else \u2014 no markdown code fences, no commentary, no explanation. Exact shape: {\"sentiment\":\"positive|neutral|negative\",\"out_of_office\":true|false}. positive = wants to talk, learn more, or is clearly interested. negative = declining, unsubscribe, or hostile. neutral = anything else (questions, confusion, unclear intent). out_of_office = true for ANY auto-reply/vacation/OOO message regardless of apparent sentiment."
             },
             {
               "role": "user",
@@ -78,7 +78,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Dedup (idempotency via workflow static data) + TCPA warm-only gate.\n// Mirrors n8n-workflows/test-reply-brain.mjs's decide() exactly — keep both in sync; that file\n// is the offline proof this logic is correct and TCPA-safe BEFORE it ever runs live.\n//\n// Decision is \"propose_call\", not \"call\": Instantly's reply_received payload carries no phone\n// number, and reach-engine deliberately never reveals one in the batch step (mobile/dial credits\n// are reserved for exactly this moment). Revealing the phone and placing the call are separate,\n// still human-gated steps downstream — not wired here, see the NOT WIRED node on the true branch.\nconst payload = $('Authenticate (fail-closed)').item.json;\nconst raw = $input.item.json; // OpenAi node, simplifyOutput:false -> raw chat/completions response\n\nlet sentiment = { sentiment: 'unknown', out_of_office: false };\ntry {\n  let content = raw.choices[0].message.content || '';\n  // This node type has no strict JSON-mode toggle, so defensively strip markdown fences\n  // in case the model wraps its answer in ```json ... ``` despite the system prompt.\n  content = content.replace(/```json|```/gi, '').trim();\n  sentiment = JSON.parse(content);\n} catch (e) {\n  sentiment = { sentiment: 'unknown', out_of_office: false, parse_error: String(e) };\n}\n\nconst data = $getWorkflowStaticData('node');\ndata.seenIds = data.seenIds || [];\n\nconst key = payload.email_id || null;\n\nif (payload.event_type !== 'reply_received') {\n  return { json: { decision: 'ignore', reason: `not reply_received (${payload.event_type})`, payload, sentiment } };\n}\nif (key && data.seenIds.includes(key)) {\n  return { json: { decision: 'skip', reason: 'duplicate email_id (replay/forged)', payload, sentiment } };\n}\nif (key) { data.seenIds.push(key); if (data.seenIds.length > 5000) data.seenIds.shift(); }\n\nconst s = String(sentiment.sentiment || '').toLowerCase();\nif (s !== 'positive') {\n  return { json: { decision: 'skip', reason: `sentiment \"${s}\" (warm-only)`, payload, sentiment } };\n}\nif (sentiment.out_of_office === true) {\n  return { json: { decision: 'skip', reason: 'out-of-office / auto-reply', payload, sentiment } };\n}\nreturn { json: { decision: 'propose_call', reason: 'positive + not-OOO — needs phone reveal + human approval before any call, not a call itself', payload, sentiment } };"
+        "jsCode": "// Dedup (idempotency via workflow static data) + TCPA warm-only gate.\n// Mirrors n8n-workflows/test-reply-brain.mjs's decide() exactly \u2014 keep both in sync; that file\n// is the offline proof this logic is correct and TCPA-safe BEFORE it ever runs live.\n//\n// Decision is \"propose_call\", not \"call\": Instantly's reply_received payload carries no phone\n// number, and reach-engine deliberately never reveals one in the batch step (mobile/dial credits\n// are reserved for exactly this moment). Revealing the phone and placing the call are separate,\n// still human-gated steps downstream \u2014 not wired here, see the NOT WIRED node on the true branch.\nconst payload = $('Authenticate (fail-closed)').item.json;\nconst raw = $input.item.json; // OpenAi node, simplifyOutput:false -> raw chat/completions response\n\nlet sentiment = { sentiment: 'unknown', out_of_office: false };\ntry {\n  let content = raw.choices[0].message.content || '';\n  // This node type has no strict JSON-mode toggle, so defensively strip markdown fences\n  // in case the model wraps its answer in ```json ... ``` despite the system prompt.\n  content = content.replace(/```json|```/gi, '').trim();\n  sentiment = JSON.parse(content);\n} catch (e) {\n  sentiment = { sentiment: 'unknown', out_of_office: false, parse_error: String(e) };\n}\n\nconst data = $getWorkflowStaticData('node');\ndata.seenIds = data.seenIds || [];\n\nconst key = payload.email_id || null;\n\nif (payload.event_type !== 'reply_received') {\n  return { json: { decision: 'ignore', reason: `not reply_received (${payload.event_type})`, payload, sentiment } };\n}\nif (key && data.seenIds.includes(key)) {\n  return { json: { decision: 'skip', reason: 'duplicate email_id (replay/forged)', payload, sentiment } };\n}\nif (key) { data.seenIds.push(key); if (data.seenIds.length > 5000) data.seenIds.shift(); }\n\nconst s = String(sentiment.sentiment || '').toLowerCase();\nif (s !== 'positive') {\n  return { json: { decision: 'skip', reason: `sentiment \"${s}\" (warm-only)`, payload, sentiment } };\n}\nif (sentiment.out_of_office === true) {\n  return { json: { decision: 'skip', reason: 'out-of-office / auto-reply', payload, sentiment } };\n}\nreturn { json: { decision: 'propose_call', reason: 'positive + not-OOO \u2014 needs phone reveal + human approval before any call, not a call itself', payload, sentiment } };"
       },
       "id": "vio-wf3-decide",
       "name": "Dedup + TCPA Gate",
@@ -132,8 +132,8 @@
           "mode": "name",
           "value": "#marketing_testing_1"
         },
-        "subject": "Positive reply — you take the follow-up",
-        "message": "=A prospect replied positively and isn't out-of-office. *Reply to them yourself.*\n\nLead: {{ $json.payload.lead_email }}\nCampaign: {{ $json.payload.campaign_id }}\nTheir reply: \"{{ $json.payload.reply_text }}\"\n\nAutomated voice is OUT OF SCOPE — no call is placed by this system, by anyone, ever, on the current design. Approve = you are taking the follow-up; Decline = not a real lead, and it is logged. Nothing here dials, reveals a phone number, or spends a credit.",
+        "subject": "Positive reply \u2014 you take the follow-up",
+        "message": "=A prospect replied positively and isn't out-of-office. *Reply to them yourself.*\n\nLead: {{ $json.payload.lead_email }}\nCampaign: {{ $json.payload.campaign_id }}\nTheir reply: \"{{ $json.payload.reply_text }}\"\n\nAutomated voice is OUT OF SCOPE \u2014 no call is placed by this system, by anyone, ever, on the current design. Approve = you are taking the follow-up; Decline = not a real lead, and it is logged. Nothing here dials, reveals a phone number, or spends a credit.",
         "responseType": "approval",
         "approvalOptions": {
           "values": {
@@ -158,7 +158,7 @@
           "name": "slack marketing"
         }
       },
-      "notes": "Reaching here means: positive reply, not out-of-office, real lead. Sends Approve/Decline to #marketing_testing_1 and waits.\n\n⚠️ THE RENDERED MESSAGE IS `parameters.message`, NOT `parameters.text`. This is the `sendAndWait` operation, which reads `message`. A `text` key on this operation is INERT — n8n accepts it, stores it, shows no error, and ignores it. Cost 2026-08-17: the copy was 'updated' by writing to `text`, imported, published and restarted three times, and Slack kept posting the old wording. Verify a copy change by reading back `parameters.message` from workflow_entity, not by trusting the import.\n\nThoughtly (automated warm voice) was SKIPPED 2026-08-17 at the user's direction. There is no call node here and never was. The terminal action is a HUMAN follow-up, so the buttons mean 'I've got this' / 'not a lead' — not 'pre-approve a robot call'.\n\nWith no automated outbound voice anywhere in the pipeline, TCPA exposure is structurally zero rather than merely gated. If voice is ever revived, re-run the compliance gate BEFORE adding any dial node — the surviving TCPA gate is a leftover guard, not prior approval."
+      "notes": "Reaching here means: positive reply, not out-of-office, real lead. Sends Approve/Decline to #marketing_testing_1 and waits.\n\n\u26a0\ufe0f THE RENDERED MESSAGE IS `parameters.message`, NOT `parameters.text`. This is the `sendAndWait` operation, which reads `message`. A `text` key on this operation is INERT \u2014 n8n accepts it, stores it, shows no error, and ignores it. Cost 2026-08-17: the copy was 'updated' by writing to `text`, imported, published and restarted three times, and Slack kept posting the old wording. Verify a copy change by reading back `parameters.message` from workflow_entity, not by trusting the import.\n\nThoughtly (automated warm voice) was SKIPPED 2026-08-17 at the user's direction. There is no call node here and never was. The terminal action is a HUMAN follow-up, so the buttons mean 'I've got this' / 'not a lead' \u2014 not 'pre-approve a robot call'.\n\nWith no automated outbound voice anywhere in the pipeline, TCPA exposure is structurally zero rather than merely gated. If voice is ever revived, re-run the compliance gate BEFORE adding any dial node \u2014 the surviving TCPA gate is a leftover guard, not prior approval."
     },
     {
       "parameters": {},
@@ -172,46 +172,38 @@
       ]
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
-        "options": {}
-      },
       "id": "vio-wf3-readleads",
       "name": "Read Leads (reply lookup)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         320,
         260
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- One person, not the whole table. Instantly's lead_id is instantly_lead_id here.\nwith p as (select $1::jsonb as j)\nselect l.id::text as lead_id,\n       l.instantly_lead_id,\n       l.contact_email::text as contact_email,\n       l.product::text as source_config,\n       l.first_name,\n       l.channel_state_email::text as channel_state_email\nfrom leads l, p\nwhere (nullif(p.j->>'lead_id', '') is not null and l.instantly_lead_id = p.j->>'lead_id')\n   or (nullif(p.j->>'email', '') is not null\n       and vio_canon(l.contact_email::text) = vio_canon(p.j->>'email'))",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ email: ($json.payload && ($json.payload.lead_email || $json.payload.email || $json.payload.contact_email)) || '', lead_id: ($json.payload && ($json.payload.lead_id || $json.payload.leadId)) || '' }) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
-      "executeOnce": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "alwaysOutputData": true,
-      "notes": "Reads the whole Leads tab so the update can match on lead_id and FALL BACK to contact_email when the event carries no lead_id (or one that isn't on the tab). Without this read the fallback could not exist: a Sheets update whose match value hits no row simply does nothing, silently.\n\nexecuteOnce + alwaysOutputData: one read per run, and a tab holding only its header row emits one empty {} placeholder instead of zero items, which would stall the branch."
+      "executeOnce": true
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Turn one classified inbound Instantly event into the facts the three Sheet writes need.\n//\n// Runs for EVERY authenticated event, not only the ones that reach a human. That is the whole\n// point: before this existed, a reply was classified, posted to Slack and then died — nothing\n// recorded that the lead replied, and an opt-out that only reached Slack would still be contacted\n// on LinkedIn, because the Suppression tab never heard about it.\n//\n// Input  = the Leads tab, from \"Read Leads (reply lookup)\" (one empty {} placeholder item when the\n//          tab holds only its header row — alwaysOutputData).\n// Also reads \"Dedup + TCPA Gate\" for the payload + the OpenAI sentiment it already parsed.\n//\n// OPT-OUT IS DECIDED FROM PHRASES, NOT FROM SENTIMENT. \"Not interested, we already have a vendor\"\n// is negative but is NOT a request to stop; \"please take me off your list\" is friendly and IS one.\n// Sentiment is recorded on the lead row, never used to suppress.\n// Erring toward suppressing is the only safe direction in a compliance check (same doctrine as\n// VIO-intake-verify-curate's blank-identifier_type rule), so an out-of-office that still contains\n// an explicit opt-out phrase DOES suppress — an OOO on its own never does.\nconst OPT_OUT_PATTERNS = [\n  /\\bunsubscrib/,\n  /\\bopt(?:ing)?[\\s-]*out\\b/,\n  /\\bopt\\s+(?:me|us)\\s+out\\b/,\n  /\\bremove\\s+(?:me|us|my|our|this)\\b/,\n  /\\btake\\s+(?:me|us)\\s+off\\b/,\n  /\\bstop\\s+(?:emailing|e-mailing|mailing|contacting|messaging|reaching|sending)/,\n  /\\bdo\\s*n(?:o|')?t\\s+(?:email|e-mail|contact|message)\\s+(?:me|us)/,\n  /\\bno\\s+longer\\s+(?:wish|want)\\s+to\\s+(?:receive|hear)/,\n  /\\bdelete\\s+(?:my|our)\\s+(?:email|e-mail|address|data|details|information|info|contact)/\n];\n\nconst stripHtml = (s) => String(s === null || s === undefined ? '' : s).replace(/<[^>]*>/g, ' ');\nconst norm = (s) => stripHtml(s).replace(/[‘’]/g, \"'\").replace(/\\s+/g, ' ').toLowerCase().trim();\nconst EMAIL_RE = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\nconst firstEmail = (vals) => {\n  for (const v of vals) {\n    const e = String(v === null || v === undefined ? '' : v).trim().toLowerCase();\n    if (e && EMAIL_RE.test(e)) return e;\n  }\n  return '';\n};\nconst str = (v) => String(v === null || v === undefined ? '' : v).trim();\n\nconst leadRows = $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((r) => r && typeof r === 'object' && Object.keys(r).length > 0);\n\nconst out = [];\nfor (const it of $('Dedup + TCPA Gate').all()) {\n  const g = (it && it.json) || {};\n  const p = (g && g.payload) || {};\n  const s = (g && g.sentiment) || {};\n  const eventType = str(p.event_type).toLowerCase();\n\n  const isBounce = /bounce/.test(eventType) || p.bounced === true || str(p.status).toLowerCase() === 'bounced';\n  const isUnsubEvent = /unsub/.test(eventType) || p.unsubscribed === true || p.is_unsubscribe === true;\n  const isReply = /repl/.test(eventType);\n\n  // Opens, clicks and sends change no reply/bounce state — there is nothing to record for them.\n  if (!isReply && !isBounce && !isUnsubEvent) continue;\n  // A replay the gate already rejected must not double-write (Suppression is append-only, so a\n  // duplicate there is harmless but noisy; a duplicate Events row would overstate the OpenAI spend).\n  if (g.decision === 'skip' && /duplicate/i.test(str(g.reason))) continue;\n\n  const text = norm([p.reply_subject, p.subject, p.reply_text, p.reply_text_snippet, p.reply_html,\n    p.text, p.body, p.message].filter((v) => v !== null && v !== undefined).join(' \\n '));\n  let phraseHit = '';\n  for (const rx of OPT_OUT_PATTERNS) {\n    try { if (rx.test(text)) { phraseHit = String(rx); break; } } catch (e) { /* never throw on a weird payload */ }\n  }\n\n  const optOut = isUnsubEvent || Boolean(phraseHit);\n  const suppress = optOut || isBounce;\n  const suppressionReason = optOut ? 'opt_out' : (isBounce ? 'bounced' : '');\n\n  // Instantly's reply/bounce payloads name the prospect `lead_email`; the rest are defensive\n  // fallbacks for shapes seen on other events. `from_email` is last because on anything other than\n  // an inbound reply it can be OUR sending account, and suppressing ourselves would be a bad day.\n  const email = firstEmail([p.lead_email, p.contact_email, (p.lead || {}).email, p.prospect_email,\n    p.email, p.from_email, p.from_address]);\n\n  const payloadLeadId = str(p.lead_id) || str(p.leadId);\n  let row = null, matchOn = '', matchValue = '';\n  if (payloadLeadId) {\n    row = leadRows.find((r) => str(r.lead_id) === payloadLeadId) || null;\n    if (row) { matchOn = 'lead_id'; matchValue = payloadLeadId; }\n  }\n  if (!row && email) {\n    row = leadRows.find((r) => str(r.contact_email).toLowerCase() === email) || null;\n    if (row) { matchOn = 'contact_email'; matchValue = str(row.contact_email); }\n  }\n\n  const sentiment = str(s.sentiment).toLowerCase() || 'unknown';\n  const ooo = s.out_of_office === true;\n  const now = new Date().toISOString();\n\n  // A bounce is NOT a reply: it must never overwrite reply_received / reply_sentiment on the row.\n  let leadUpdate;\n  if (isReply) {\n    leadUpdate = { reply_received: true, reply_sentiment: sentiment, reply_out_of_office: ooo, updated_at: now };\n  } else if (isBounce) {\n    leadUpdate = { channel_state_email: 'bounced', updated_at: now };\n  } else {\n    leadUpdate = { updated_at: now };\n  }\n\n  const parts = [];\n  if (isReply) parts.push('reply ' + sentiment + (ooo ? ' (out-of-office)' : ''));\n  if (isBounce) parts.push('bounce');\n  if (isUnsubEvent && !isReply) parts.push('unsubscribe event');\n  parts.push(suppress ? ('suppressed: ' + suppressionReason) : 'not suppressed');\n  if (suppress && !email) parts.push('NO EMAIL IN PAYLOAD - suppression row NOT written, add it by hand');\n  parts.push(matchOn ? ('Leads row matched on ' + matchOn) : 'no Leads row matched');\n\n  out.push({ json: {\n    event_type: eventType || '(missing)',\n    decision: str(g.decision),\n    is_reply: isReply,\n    is_bounce: isBounce,\n    is_unsubscribe_event: isUnsubEvent,\n    opt_out: optOut,\n    opt_out_match: phraseHit,\n    suppress: suppress,\n    suppression_reason: suppressionReason,\n    suppression_identifier: suppress ? email : '',\n    reply_sentiment: sentiment,\n    reply_out_of_office: ooo,\n    lead_email: email,\n    lead_id: payloadLeadId || str((row || {}).lead_id),\n    source_config: str((row || {}).source_config) || str(p.source_config),\n    match_on: matchOn,\n    match_value: matchValue,\n    lead_update: leadUpdate,\n    event_result: parts.join(' - '),\n    timestamp: now\n  }});\n}\nreturn out;\n"
+        "jsCode": "// Turn one classified inbound Instantly event into the facts the three Sheet writes need.\n//\n// Runs for EVERY authenticated event, not only the ones that reach a human. That is the whole\n// point: before this existed, a reply was classified, posted to Slack and then died \u2014 nothing\n// recorded that the lead replied, and an opt-out that only reached Slack would still be contacted\n// on LinkedIn, because the Suppression tab never heard about it.\n//\n// Input  = the matching leads row(s) from \"Read Leads (reply lookup)\".\n// Also reads \"Dedup + TCPA Gate\" for the payload + the OpenAI sentiment it already parsed.\n//\n// OPT-OUT IS DECIDED FROM PHRASES, NOT FROM SENTIMENT. \"Not interested, we already have a vendor\"\n// is negative but is NOT a request to stop; \"please take me off your list\" is friendly and IS one.\n// Sentiment is recorded on the lead row, never used to suppress.\n// Erring toward suppressing is the only safe direction in a compliance check (same doctrine as\n// VIO-intake-verify-curate's blank-identifier_type rule), so an out-of-office that still contains\n// an explicit opt-out phrase DOES suppress \u2014 an OOO on its own never does.\nconst OPT_OUT_PATTERNS = [\n  /\\bunsubscrib/,\n  /\\bopt(?:ing)?[\\s-]*out\\b/,\n  /\\bopt\\s+(?:me|us)\\s+out\\b/,\n  /\\bremove\\s+(?:me|us|my|our|this)\\b/,\n  /\\btake\\s+(?:me|us)\\s+off\\b/,\n  /\\bstop\\s+(?:emailing|e-mailing|mailing|contacting|messaging|reaching|sending)/,\n  /\\bdo\\s*n(?:o|')?t\\s+(?:email|e-mail|contact|message)\\s+(?:me|us)/,\n  /\\bno\\s+longer\\s+(?:wish|want)\\s+to\\s+(?:receive|hear)/,\n  /\\bdelete\\s+(?:my|our)\\s+(?:email|e-mail|address|data|details|information|info|contact)/\n];\n\nconst stripHtml = (s) => String(s === null || s === undefined ? '' : s).replace(/<[^>]*>/g, ' ');\nconst norm = (s) => stripHtml(s).replace(/[\u2018\u2019]/g, \"'\").replace(/\\s+/g, ' ').toLowerCase().trim();\nconst EMAIL_RE = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/;\nconst firstEmail = (vals) => {\n  for (const v of vals) {\n    const e = String(v === null || v === undefined ? '' : v).trim().toLowerCase();\n    if (e && EMAIL_RE.test(e)) return e;\n  }\n  return '';\n};\nconst str = (v) => String(v === null || v === undefined ? '' : v).trim();\n\nconst leadRows = $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((r) => r && typeof r === 'object' && Object.keys(r).length > 0);\n\nconst out = [];\nfor (const it of $('Dedup + TCPA Gate').all()) {\n  const g = (it && it.json) || {};\n  const p = (g && g.payload) || {};\n  const s = (g && g.sentiment) || {};\n  const eventType = str(p.event_type).toLowerCase();\n\n  const isBounce = /bounce/.test(eventType) || p.bounced === true || str(p.status).toLowerCase() === 'bounced';\n  const isUnsubEvent = /unsub/.test(eventType) || p.unsubscribed === true || p.is_unsubscribe === true;\n  const isReply = /repl/.test(eventType);\n\n  // Opens, clicks and sends change no reply/bounce state \u2014 there is nothing to record for them.\n  if (!isReply && !isBounce && !isUnsubEvent) continue;\n  // A replay the gate already rejected must not double-write (Suppression is append-only, so a\n  // duplicate there is harmless but noisy; a duplicate Events row would overstate the OpenAI spend).\n  if (g.decision === 'skip' && /duplicate/i.test(str(g.reason))) continue;\n\n  const text = norm([p.reply_subject, p.subject, p.reply_text, p.reply_text_snippet, p.reply_html,\n    p.text, p.body, p.message].filter((v) => v !== null && v !== undefined).join(' \\n '));\n  let phraseHit = '';\n  for (const rx of OPT_OUT_PATTERNS) {\n    try { if (rx.test(text)) { phraseHit = String(rx); break; } } catch (e) { /* never throw on a weird payload */ }\n  }\n\n  const optOut = isUnsubEvent || Boolean(phraseHit);\n  const suppress = optOut || isBounce;\n  const suppressionReason = optOut ? 'opt_out' : (isBounce ? 'bounced' : '');\n\n  // Instantly's reply/bounce payloads name the prospect `lead_email`; the rest are defensive\n  // fallbacks for shapes seen on other events. `from_email` is last because on anything other than\n  // an inbound reply it can be OUR sending account, and suppressing ourselves would be a bad day.\n  const email = firstEmail([p.lead_email, p.contact_email, (p.lead || {}).email, p.prospect_email,\n    p.email, p.from_email, p.from_address]);\n\n  const payloadLeadId = str(p.lead_id) || str(p.leadId);\n  let row = null, matchOn = '', matchValue = '';\n  if (payloadLeadId) {\n    row = leadRows.find((r) => str(r.lead_id) === payloadLeadId || str(r.instantly_lead_id) === payloadLeadId) || null;\n    if (row) { matchOn = 'lead_id'; matchValue = payloadLeadId; }\n  }\n  if (!row && email) {\n    row = leadRows.find((r) => str(r.contact_email).toLowerCase() === email) || null;\n    if (row) { matchOn = 'contact_email'; matchValue = str(row.contact_email); }\n  }\n\n  const sentiment = str(s.sentiment).toLowerCase() || 'unknown';\n  const ooo = s.out_of_office === true;\n  const now = new Date().toISOString();\n\n  // A bounce is NOT a reply: it must never overwrite reply_received / reply_sentiment on the row.\n  let leadUpdate;\n  if (isReply) {\n    leadUpdate = { reply_received: true, reply_sentiment: sentiment, reply_out_of_office: ooo, updated_at: now };\n  } else if (isBounce) {\n    leadUpdate = { channel_state_email: 'bounced', updated_at: now };\n  } else {\n    leadUpdate = { updated_at: now };\n  }\n\n  const parts = [];\n  if (isReply) parts.push('reply ' + sentiment + (ooo ? ' (out-of-office)' : ''));\n  if (isBounce) parts.push('bounce');\n  if (isUnsubEvent && !isReply) parts.push('unsubscribe event');\n  parts.push(suppress ? ('suppressed: ' + suppressionReason) : 'not suppressed');\n  if (suppress && !email) parts.push('NO EMAIL IN PAYLOAD - suppression row NOT written, add it by hand');\n  parts.push(matchOn ? ('Leads row matched on ' + matchOn) : 'no Leads row matched');\n\n  out.push({ json: {\n    event_type: eventType || '(missing)',\n    decision: str(g.decision),\n    is_reply: isReply,\n    is_bounce: isBounce,\n    is_unsubscribe_event: isUnsubEvent,\n    opt_out: optOut,\n    opt_out_match: phraseHit,\n    suppress: suppress,\n    suppression_reason: suppressionReason,\n    suppression_identifier: suppress ? email : '',\n    reply_sentiment: sentiment,\n    reply_out_of_office: ooo,\n    lead_email: email,\n    lead_id: payloadLeadId || str((row || {}).lead_id),\n    source_config: str((row || {}).source_config) || str(p.source_config),\n    match_on: matchOn,\n    match_value: matchValue,\n    lead_update: leadUpdate,\n    event_result: parts.join(' - '),\n    timestamp: now\n  }});\n}\nreturn out;\n"
       },
       "id": "vio-wf3-outcome",
       "name": "Shape Reply Outcome",
@@ -226,7 +218,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Only a lead we actually LOCATED on the Leads tab is updated, and only ever by the column that\n// matched it — lead_id here, contact_email in the sibling node. Returning [] stops the branch, so\n// an unmatched event writes nothing rather than updating the wrong row.\n//\n// Keys below MUST equal Leads column names: the Sheets node runs in autoMapInputData mode and\n// matches on header TEXT. The live column order does NOT match SHEET_SCHEMA.md (lead_id is column\n// P), so nothing here may address a column by its A1 letter. Routing fields are dropped on purpose\n// so the item handed to the Sheets node contains real columns only.\nreturn $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((o) => o.match_on === 'lead_id' && o.match_value)\n  .map((o) => ({ json: Object.assign({ lead_id: o.match_value }, o.lead_update || {}) }));\n"
+        "jsCode": "// Only a lead we actually LOCATED on the Leads tab is updated, and only ever by the column that\n// matched it \u2014 lead_id here, contact_email in the sibling node. Returning [] stops the branch, so\n// an unmatched event writes nothing rather than updating the wrong row.\n//\n// Keys below MUST equal Leads column names: the Sheets node runs in autoMapInputData mode and\n// matches on header TEXT. The live column order does NOT match SHEET_SCHEMA.md (lead_id is column\n// P), so nothing here may address a column by its A1 letter. Routing fields are dropped on purpose\n// so the item handed to the Sheets node contains real columns only.\nreturn $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((o) => o.match_on === 'lead_id' && o.match_value)\n  .map((o) => ({ json: Object.assign({ lead_id: o.match_value }, o.lead_update || {}) }));\n"
       },
       "id": "vio-wf3-upd-id",
       "name": "Shape Lead Update (by lead_id)",
@@ -241,7 +233,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Fallback path: the event carried no lead_id, or its lead_id is not on the Leads tab, but the\n// prospect's address is. Same rules as the sibling node — header-name matching only, real columns\n// only, [] when there is nothing to update.\nreturn $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((o) => o.match_on === 'contact_email' && o.match_value)\n  .map((o) => ({ json: Object.assign({ contact_email: o.match_value }, o.lead_update || {}) }));\n"
+        "jsCode": "// Fallback path: the event carried no lead_id, or its lead_id is not on the Leads tab, but the\n// prospect's address is. Same rules as the sibling node \u2014 header-name matching only, real columns\n// only, [] when there is nothing to update.\nreturn $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((o) => o.match_on === 'contact_email' && o.match_value)\n  .map((o) => ({ json: Object.assign({ contact_email: o.match_value }, o.lead_update || {}) }));\n"
       },
       "id": "vio-wf3-upd-email",
       "name": "Shape Lead Update (by contact_email)",
@@ -256,7 +248,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// APPEND-ONLY. Never update, never delete a Suppression row: a suppression added in error is\n// corrected by ADDING a row that notes the correction (SHEET_SCHEMA.md).\n//\n// A row is written only when there is a real address to put in identifier_value. A blank value\n// would be compared against every identifier shape by VIO-intake-verify-curate's suppression\n// check — a blank/unrecognised row is deliberately matched against everything there — so writing\n// one could block the whole pipeline. When the payload carried no address the Events row says so\n// in plain words instead, for a human to fix by hand.\nconst seen = [];\nreturn $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((o) => o.suppress === true && o.suppression_identifier && o.suppression_reason)\n  .filter((o) => {\n    const k = o.suppression_identifier + '|' + o.suppression_reason;\n    if (seen.indexOf(k) !== -1) return false;\n    seen.push(k);\n    return true;\n  })\n  .map((o) => ({ json: {\n    identifier_type: 'email',\n    identifier_value: o.suppression_identifier,\n    reason: o.suppression_reason,\n    added_at: o.timestamp,\n    added_by: 'VIO-inbound-reply-to-call'\n  }}));\n"
+        "jsCode": "// APPEND-ONLY. Never update, never delete a Suppression row: a suppression added in error is\n// corrected by ADDING a row that notes the correction (SHEET_SCHEMA.md).\n//\n// A row is written only when there is a real address to put in identifier_value. A blank value\n// would be compared against every identifier shape by VIO-intake-verify-curate's suppression\n// check \u2014 a blank/unrecognised row is deliberately matched against everything there \u2014 so writing\n// one could block the whole pipeline. When the payload carried no address the Events row says so\n// in plain words instead, for a human to fix by hand.\nconst seen = [];\nreturn $input.all()\n  .map((i) => (i && i.json) || {})\n  .filter((o) => o.suppress === true && o.suppression_identifier && o.suppression_reason)\n  .filter((o) => {\n    const k = o.suppression_identifier + '|' + o.suppression_reason;\n    if (seen.indexOf(k) !== -1) return false;\n    seen.push(k);\n    return true;\n  })\n  .map((o) => ({ json: {\n    identifier_type: 'email',\n    identifier_value: o.suppression_identifier,\n    reason: o.suppression_reason,\n    added_at: o.timestamp,\n    added_by: 'VIO-inbound-reply-to-call'\n  }}));\n"
       },
       "id": "vio-wf3-supp-row",
       "name": "Shape Suppression Row",
@@ -271,7 +263,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// One Events row per classified inbound event. Keys MUST equal Events column names.\n//\n// tool/action are `openai` / `classify_reply` because that is what actually happened and what\n// actually cost money: the OpenAI Classify node sits BEFORE the gate, so it runs on every\n// authenticated event — a bounce costs a classification too. `units: 1` is the honest meterable\n// fact (one chat completion).\n//\n// est_cost_usd is left blank on purpose: measure, don't estimate. A made-up number in the cost\n// meter is worse than a gap — fill it from real OpenAI usage, not from a guess.\nreturn $input.all().map((i) => (i && i.json) || {}).map((o) => ({ json: {\n  timestamp: o.timestamp || new Date().toISOString(),\n  lead_id: o.lead_id || '',\n  lead_email: o.lead_email || '',\n  tool: 'openai',\n  action: 'classify_reply',\n  units: 1,\n  est_cost_usd: '',\n  result: o.event_result || '',\n  workflow: 'VIO-inbound-reply-to-call',\n  source_config: o.source_config || ''\n}}));\n"
+        "jsCode": "// One Events row per classified inbound event. Keys MUST equal Events column names.\n//\n// tool/action are `openai` / `classify_reply` because that is what actually happened and what\n// actually cost money: the OpenAI Classify node sits BEFORE the gate, so it runs on every\n// authenticated event \u2014 a bounce costs a classification too. `units: 1` is the honest meterable\n// fact (one chat completion).\n//\n// est_cost_usd is left blank on purpose: measure, don't estimate. A made-up number in the cost\n// meter is worse than a gap \u2014 fill it from real OpenAI usage, not from a guess.\nreturn $input.all().map((i) => (i && i.json) || {}).map((o) => ({ json: {\n  timestamp: o.timestamp || new Date().toISOString(),\n  lead_id: o.lead_id || '',\n  lead_email: o.lead_email || '',\n  tool: 'openai',\n  action: 'classify_reply',\n  units: 1,\n  est_cost_usd: '',\n  result: o.event_result || '',\n  workflow: 'VIO-inbound-reply-to-call',\n  source_config: o.source_config || '',\n  reply_sentiment: o.reply_sentiment || '',\n  is_reply: o.is_reply === true\n}}));\n"
       },
       "id": "vio-wf3-event-row",
       "name": "Shape Reply Event",
@@ -283,443 +275,108 @@
       ]
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        },
-        "operation": "update",
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "schema": [
-            {
-              "id": "lead_id",
-              "displayName": "lead_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "contact_email",
-              "displayName": "contact_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reply_received",
-              "displayName": "reply_received",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reply_sentiment",
-              "displayName": "reply_sentiment",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reply_out_of_office",
-              "displayName": "reply_out_of_office",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "channel_state_email",
-              "displayName": "channel_state_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "updated_at",
-              "displayName": "updated_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ],
-          "matchingColumns": [
-            "lead_id"
-          ]
-        }
-      },
       "id": "vio-wf3-sheet-upd-id",
       "name": "Update Lead Row (by lead_id)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
-        1000,
+        980,
         160
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Instantly lead id, or our uuid if the shape node passed that.\nwith p as (select $1::jsonb as j)\nupdate leads l set\n  replied_at = case when coalesce(p.j->>'reply_received','') in ('true','1') then now() else l.replied_at end,\n  reply_sentiment = coalesce(nullif(p.j->>'reply_sentiment',''), l.reply_sentiment),\n  channel_state_email = case\n    when p.j->>'channel_state_email' in ('bounced','unsubscribed','replied')\n      then (p.j->>'channel_state_email')::vio_email_state\n    when coalesce(p.j->>'reply_received','') in ('true','1')\n      then 'replied'::vio_email_state\n    else l.channel_state_email\n  end\nfrom p\nwhere l.instantly_lead_id = p.j->>'lead_id'\n   or l.id::text = p.j->>'lead_id'\nreturning l.id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
-      "notes": "Header-name matching only (autoMapInputData + matchingColumns). The live Leads tab's column ORDER does not match SHEET_SCHEMA.md — lead_id is column P — so no node or script may address this tab by A1 letters.\n\n`options.handlingExtraData: ignoreIt` is set for consistency with the append nodes, but do NOT rely on it here: the real guarantee is that the shape node in front emits real column names only. (An inert parameter on the wrong operation is a known trap on this instance — see the Slack node's note.)"
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        },
-        "operation": "update",
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "schema": [
-            {
-              "id": "lead_id",
-              "displayName": "lead_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "contact_email",
-              "displayName": "contact_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reply_received",
-              "displayName": "reply_received",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reply_sentiment",
-              "displayName": "reply_sentiment",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reply_out_of_office",
-              "displayName": "reply_out_of_office",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "channel_state_email",
-              "displayName": "channel_state_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "updated_at",
-              "displayName": "updated_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ],
-          "matchingColumns": [
-            "contact_email"
-          ]
-        }
-      },
       "id": "vio-wf3-sheet-upd-email",
       "name": "Update Lead Row (by contact_email)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
-        1000,
+        980,
         300
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with p as (select $1::jsonb as j)\nupdate leads l set\n  replied_at = case when coalesce(p.j->>'reply_received','') in ('true','1') then now() else l.replied_at end,\n  reply_sentiment = coalesce(nullif(p.j->>'reply_sentiment',''), l.reply_sentiment),\n  channel_state_email = case\n    when p.j->>'channel_state_email' in ('bounced','unsubscribed','replied')\n      then (p.j->>'channel_state_email')::vio_email_state\n    when coalesce(p.j->>'reply_received','') in ('true','1')\n      then 'replied'::vio_email_state\n    else l.channel_state_email\n  end\nfrom p\nwhere vio_canon(l.contact_email::text) = vio_canon(p.j->>'contact_email')\nreturning l.id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
-      "notes": "Header-name matching only (autoMapInputData + matchingColumns). The live Leads tab's column ORDER does not match SHEET_SCHEMA.md — lead_id is column P — so no node or script may address this tab by A1 letters.\n\n`options.handlingExtraData: ignoreIt` is set for consistency with the append nodes, but do NOT rely on it here: the real guarantee is that the shape node in front emits real column names only. (An inert parameter on the wrong operation is a known trap on this instance — see the Slack node's note.)"
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Suppression",
-          "mode": "name"
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        },
-        "operation": "append",
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "schema": [
-            {
-              "id": "identifier_type",
-              "displayName": "identifier_type",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "identifier_value",
-              "displayName": "identifier_value",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reason",
-              "displayName": "reason",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "added_at",
-              "displayName": "added_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "added_by",
-              "displayName": "added_by",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ]
-        }
-      },
       "id": "vio-wf3-sheet-supp",
       "name": "Append Suppression Row (Suppression)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
-        1000,
+        980,
         440
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Before the lead row is the only safe order; this node is wired first from Shape Suppression.\nwith p as (select $1::jsonb as j)\ninsert into suppression (identifier_type, identifier_value, reason, added_by)\nselect (p.j->>'identifier_type')::vio_identifier_type,\n       p.j->>'identifier_value',\n       coalesce(p.j->>'reason', ''),\n       coalesce(p.j->>'added_by', 'VIO-inbound-reply-to-call')\nfrom p\nwhere nullif(p.j->>'identifier_value','') is not null\nreturning id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
-      "notes": "APPEND ONLY — this is the one tab that must never be updated or deleted from. An opt-out or bounce recorded here is what stops the lead being contacted again on ANOTHER channel: VIO-intake-verify-curate matches this tab on every identifier before it spends a credit."
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Events",
-          "mode": "name"
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        },
-        "operation": "append",
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "schema": [
-            {
-              "id": "timestamp",
-              "displayName": "timestamp",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "lead_id",
-              "displayName": "lead_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "lead_email",
-              "displayName": "lead_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "tool",
-              "displayName": "tool",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "action",
-              "displayName": "action",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "units",
-              "displayName": "units",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "est_cost_usd",
-              "displayName": "est_cost_usd",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "result",
-              "displayName": "result",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "workflow",
-              "displayName": "workflow",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "source_config",
-              "displayName": "source_config",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ]
-        }
-      },
-      "id": "vio-wf3-sheet-events",
+      "id": "vio-wf3-sheet-evt",
       "name": "Log Reply Classification (Events)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
-        1000,
+        980,
         580
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Classification cost + the reply body the dashboard reads.\nwith p as (select $1::jsonb as j),\nlid as (\n  select id from leads\n  where vio_canon(contact_email::text) = vio_canon(p.j->>'lead_email')\n     or (nullif(p.j->>'lead_id','') is not null and instantly_lead_id = p.j->>'lead_id')\n  limit 1\n),\nev as (\n  insert into events (lead_id, lead_email, actor, action, outcome, workflow, units, est_cost_usd, payload)\n  select (select id from lid),\n         coalesce(p.j->>'lead_email', ''),\n         'openai',\n         'classify_reply',\n         coalesce(p.j->>'result', ''),\n         'VIO-inbound-reply-to-call',\n         1,\n         null,\n         jsonb_build_object('source_config', p.j->>'source_config')\n  from p\n  returning id\n),\nrep as (\n  insert into replies (lead_id, lead_email, sentiment)\n  select (select id from lid),\n         coalesce(p.j->>'lead_email', ''),\n         coalesce(p.j->>'reply_sentiment', '')\n  from p\n  where coalesce(p.j->>'is_reply','') in ('true','1')\n  returning id\n)\nselect (select id from ev) as event_id, (select id from rep) as reply_id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ lead_email: $json.lead_email || '', lead_id: $json.lead_id || '', result: $json.result || '', source_config: $json.source_config || '', action: $json.action || '', reply_sentiment: $json.reply_sentiment || '', is_reply: $json.is_reply === true }) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
-      "notes": "One row per classified inbound event. est_cost_usd stays blank — measure, don't estimate."
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     }
   ],
   "connections": {
