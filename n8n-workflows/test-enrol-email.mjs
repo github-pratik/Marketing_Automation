@@ -22,15 +22,51 @@ const preCode = jsOf('Preconditions (fail closed)');
 // The node names every upstream it reads, so the mock answers per node. $input is deliberately
 // given the LAST SHEET READ's output — which is what the deployed node actually receives — so a
 // regression back to reading $input for the request fails here instead of in production.
-const mk = (req, supp, ev) => (name) => {
+const mk = (req) => (name) => {
   if (name === 'Called by Workflow') return { first: () => ({ json: req }) };
-  const rows = (name === 'Read Suppression' ? supp : ev).map((j) => ({ json: j }));
-  return { all: () => rows, first: () => rows[0] || { json: {} } };
+  throw new Error(`shim: node "${name}" is not wired — the gate should not be reading it`);
 };
-const run = (req, supp = [], ev = []) => new Function('$input', '$', preCode)(
-  { first: () => ({ json: (ev[ev.length - 1] || {}) }), all: () => ev.map((j) => ({ json: j })) },
-  mk(req, supp, ev));
-const refuses = (req, supp = [], ev = []) => { try { run(req, supp, ev); return null; } catch (e) { return e.message; } };
+
+// A DELIBERATELY DUMB STAND-IN FOR THE DATABASE.
+//
+// The gate no longer reads two sheet tabs; one query answers the daily cap, the suppression verdict
+// and the send history for every address in the batch, and this node acts on that answer. So the
+// suite keeps its existing `(req, supp, ev)` call sites and derives the answer from them.
+//
+// It matches EXACTLY, with no canonicalisation. That is on purpose: the +tag folding, the domain
+// chain and the zero-width stripping are `is_suppressed()` in SQL now, tested against the live
+// database in test-suppression-sql.mjs. Making this shim clever would recreate the second
+// implementation the migration deleted, in a place no production code path can reach.
+const canonShim = (v) => String(v ?? '').trim().toLowerCase();
+const answerFrom = (req, supp, ev) => {
+  const stop = new Set(supp.map((r) => canonShim(r.identifier_value)).filter(Boolean));
+  const per = {};
+  for (const l of (req.leads || [])) {
+    const e = canonShim(l.email || l.contact_email);
+    if (!e) continue;
+    per[e] = {
+      suppressed: stop.has(e) || stop.has(e.split('@')[1] || ''),
+      started: ev.filter((x) => canonShim(x.lead_email) === e
+                              && String(x.action) === 'enroll_attempt').length,
+      finished: ev.filter((x) => canonShim(x.lead_email) === e
+                               && ['enrolled', 'enroll', 'enroll_noop'].includes(String(x.action))).length,
+    };
+  }
+  // The date filter is `at >= today` in SQL. Every row a test supplies is treated as today's,
+  // which is what those tests already assumed.
+  const sent_today = ev.filter((x) =>
+    ['enrolled', 'enroll', 'enroll_attempt'].includes(String(x.action))).length;
+  return { daily_cap: 20, sent_today, per_email: per };
+};
+
+const run = (req, supp = [], ev = [], answerOverride = null) => {
+  const answer = answerOverride || answerFrom(req, supp, ev);
+  return new Function('$input', '$', preCode)(
+    { first: () => ({ json: answer }), all: () => [{ json: answer }] }, mk(req));
+};
+const refuses = (req, supp = [], ev = [], answerOverride = null) => {
+  try { run(req, supp, ev, answerOverride); return null; } catch (e) { return e.message; }
+};
 
 const LEAD = (o = {}) => ({
   contact_email: 'dana@northgate.com', first_name: 'Dana', company: 'Northgate Systems',
@@ -79,34 +115,43 @@ ok('suppression matching ignores case and whitespace',
    /REFUSED/.test(refuses(REQ(), [{ identifier_value: '  DANA@NORTHGATE.COM ' }])));
 ok('an unrelated suppression entry does not block', run(REQ(), [{ identifier_value: 'someone@else.com' }]).length === 1);
 
-// ⚠️ SUPPRESSION MATCHES THE PERSON, NOT THE STRING. All three of these bypassed exact-string
-// matching and reached the Instantly POST body for someone who had asked us to stop (red team,
-// 2026-08-30). This is the check with legal weight, so each bypass gets its own assertion.
-const SUPP_EMAIL = [{ identifier_value: 'dana@northgate.com' }];
-for (const [label, addr] of [
-  ['plus-addressing', 'dana+newsletter@northgate.com'],
-  ['plus-addressing with junk', 'dana+a+b+c@northgate.com'],
-  ['uppercase', 'DANA@NORTHGATE.COM'],
-  ['surrounding whitespace', '  dana@northgate.com  '],
-  ['a zero-width space mid-address', 'da​na@northgate.com'],
-  ['a soft hyphen mid-address', 'da­na@northgate.com'],
-  ['a zero-width joiner', 'dana‍@northgate.com'],
-]) ok(`suppressed person cannot be reached via ${label}`,
-      /REFUSED/.test(refuses(REQ({ leads: [LEAD({ contact_email: addr })] }), SUPP_EMAIL)), addr);
+// ⚠️ SUPPRESSION MATCHES THE PERSON, NOT THE STRING — and that matching now lives in ONE place.
+//
+// Plus-addressing, subdomains and zero-width characters all bypassed exact-string matching and
+// reached the Instantly POST body for someone who had asked us to stop (red team, 2026-08-30).
+// This node used to carry its own copy of the canonicalisation that catches them, and
+// test-suppression-parity.mjs existed to prove that copy had not drifted from the SQL one.
+//
+// The copy is gone: `is_suppressed()` answers before this node runs. So those bypasses are proved
+// against the LIVE DATABASE in test-suppression-sql.mjs, and what is proved here is the only thing
+// left that this node decides — that it acts on the answer, and fails closed without one.
+{
+  const supp = (verdict) => ({ daily_cap: 20, sent_today: 0,
+    per_email: { 'dana@northgate.com': { suppressed: verdict, started: 0, finished: 0 } } });
 
-// Suppressing a DOMAIN must cover its subdomains — opting out of x.com and then being mailed at
-// mail.x.com is the same person receiving the same unwanted mail.
-const SUPP_DOMAIN = [{ identifier_value: 'northgate.com' }];
-for (const addr of ['d@mail.northgate.com', 'd@a.b.northgate.com', 'd@NORTHGATE.COM'])
-  ok(`domain suppression covers ${addr}`,
-     /REFUSED/.test(refuses(REQ({ leads: [LEAD({ contact_email: addr })] }), SUPP_DOMAIN)));
-// ...but must not over-reach onto a domain that merely ends similarly.
-ok('domain suppression does NOT block an unrelated domain',
-   run(REQ({ leads: [LEAD({ contact_email: 'd@notnorthgate.com' })] }), SUPP_DOMAIN).length === 1);
-ok('  nor a different company entirely',
-   run(REQ({ leads: [LEAD({ contact_email: 'd@other.com' })] }), SUPP_DOMAIN).length === 1);
-ok('the suppression list is READ from the sheet, not passed in',
-   /\$\('Read Suppression'\)/.test(preCode));
+  const refused = refuses(REQ(), [], [], supp(true));
+  ok('a suppressed answer stops the send', /REFUSED/.test(refused || ''), refused);
+  ok('  and says plainly that the person asked us to stop',
+     /asked us to stop/.test(refused || ''), refused);
+  ok('a clean answer lets it through', run(REQ(), [], [], supp(false)).length === 1);
+
+  // FAIL CLOSED. If the database returned no row for this address we cannot prove they are not on
+  // the list, and the only safe way to be wrong is to not send.
+  const noAnswer = refuses(REQ(), [], [], { daily_cap: 20, sent_today: 0, per_email: {} });
+  ok('an address the database did not answer for is REFUSED, not sent',
+     /REFUSED/.test(noAnswer || ''), noAnswer);
+  ok('  and the refusal says why', /could not be checked/.test(noAnswer || ''), noAnswer);
+
+  // The verdict must come from the database, never from the caller. A caller that could assert
+  // its own suppression status could assert its way past the list entirely.
+  ok('the gate asks the database and never reads suppression off the request',
+     !/req\.suppress|leads\[[^\]]*\]\.suppressed/.test(preCode));
+  const askNode = wf.nodes.find((n) => n.name === 'Ask the database (cap + suppression + history)');
+  ok('  and the question is is_suppressed(), not a re-implementation',
+     /is_suppressed\(/.test(askNode.parameters.query));
+  ok('  over every identifier, not just the address',
+     /split_part\(e\.email, '@', 2\)/.test(askNode.parameters.query));
+}
 
 // ---------- CHECK 3: the product must resolve to a real campaign ----------
 ok('an unknown product refuses', /REFUSED/.test(refuses(REQ({ product: 'acme' }))));
@@ -150,14 +195,28 @@ ok('at the cap refuses', /daily cap/.test(refuses(REQ(), [], sends(20))));
 ok('over the cap refuses', /daily cap/.test(refuses(REQ(), [], sends(25))));
 ok('a batch that would CROSS the cap refuses whole, not partially',
    /daily cap/.test(refuses(REQ({ leads: [LEAD(), LEAD({ contact_email: 'b@northgate.com' })] }), [], sends(19))));
-ok("yesterday's sends do not count", run(REQ(), [], sends(50, '2020-01-01T10:00:00Z')).length === 1);
-// The UTC day rolls over ~5 hours before the Detroit day. A send made this evening must still
-// count against today's cap even though UTC already calls it tomorrow.
-ok('the cap follows the sending team\'s day, not UTC',
-   /daily cap/.test(refuses(REQ(), [], sends(20, new Date().toISOString()))));
-ok('non-enrolment events do not count against the cap',
-   run(REQ(), [], Array.from({ length: 50 }, () => ({ tool: 'reoon', action: 'verify', timestamp: NOW_ISO }))).length === 1);
-ok('the cap is read from the Events log', /\$\('Read Events'\)/.test(preCode));
+// WHICH ROWS COUNT is now the query's job, and it is asserted against the query itself. The date
+// window in particular: the UTC day rolls over about five hours before Detroit's, so counting in
+// UTC would let a send made this evening fall into tomorrow's allowance — up to a whole extra
+// day's mail inside one real day. The first cut of this migration dropped that and used UTC.
+{
+  const askNode = wf.nodes.find((n) => n.name === 'Ask the database (cap + suppression + history)');
+  const q = askNode.parameters.query;
+  ok('the cap window follows the sending team\'s day, not UTC',
+     /America\/Detroit/.test(q), q.match(/at time zone '[^']+'/)?.[0]);
+  ok('  and it counts attempts as well as confirmed outcomes',
+     /action in \('enrolled', 'enroll_attempt'\)/.test(q));
+  ok('  so a send whose outcome was lost still counts against the cap',
+     /enroll_attempt/.test(q));
+  ok('non-enrolment events cannot count — the query names the two actions that do',
+     !/'verified'|'drafted'|'page_created'/.test(q.slice(q.indexOf('sent as'), q.indexOf(')\nselect'))));
+  ok('the cap is asked of the database, not kept in this process',
+     /ask\.sent_today/.test(preCode) && !/let sentToday = 0/.test(preCode));
+}
+// A cap that cannot be checked must stop the send, not assume zero.
+ok('an unreadable cap refuses rather than sending',
+   /REFUSED/.test(refuses(REQ(), [], [], { daily_cap: 20, per_email: {
+     'dana@northgate.com': { suppressed: false, started: 0, finished: 0 } } }) || ''));
 
 // ---------- the request itself ----------
 ok('an empty lead list refuses', /REFUSED/.test(refuses(REQ({ leads: [] }))));

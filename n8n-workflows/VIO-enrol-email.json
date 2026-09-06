@@ -22,77 +22,7 @@
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Suppression",
-          "mode": "name"
-        },
-        "options": {}
-      },
-      "id": "vio-em-supp",
-      "name": "Read Suppression",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        -620,
-        0
-      ],
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
-    },
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Events",
-          "mode": "name"
-        },
-        "options": {}
-      },
-      "id": "vio-em-ev",
-      "name": "Read Events",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        -420,
-        0
-      ],
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
-    },
-    {
-      "parameters": {
-        "jsCode": "// EMAIL ENROLMENT WITHOUT A HUMAN CLICK — and what replaces the click.\n//\n// The Slack approval was removed from the EMAIL leg on the owner's instruction: the goal is 15-20\n// outreach a day and approving each one individually does not scale. It is still in place for the\n// agent's own tool (VIO-agent-tool-push-instantly), and it must stay there, because that path lets\n// an LLM CHOOSE the recipients. Here a human already chose every recipient by typing them into the\n// Inbox tab. That is the whole justification for this workflow existing separately, and if leads\n// ever start arriving here from an automated source, the gate has to come back.\n//\n// The human was doing five jobs. Each is now a check that THROWS:\n//   1. \"is this a real address\"      -> verification must have passed, or a human vouched by name\n//   2. \"have they asked us to stop\"  -> the suppression list is re-read at send time, not trusted\n//   3. \"is this the right company\"   -> the product must resolve to a real campaign\n//   4. \"does the email read right\"   -> the AI-written opener is sanity-checked\n//   5. \"is this too many\"            -> a hard daily cap, counted from what actually sent\n//\n// Same structure as the gated tool: nothing downstream has a URL of its own. The Instantly\n// endpoint is produced ONLY past these throws, so a rewire that skips this node does not produce\n// an unchecked send, it produces an HTTP node with nothing to call.\n\nconst CAP_PER_DAY = 20;          // the owner's stated ceiling of 15-20/day\nconst MAX_PER_RUN = 5;\n\nconst CAMPAIGNS = {\n  oryoniq: { id: '77b2cd80-5bf2-4656-8857-b310858d5a77', name: 'OryonIQ - Reach Engine Pilot (2026-08)' },\n  // Deliberately null until a VisioneerIT campaign exists in Instantly. Null refuses with a reason;\n  // omitting the key would refuse with \"unknown product\", which sends someone hunting the wrong bug.\n  visioneerit: null,\n};\n\n// ⚠️ READ THE REQUEST FROM THE TRIGGER BY NAME, NOT FROM $input.\n// Two Google Sheets reads sit between the trigger and this node (suppression, then events), and a\n// Sheets node's output is ITS ROWS. Reading $input here got the last sheet row and refused every\n// call with \"no leads supplied\". This is the THIRD time this exact shape has bitten this build in\n// one day — any node that reads a value from further upstream than its immediate predecessor must\n// name the node it wants.\nconst req = $('Called by Workflow').first().json || {};\nconst leads = Array.isArray(req.leads) ? req.leads : [];\nif (!leads.length) throw new Error('REFUSED: no leads supplied.');\nif (leads.length > MAX_PER_RUN) {\n  throw new Error(`REFUSED: ${leads.length} leads in one call exceeds the per-run cap of ${MAX_PER_RUN}.`);\n}\n\nconst key = String(req.product || '').toLowerCase().replace(/[^a-z]/g, '');\nif (!key) throw new Error('REFUSED: no product named — refusing to guess which company is pitching.');\nif (!(key in CAMPAIGNS)) {\n  throw new Error(`REFUSED: unknown product '${req.product}'. Known: ${Object.keys(CAMPAIGNS).join(', ')}`);\n}\nconst campaign = CAMPAIGNS[key];\nif (!campaign) {\n  throw new Error(`REFUSED: ${key} has no Instantly campaign yet, so there is nothing to enrol into. Create one and add its id here.`);\n}\n\n// ---- 2. SUPPRESSION, re-read now rather than trusted from upstream ----------------------------\n// Append-only and matched on ANY identifier. Someone may have opted out since this lead was\n// drafted; the whole point of re-reading is that the list moves under us.\n// ⚠️ SUPPRESSION MUST MATCH THE PERSON, NOT THE STRING.\n//\n// Exact string matching was bypassable three ways, all proven 2026-08-30:\n//   * plus-addressing — suppressed a@x.com, re-contacted as a+anything@x.com\n//   * subdomains      — suppressed x.com, re-contacted at mail.x.com\n//   * zero-width characters invisibly inserted into the address\n// Someone on this list has ASKED US TO STOP. A near-miss that still delivers mail is the failure\n// this list exists to prevent, so both sides are normalised to a canonical form before comparing.\nconst ZW = /[​-‏⁠﻿­]/g;   // zero-width + soft hyphen\nconst canon = (s) => String(s == null ? '' : s).replace(ZW, '').trim().toLowerCase();\n\n// Gmail-style +tags and dots are the same mailbox to most providers; strip the tag always, and\n// keep BOTH forms so a list entry written either way still matches.\nconst emailKeys = (raw) => {\n  const e = canon(raw);\n  const at = e.lastIndexOf('@');\n  if (at < 1) return e ? [e] : [];\n  const local = e.slice(0, at), dom = e.slice(at + 1);\n  const untagged = local.split('+')[0];\n  const keys = new Set([e, `${untagged}@${dom}`]);\n  return [...keys].filter(Boolean);\n};\n\n// Suppressing a domain must cover its subdomains: opting out of x.com and then being mailed at\n// mail.x.com is the same person receiving the same unwanted mail.\nconst domainChain = (host) => {\n  const h = canon(host).replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0];\n  const parts = h.split('.').filter(Boolean);\n  const out = [];\n  for (let i = 0; i + 1 < parts.length; i++) out.push(parts.slice(i).join('.'));\n  return out;   // mail.x.com -> ['mail.x.com', 'x.com']\n};\n\nconst supp = new Set();\nfor (const it of $('Read Suppression').all()) {\n  const raw = (it.json || {}).identifier_value;\n  for (const k of emailKeys(raw)) supp.add(k);\n  const v = canon(raw);\n  if (v && v.indexOf('@') === -1) for (const dchain of domainChain(v)) supp.add(dchain);\n  else if (v) supp.add(v);\n}\n\n// ---- 5. DAILY CAP, counted from what actually sent -------------------------------------------\n// Counted off the Events log, not off an internal tally: a counter this workflow keeps in its own\n// head resets whenever it restarts, and would happily send another 20.\n// \"Today\" means the SENDING TEAM'S day, not the UTC day. Both sides of this comparison used to be\n// UTC, which is self-consistent but wrong: a US working day straddles two UTC dates, so the cap\n// silently reset around 8pm Detroit and 20/day became 40 in one afternoon-and-evening. The\n// heartbeat nodes already report in America/Detroit; this now agrees with them.\nconst TZ = 'America/Detroit';\n// Built from parts rather than a locale string: en-CA renders MM/DD/YYYY under some ICU builds\n// and YYYY-MM-DD under others, and a cap whose key silently changes shape between environments is\n// worse than one in the wrong timezone.\nconst localDay = (d) => {\n  try {\n    const p = new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' })\n      .formatToParts(d).reduce((acc, x) => (acc[x.type] = x.value, acc), {});\n    if (!p.year || !p.month || !p.day) throw new Error('incomplete');\n    return `${p.year}-${p.month}-${p.day}`;\n  } catch (e) {\n    return d.toISOString().slice(0, 10);   // fail toward the UTC day rather than not counting at all\n  }\n};\nconst today = localDay(new Date());\nlet sentToday = 0;\nfor (const it of $('Read Events').all()) {\n  const e = it.json || {};\n  if (String(e.tool || '').toLowerCase() !== 'instantly') continue;\n  // 'enroll_attempt' counts as well: a send whose outcome was lost still went out, and a cap that\n  // only counts confirmed outcomes silently rises every time a run dies mid-flight.\n  const act = String(e.action || '').toLowerCase();\n  if (act !== 'enroll' && act !== 'enroll_attempt') continue;\n  const ts = new Date(String(e.timestamp || ''));\n  // An unparseable timestamp COUNTS. Skipping it would let a malformed Events row raise the cap.\n  if (isNaN(ts.getTime()) || localDay(ts) === today) sentToday += 1;\n}\nif (sentToday >= CAP_PER_DAY) {\n  throw new Error(`REFUSED: ${sentToday} leads already enrolled today, at the daily cap of ${CAP_PER_DAY}. Nothing sent.`);\n}\nconst room = CAP_PER_DAY - sentToday;\nif (leads.length > room) {\n  throw new Error(`REFUSED: ${leads.length} leads would pass the daily cap (${sentToday} already sent, ${room} left today).`);\n}\n\n// ---- ORPHANED ATTEMPTS: a send we started and never finished recording -------------------------\n// Every send writes `enroll_attempt` before the POST and `enroll`/`enroll_noop` after. If a lead\n// has more attempts than outcomes, an earlier run died between the two — the lead may or may not\n// be enrolled, and NOBODY KNOWS. Re-sending could mail a real person twice, so the address is\n// refused until a human resolves it. Failing loudly on an unknown state beats guessing quietly.\nconst attempts = new Map(), outcomes = new Map();\nconst bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);\nfor (const it of $('Read Events').all()) {\n  const e = it.json || {};\n  if (String(e.tool || '').toLowerCase() !== 'instantly') continue;\n  const who = String(e.lead_email || '').trim().toLowerCase();\n  if (!who) continue;\n  const act = String(e.action || '').toLowerCase();\n  if (act === 'enroll_attempt') bump(attempts, who);\n  else if (act === 'enroll' || act === 'enroll_noop') bump(outcomes, who);\n}\n\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\nconst BANNED = [/\\{\\{/, /\\}\\}/, /\\[\\[/, /lorem ipsum/i, /as an ai/i, /^here'?s?\\b/i,\n                /placeholder/i, /TODO/, /undefined/, /\\bnull\\b/];\n\nconst bodies = [];\nfor (const l of leads) {\n  // Canonical form, so an invisible character cannot smuggle an address past the checks below.\n  const email = canon((l && l.contact_email) || '');\n  if (!EMAIL.test(email)) throw new Error(`REFUSED: '${email}' is not a single valid address.`);\n\n  // ---- 1. VERIFIED, or vouched for by a person -----------------------------------------------\n  // 'pass' is Reoon's verdict. 'approved' is a human overriding it for one named address, which is\n  // how a catch-all domain gets through — a catch-all accepts mail for ANY address, so no verifier\n  // can confirm a mailbox on it, and only somebody who knows the person can say it is real.\n  const verdict = String(l.verify_action || '').toLowerCase();\n  const state = String(l.channel_state_email || '').toLowerCase();\n  // A vouch is a judgement call about an AMBIGUOUS address. It is not a veto over a definite\n  // negative: if Reoon says the mailbox does not exist, no amount of human confidence makes it\n  // deliverable, and mailing it just earns a bounce against the sending domain. Checked before the\n  // vouch is consulted so the ordering cannot be reversed by a later edit.\n  if (verdict === 'drop' || verdict === 'invalid') {\n    throw new Error(`REFUSED: ${email} was rejected by verification ('${verdict}'). That is a verified negative, not a judgement call — a human vouch cannot override it.`);\n  }\n  if (verdict !== 'pass' && state !== 'approved') {\n    throw new Error(`REFUSED: ${email} is '${verdict || 'unverified'}' and nobody vouched for it. Only a verified address or an explicit human approval may be mailed.`);\n  }\n\n  // ---- an unresolved previous attempt blocks this address entirely --------------------------\n  const started = attempts.get(email) || 0;\n  const finished = outcomes.get(email) || 0;\n  if (started > finished) {\n    throw new Error(`REFUSED: ${email} has ${started} recorded send attempt(s) but only ${finished} recorded outcome(s). An earlier run stopped between the send and the record, so we cannot tell whether they were already contacted. Resolve it in Instantly and add the missing Events row before retrying.`);\n  }\n\n  // ---- 2. suppression, on every identifier we hold ------------------------------------------\n  // Compare canonical forms on BOTH sides: the lead's address with its +tag stripped, and every\n  // parent domain of its host.\n  const candidates = new Set(emailKeys(email));\n  for (const dchain of domainChain(email.split('@')[1] || '')) candidates.add(dchain);\n  for (const extra of [l.linkedin_url, l.phone]) {\n    const c = canon(extra);\n    if (c) candidates.add(c);\n  }\n  for (const id of candidates) {\n    if (supp.has(id)) {\n      throw new Error(`REFUSED: ${email} matches the suppression list on '${id}'. That person asked us to stop. Nothing sent.`);\n    }\n  }\n\n  // ---- 4. the AI-written line, sanity-checked in the human's place --------------------------\n  // This is the ONLY part of the email a model writes; everything else is fixed campaign copy.\n  // With nobody reading it before it goes, an unrendered merge tag or a chatbot preamble would\n  // reach a real prospect.\n  const opener = String(l.opener || '').trim();\n  if (opener.length < 20) throw new Error(`REFUSED: ${email} has no usable opening line (${opener.length} chars).`);\n  if (opener.length > 400) throw new Error(`REFUSED: ${email} has a ${opener.length}-char opening line; something went wrong upstream.`);\n  for (const re of BANNED) {\n    if (re.test(opener)) throw new Error(`REFUSED: ${email}'s opening line matches ${re} — it looks unrendered or machine-leaked, not like copy.`);\n  }\n  // The opener is interpolated into an HTML email body AND onto a public page. Nothing the model\n  // writes has any business carrying markup or a link: every legitimate URL in this campaign is\n  // fixed copy or the {{sendrPageUrl}} merge tag. A model that has been talked into emitting a\n  // link is the difference between a bad sentence and us phishing our own prospect.\n  if (/<[a-z/][^>]*>/i.test(opener)) {\n    throw new Error(`REFUSED: ${email}'s opening line contains HTML markup. The opener is plain text only.`);\n  }\n  if (/\\b(?:https?:\\/\\/|www\\.)\\S/i.test(opener) || /\\b[a-z0-9-]+\\.(?:com|net|org|io|ai|co|gov|edu|ru|cn|xyz|link)\\b\\S*\\//i.test(opener)) {\n    throw new Error(`REFUSED: ${email}'s opening line contains a URL. Links in this campaign come from fixed copy, never from the model.`);\n  }\n  if (ZW.test(opener)) {\n    throw new Error(`REFUSED: ${email}'s opening line contains zero-width characters.`);\n  }\n\n  // ---- 3. the page the campaign CTA points at ------------------------------------------------\n  const page = String(l.sendr_page_url || '').trim();\n  if (!/^https?:\\/\\//.test(page)) {\n    throw new Error(`REFUSED: ${email} has no Sendr page URL. Step 1's CTA is {{sendrPageUrl}} and would render empty.`);\n  }\n\n  bodies.push({\n    campaign: campaign.id,\n    email,\n    first_name: String(l.first_name || ''),\n    company_name: String(l.company || ''),\n    personalization: opener,\n    // TOP-LEVEL, never nested under `payload`: Instantly silently discards custom variables nested\n    // there and still answers 201, so the CTA renders as a bare colon to a real prospect.\n    custom_variables: { sendrPageUrl: page, firstName: String(l.first_name || ''), companyName: String(l.company || '') },\n    skip_if_in_campaign: true,\n  });\n}\n\nconst INSTANTLY_LEADS_URL = 'https://api.instantly.ai/api/v2/leads';\nreturn bodies.map((body, i) => ({ json: {\n  instantly_url: INSTANTLY_LEADS_URL,\n  instantly_body: body,\n  email: body.email,\n  index: i,\n  product: key,\n  campaign_id: campaign.id,\n  campaign_name: campaign.name,\n  sent_today_before: sentToday,\n  daily_cap: CAP_PER_DAY,\n  authorized_at: new Date().toISOString(),\n} }));"
+        "jsCode": "// EMAIL ENROLMENT WITHOUT A HUMAN CLICK — and what replaces the click.\n//\n// The Slack approval was removed from the EMAIL leg on the owner's instruction: the goal is 15-20\n// outreach a day and approving each one individually does not scale. It is still in place for the\n// agent's own tool (VIO-agent-tool-push-instantly), and it must stay there, because that path lets\n// an LLM CHOOSE the recipients. Here a human already chose every recipient by typing them into the\n// Inbox tab. That is the whole justification for this workflow existing separately, and if leads\n// ever start arriving here from an automated source, the gate has to come back.\n//\n// The human was doing five jobs. Each is now a check that THROWS:\n//   1. \"is this a real address\"      -> verification must have passed, or a human vouched by name\n//   2. \"have they asked us to stop\"  -> the suppression list is re-read at send time, not trusted\n//   3. \"is this the right company\"   -> the product must resolve to a real campaign\n//   4. \"does the email read right\"   -> the AI-written opener is sanity-checked\n//   5. \"is this too many\"            -> a hard daily cap, counted from what actually sent\n//\n// Same structure as the gated tool: nothing downstream has a URL of its own. The Instantly\n// endpoint is produced ONLY past these throws, so a rewire that skips this node does not produce\n// an unchecked send, it produces an HTTP node with nothing to call.\n\n// The cap comes from the campaign row so it can be changed in one place a person can see;\n// 20 only if the row says nothing. `ask` is the single query that replaced two tab reads.\nconst ask = $input.first().json || {};\nconst CAP_PER_DAY = Number(ask.daily_cap) > 0 ? Number(ask.daily_cap) : 20;\nconst perEmail = ask.per_email || {};\nconst lookup = (e) => perEmail[String(e || '').trim().toLowerCase()] || null;\nconst MAX_PER_RUN = 5;\n\nconst CAMPAIGNS = {\n  oryoniq: { id: '77b2cd80-5bf2-4656-8857-b310858d5a77', name: 'OryonIQ - Reach Engine Pilot (2026-08)' },\n  // Deliberately null until a VisioneerIT campaign exists in Instantly. Null refuses with a reason;\n  // omitting the key would refuse with \"unknown product\", which sends someone hunting the wrong bug.\n  visioneerit: null,\n};\n\n// ⚠️ READ THE REQUEST FROM THE TRIGGER BY NAME, NOT FROM $input.\n// Two Google Sheets reads sit between the trigger and this node (suppression, then events), and a\n// Sheets node's output is ITS ROWS. Reading $input here got the last sheet row and refused every\n// call with \"no leads supplied\". This is the THIRD time this exact shape has bitten this build in\n// one day — any node that reads a value from further upstream than its immediate predecessor must\n// name the node it wants.\nconst req = $('Called by Workflow').first().json || {};\nconst leads = Array.isArray(req.leads) ? req.leads : [];\nif (!leads.length) throw new Error('REFUSED: no leads supplied.');\nif (leads.length > MAX_PER_RUN) {\n  throw new Error(`REFUSED: ${leads.length} leads in one call exceeds the per-run cap of ${MAX_PER_RUN}.`);\n}\n\nconst key = String(req.product || '').toLowerCase().replace(/[^a-z]/g, '');\nif (!key) throw new Error('REFUSED: no product named — refusing to guess which company is pitching.');\nif (!(key in CAMPAIGNS)) {\n  throw new Error(`REFUSED: unknown product '${req.product}'. Known: ${Object.keys(CAMPAIGNS).join(', ')}`);\n}\nconst campaign = CAMPAIGNS[key];\nif (!campaign) {\n  throw new Error(`REFUSED: ${key} has no Instantly campaign yet, so there is nothing to enrol into. Create one and add its id here.`);\n}\n\n// ---- 2. SUPPRESSION, re-read now rather than trusted from upstream ----------------------------\n// Append-only and matched on ANY identifier. Someone may have opted out since this lead was\n// drafted; the whole point of re-reading is that the list moves under us.\n// ⚠️ SUPPRESSION MUST MATCH THE PERSON, NOT THE STRING.\n//\n// Exact string matching was bypassable three ways, all proven 2026-08-30:\n//   * plus-addressing — suppressed a@x.com, re-contacted as a+anything@x.com\n//   * subdomains      — suppressed x.com, re-contacted at mail.x.com\n//   * zero-width characters invisibly inserted into the address\n// Someone on this list has ASKED US TO STOP. A near-miss that still delivers mail is the failure\n// this list exists to prevent, so both sides are normalised to a canonical form before comparing.\nconst ZW = /[​-‏⁠﻿­]/g;   // zero-width + soft hyphen\nconst canon = (s) => String(s == null ? '' : s).replace(ZW, '').trim().toLowerCase();\n\n// ---- SUPPRESSION MATCHING — asked, not re-implemented --------------------------------\n// This node used to carry its own copy of the canonicalisation: zero-width stripping,\n// +tag folding, the domain chain. `test-suppression-parity.mjs` existed solely to prove\n// that copy had not drifted from the SQL one, because everyone on that list has asked us\n// to stop and a single divergent case is a person who gets mailed anyway.\n//\n// It is gone. `is_suppressed()` answered for every address in this batch, over every\n// identifier, before this node ran. There is one implementation, so there is nothing to\n// drift.\n\n// ---- 5. DAILY CAP, counted from what actually sent -------------------------------------------\n// Counted off the Events log, not off an internal tally: a counter this workflow keeps in its own\n// head resets whenever it restarts, and would happily send another 20.\n// \"Today\" means the SENDING TEAM'S day, not the UTC day. Both sides of this comparison used to be\n// UTC, which is self-consistent but wrong: a US working day straddles two UTC dates, so the cap\n// silently reset around 8pm Detroit and 20/day became 40 in one afternoon-and-evening. The\n// heartbeat nodes already report in America/Detroit; this now agrees with them.\nconst TZ = 'America/Detroit';\n// Built from parts rather than a locale string: en-CA renders MM/DD/YYYY under some ICU builds\n// and YYYY-MM-DD under others, and a cap whose key silently changes shape between environments is\n// worse than one in the wrong timezone.\n// Counted by the database, over the same rows and the same word (`enrolled`) the console\n// and the daily_stats view count. The number a person reads and the number the gate\n// enforces must be the same number, or the dashboard says 3 while the cap thinks 7.\n//\n// `enroll_attempt` counts too: a send whose outcome was lost still went out, and a cap\n// that only counts confirmed outcomes silently rises every time a run dies mid-flight.\nconst sentToday = Number(ask.sent_today);\nif (!Number.isFinite(sentToday)) {\n  throw new Error('REFUSED: the database did not report how many were sent today. Refusing to send while the cap cannot be checked.');\n}\nif (sentToday >= CAP_PER_DAY) {\n  throw new Error(`REFUSED: ${sentToday} leads already enrolled today, at the daily cap of ${CAP_PER_DAY}. Nothing sent.`);\n}\nconst room = CAP_PER_DAY - sentToday;\nif (leads.length > room) {\n  throw new Error(`REFUSED: ${leads.length} leads would pass the daily cap (${sentToday} already sent, ${room} left today).`);\n}\n\n// ---- ORPHANED ATTEMPTS: a send we started and never finished recording ------------------\n// Every send writes `enroll_attempt` before the POST and `enrolled`/`enroll_noop` after. If\n// an address has more attempts than outcomes, an earlier run died between the two — the\n// lead may or may not be enrolled, and NOBODY KNOWS. Re-sending could mail a real person\n// twice, so the address is refused until a human resolves it. Failing loudly on an unknown\n// state beats guessing quietly. Both counts come from the same query as everything else.\n\nconst EMAIL = /^[^\\s@,;<>\"]+@[^\\s@,;<>\"]+\\.[^\\s@,;<>\"]+$/;\nconst BANNED = [/\\{\\{/, /\\}\\}/, /\\[\\[/, /lorem ipsum/i, /as an ai/i, /^here'?s?\\b/i,\n                /placeholder/i, /TODO/, /undefined/, /\\bnull\\b/];\n\nconst bodies = [];\nfor (const l of leads) {\n  // Canonical form, so an invisible character cannot smuggle an address past the checks below.\n  const email = canon((l && l.contact_email) || '');\n  if (!EMAIL.test(email)) throw new Error(`REFUSED: '${email}' is not a single valid address.`);\n\n  // ---- 1. VERIFIED, or vouched for by a person -----------------------------------------------\n  // 'pass' is Reoon's verdict. 'approved' is a human overriding it for one named address, which is\n  // how a catch-all domain gets through — a catch-all accepts mail for ANY address, so no verifier\n  // can confirm a mailbox on it, and only somebody who knows the person can say it is real.\n  const verdict = String(l.verify_action || '').toLowerCase();\n  const state = String(l.channel_state_email || '').toLowerCase();\n  // A vouch is a judgement call about an AMBIGUOUS address. It is not a veto over a definite\n  // negative: if Reoon says the mailbox does not exist, no amount of human confidence makes it\n  // deliverable, and mailing it just earns a bounce against the sending domain. Checked before the\n  // vouch is consulted so the ordering cannot be reversed by a later edit.\n  if (verdict === 'drop' || verdict === 'invalid') {\n    throw new Error(`REFUSED: ${email} was rejected by verification ('${verdict}'). That is a verified negative, not a judgement call — a human vouch cannot override it.`);\n  }\n  if (verdict !== 'pass' && state !== 'approved') {\n    throw new Error(`REFUSED: ${email} is '${verdict || 'unverified'}' and nobody vouched for it. Only a verified address or an explicit human approval may be mailed.`);\n  }\n\n  // ---- an unresolved previous attempt blocks this address entirely --------------------------\n  const seen = lookup(email);\n  if (!seen) {\n    throw new Error(`REFUSED: the database returned no answer for ${email}. Refusing to send to an address whose suppression and send history could not be checked.`);\n  }\n  const started = Number(seen.started) || 0;\n  const finished = Number(seen.finished) || 0;\n  if (started > finished) {\n    throw new Error(`REFUSED: ${email} has ${started} recorded send attempt(s) but only ${finished} recorded outcome(s). An earlier run stopped between the send and the record, so we cannot tell whether they were already contacted. Resolve it in Instantly and add the missing Events row before retrying.`);\n  }\n\n  // ---- 2. suppression, on every identifier we hold ------------------------------------\n  // Asked of `is_suppressed()` before this node ran, over email, domain, phone and\n  // LinkedIn, with one canonicalisation shared by every caller.\n  if (seen.suppressed === true) {\n    throw new Error(`REFUSED: ${email} is on the never-contact list. That person asked us to stop. Nothing sent.`);\n  }\n\n  // ---- 4. the AI-written line, sanity-checked in the human's place --------------------------\n  // This is the ONLY part of the email a model writes; everything else is fixed campaign copy.\n  // With nobody reading it before it goes, an unrendered merge tag or a chatbot preamble would\n  // reach a real prospect.\n  const opener = String(l.opener || '').trim();\n  if (opener.length < 20) throw new Error(`REFUSED: ${email} has no usable opening line (${opener.length} chars).`);\n  if (opener.length > 400) throw new Error(`REFUSED: ${email} has a ${opener.length}-char opening line; something went wrong upstream.`);\n  for (const re of BANNED) {\n    if (re.test(opener)) throw new Error(`REFUSED: ${email}'s opening line matches ${re} — it looks unrendered or machine-leaked, not like copy.`);\n  }\n  // The opener is interpolated into an HTML email body AND onto a public page. Nothing the model\n  // writes has any business carrying markup or a link: every legitimate URL in this campaign is\n  // fixed copy or the {{sendrPageUrl}} merge tag. A model that has been talked into emitting a\n  // link is the difference between a bad sentence and us phishing our own prospect.\n  if (/<[a-z/][^>]*>/i.test(opener)) {\n    throw new Error(`REFUSED: ${email}'s opening line contains HTML markup. The opener is plain text only.`);\n  }\n  if (/\\b(?:https?:\\/\\/|www\\.)\\S/i.test(opener) || /\\b[a-z0-9-]+\\.(?:com|net|org|io|ai|co|gov|edu|ru|cn|xyz|link)\\b\\S*\\//i.test(opener)) {\n    throw new Error(`REFUSED: ${email}'s opening line contains a URL. Links in this campaign come from fixed copy, never from the model.`);\n  }\n  if (ZW.test(opener)) {\n    throw new Error(`REFUSED: ${email}'s opening line contains zero-width characters.`);\n  }\n\n  // ---- 3. the page the campaign CTA points at ------------------------------------------------\n  const page = String(l.sendr_page_url || '').trim();\n  if (!/^https?:\\/\\//.test(page)) {\n    throw new Error(`REFUSED: ${email} has no Sendr page URL. Step 1's CTA is {{sendrPageUrl}} and would render empty.`);\n  }\n\n  bodies.push({\n    campaign: campaign.id,\n    email,\n    first_name: String(l.first_name || ''),\n    company_name: String(l.company || ''),\n    personalization: opener,\n    // TOP-LEVEL, never nested under `payload`: Instantly silently discards custom variables nested\n    // there and still answers 201, so the CTA renders as a bare colon to a real prospect.\n    custom_variables: { sendrPageUrl: page, firstName: String(l.first_name || ''), companyName: String(l.company || '') },\n    skip_if_in_campaign: true,\n  });\n}\n\nconst INSTANTLY_LEADS_URL = 'https://api.instantly.ai/api/v2/leads';\nreturn bodies.map((body, i) => ({ json: {\n  instantly_url: INSTANTLY_LEADS_URL,\n  instantly_body: body,\n  email: body.email,\n  index: i,\n  product: key,\n  campaign_id: campaign.id,\n  campaign_name: campaign.name,\n  sent_today_before: sentToday,\n  daily_cap: CAP_PER_DAY,\n  authorized_at: new Date().toISOString(),\n} }));"
       },
       "id": "vio-em-pre",
       "name": "Preconditions (fail closed)",
@@ -238,181 +168,56 @@
       ]
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "appendOrUpdate",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Leads",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [
-            "contact_email"
-          ],
-          "schema": []
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        }
-      },
       "id": "vio-em-wl",
       "name": "Write Lead Row (Leads)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         780,
         -120
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Only a lead Instantly ACTUALLY created advances the lifecycle. Reporting a send that did\n-- not happen is worse than reporting nothing.\n--\n-- This is an UPDATE, never an upsert: by the time a lead reaches the sender it already exists, and\n-- an insert here would mean the sender inventing a person nobody verified.\nwith p as (select $1::jsonb as j)\nupdate leads l set\n  channel_state_email = 'enrolled',\n  sendr_page_url = coalesce(nullif(p.j->>'sendr_page_url', ''), l.sendr_page_url),\n  opener         = coalesce(nullif(p.j->>'opener', ''), l.opener),\n  updated_at     = now()\nfrom p\nwhere vio_canon(l.contact_email::text) = vio_canon(p.j->>'contact_email')\nreturning l.id, l.contact_email, l.channel_state_email",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ contact_email: $json.contact_email || '', sendr_page_url: $json.sendr_page_url || '', opener: $json.opener || '' }) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Events",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [],
-          "schema": [
-            {
-              "id": "timestamp",
-              "displayName": "timestamp",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "lead_email",
-              "displayName": "lead_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "tool",
-              "displayName": "tool",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "action",
-              "displayName": "action",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "units",
-              "displayName": "units",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "result",
-              "displayName": "result",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "workflow",
-              "displayName": "workflow",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "lead_id",
-              "displayName": "lead_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "est_cost_usd",
-              "displayName": "est_cost_usd",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "source_config",
-              "displayName": "source_config",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ]
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        }
-      },
       "id": "vio-em-we",
       "name": "Log Enrolment (Events)",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         780,
         120
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- The outcome. `enrolled` is the word the schema, the daily_stats view and the console all\n-- use; the sheet said `enroll`. Writing the sheet's word here would leave the console reporting\n-- zero sends and the daily cap counting zero against itself.\nwith p as (select $1::jsonb as j)\ninsert into events (lead_id, lead_email, actor, action, outcome, workflow, units, est_cost_usd, payload)\nselect (select id from leads where vio_canon(contact_email::text) = vio_canon(p.j->>'lead_email')),\n       coalesce(p.j->>'lead_email', ''),\n       'instantly',\n       case when (p.j->>'enrolled')::boolean then 'enrolled' else 'enroll_noop' end,\n       coalesce(p.j->>'result', ''),\n       'VIO-enrol-email',\n       (p.j->>'units')::numeric,\n       null,\n       jsonb_build_object('instantly_lead_id', p.j->>'instantly_lead_id',\n                          'product', p.j->>'source_config')\nfrom p\nreturning id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ lead_email: $json.lead_email || '', enrolled: $json.action === 'enroll', units: $json.units, result: $json.result || '', instantly_lead_id: $json.lead_id || '', source_config: $json.source_config || '' }) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -429,138 +234,30 @@
       ]
     },
     {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "1ZD8VMxrXCJHbjaVUwgUSHI_pw4YBP_n7u7Gsdq71X2c",
-          "mode": "id"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "Events",
-          "mode": "name"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [],
-          "schema": [
-            {
-              "id": "timestamp",
-              "displayName": "timestamp",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "lead_email",
-              "displayName": "lead_email",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "tool",
-              "displayName": "tool",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "action",
-              "displayName": "action",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "units",
-              "displayName": "units",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "result",
-              "displayName": "result",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "workflow",
-              "displayName": "workflow",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "lead_id",
-              "displayName": "lead_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "est_cost_usd",
-              "displayName": "est_cost_usd",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "source_config",
-              "displayName": "source_config",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ]
-        },
-        "options": {
-          "handlingExtraData": "ignoreIt"
-        }
-      },
       "id": "vio-em-intentw",
       "name": "Write intent",
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
       "position": [
         -20,
         200
       ],
       "credentials": {
-        "googleApi": {
-          "id": "VIOgsheetcred01",
-          "name": "VIO Google Sheets"
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- The write-ahead record: we are ABOUT to POST to Instantly.\n--\n-- Written before the send, on purpose. If the process dies between this row and the outcome row,\n-- the next run sees more attempts than outcomes for that address and REFUSES it — because at that\n-- point nobody knows whether the person was contacted, and guessing wrong means mailing a stranger\n-- twice.\nwith p as (select $1::jsonb as j)\ninsert into events (lead_id, lead_email, actor, action, outcome, workflow, units, est_cost_usd, payload)\nselect (select id from leads where vio_canon(contact_email::text) = vio_canon(p.j->>'lead_email')),\n       coalesce(p.j->>'lead_email', ''),\n       'instantly', 'enroll_attempt',\n       coalesce(p.j->>'result', ''),\n       'VIO-enrol-email', 1, null,\n       jsonb_build_object('product', p.j->>'source_config')\nfrom p\nreturning id",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ lead_email: $json.lead_email || '', result: $json.result || '', source_config: $json.source_config || '' }) }}"
         }
       },
       "retryOnFail": true,
-      "maxTries": 5,
-      "waitBetweenTries": 15000,
-      "notes": "Must succeed BEFORE the send. No onError:continue here on purpose — if we cannot record the intent, we must not send, because a send we cannot record is a send we might repeat."
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -575,6 +272,33 @@
         980,
         0
       ]
+    },
+    {
+      "id": "vio-wfL-ask",
+      "name": "Ask the database (cap + suppression + history)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -620,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "VIOsupabasepg1",
+          "name": "VIO Supabase"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Everything the send gate needs, in one question.\n--\n-- This replaces two whole-tab reads AND the second implementation of suppression matching. That\n-- second copy is the reason `test-suppression-parity.mjs` existed: the same canonicalisation lived\n-- once in JavaScript here and once in SQL, and a one-case divergence is a person who opted out and\n-- gets mailed anyway. There is one implementation now.\n--\n-- THE DAILY CAP COUNTS `enroll_attempt` AS WELL AS `enrolled`, deliberately. A send whose outcome\n-- was never recorded still went out; a cap that only counts confirmed outcomes silently rises every\n-- time a run dies between the POST and the write.\n--\n-- It filters on ACTION ONLY, not on actor. The console's \"sent today\" and the daily_stats view both\n-- count `action = 'enrolled'` with no actor filter, and the number a person reads must be the same\n-- number the gate enforces — otherwise the dashboard says 3 while the cap thinks 7.\nwith p as (select $1::jsonb as j),\nem as (\n  select distinct lower(btrim(e)) as email\n  from p, jsonb_array_elements_text(coalesce(p.j->'emails', '[]'::jsonb)) e\n  where btrim(e) <> ''\n),\ncap as (\n  -- The cap lives on the campaign, so it can be changed in one place a person can see. 20 only if\n  -- the row says nothing.\n  select coalesce(max(c.daily_cap), 20) as daily_cap\n  from campaigns c, p\n  where c.product::text = lower(p.j->>'product')\n),\nsent as (\n  -- THE SENDING TEAM'S DAY, NOT UTC. The UTC day rolls over about five hours before Detroit's, so\n  -- counting in UTC would let a send made this evening fall into tomorrow's allowance — up to a\n  -- whole extra day's mail inside one real day. The JavaScript this replaces was explicit about\n  -- this and the first cut of the port quietly dropped it; the suite caught it.\n  select count(*)::int as n from events\n   where action in ('enrolled', 'enroll_attempt')\n     and at >= date_trunc('day', now() at time zone 'America/Detroit') at time zone 'America/Detroit'\n)\nselect\n  (select daily_cap from cap)  as daily_cap,\n  (select n from sent)         as sent_today,\n  coalesce((\n    select jsonb_object_agg(e.email, jsonb_build_object(\n      -- Every identifier, canonicalised, one implementation.\n      'suppressed', is_suppressed(e.email, split_part(e.email, '@', 2), null, null),\n      -- The write-ahead reconciliation: more attempts than outcomes means an earlier run died\n      -- between the POST and the record, and NOBODY KNOWS whether that person was contacted.\n      'started',  (select count(*)::int from events v\n                    where lower(v.lead_email::text) = e.email and v.action = 'enroll_attempt'),\n      'finished', (select count(*)::int from events v\n                    where lower(v.lead_email::text) = e.email\n                      and v.action in ('enrolled', 'enroll_noop'))\n    ))\n    from em e\n  ), '{}'::jsonb) as per_email",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify({ product: $json.product || '', emails: ($json.leads || []).map(l => String((l && (l.email || l.contact_email)) || '').trim().toLowerCase()).filter(Boolean) }) }}"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true
     }
   ],
   "connections": {
@@ -582,29 +306,7 @@
       "main": [
         [
           {
-            "node": "Read Suppression",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read Suppression": {
-      "main": [
-        [
-          {
-            "node": "Read Events",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read Events": {
-      "main": [
-        [
-          {
-            "node": "Preconditions (fail closed)",
+            "node": "Ask the database (cap + suppression + history)",
             "type": "main",
             "index": 0
           }
@@ -730,8 +432,18 @@
           }
         ]
       ]
+    },
+    "Ask the database (cap + suppression + history)": {
+      "main": [
+        [
+          {
+            "node": "Preconditions (fail closed)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
-  }
-,
+  },
   "active": true
 }
