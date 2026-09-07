@@ -27,7 +27,7 @@ container's environment, and the browser gets a session cookie instead.
 
 | Tab | Reads | Truthful when empty |
 |---|---|---|
-| Leads | `leads`, plus today's `events` for the sent count | "Nothing is queued to send" is stated explicitly |
+| Leads | `leads`, plus today's Instantly `send` events for the sent count (enrolment is not a send) | "Nothing is queued to send" is stated explicitly |
 | Needs you | leads at `needs_review`, or held | "Everything has been decided" |
 | Replies | `replies` | "No replies yet" — not a fabricated example |
 | Add leads | writes `leads` + `events` | — |

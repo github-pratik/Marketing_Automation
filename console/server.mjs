@@ -600,7 +600,9 @@ async function handleAPI(req, res, url) {
 
     const cap = (campaigns.find((c) => c.product === 'oryoniq') || {}).daily_cap ?? 20;
 
-    const sentToday = todayEvents.filter((e) => e.action === 'enrolled').length;
+    // Instantly last_contact. Enrolment is not a send — count the email_sent
+    // webhook (`action: send`), not the earlier Instantly lead-create event.
+    const sentToday = todayEvents.filter((e) => e.action === 'send').length;
 
     return sendJSON(res, 200, {
       leads,

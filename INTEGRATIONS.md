@@ -161,11 +161,14 @@ not yet wired into anything · `[BLOCKED]` missing a credential.
   the reply-brain workflow doesn't subscribe to it, so those shouldn't reach the gate at all, but
   `n8n-workflows/VIO-inbound-reply-to-call.json`'s OpenAI classify step re-checks OOO independently
   anyway (defense in depth, in case Instantly's own detection has false negatives).
-- **Registered and live:** subscription id `019fe8bd-9f94-7906-bd2a-bd896ad134ab`,
-  `event_type: reply_received`, scoped to the pilot campaign id only (never workspace-wide on this
-  shared account). Waited until the n8n side was actually ready to receive (credential + env var +
-  activation, verified end-to-end — see `n8n-workflows/README.md`) before pointing a real
-  subscription at it, per the project's own "an inactive webhook 404s silently" lesson from the
+- **Registered and live** (all scoped to the OryonIQ pilot campaign only — never workspace-wide):
+  `reply_received` → `VIO-inbound-reply` (`019fe8bd-9f94-7906-bd2a-bd896ad134ab`);
+  `email_bounced` + `lead_unsubscribed` + **`email_sent`** → `VIO-instantly-events`.
+  `email_sent` is Instantly's last-contact signal; `VIO-instantly-events` already classified it as
+  `action: send` (ledger only, no stage change). Re-run `n8n-workflows/register-instantly-webhooks.py`
+  if a subscription is missing. Waited until the n8n side was actually ready to receive (credential
+  + env var + activation, verified end-to-end — see `n8n-workflows/README.md`) before pointing a
+  real subscription at it, per the project's own "an inactive webhook 404s silently" lesson from the
   Victoria build.
 
 ## Sendr — LinkedIn + personalized pages

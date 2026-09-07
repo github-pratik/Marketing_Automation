@@ -222,7 +222,7 @@
             <option value="">Any status</option>
             <option value="not_sent">Ready to send</option>
             <option value="approved">Approved</option>
-            <option value="enrolled">Emailed</option>
+            <option value="enrolled">In campaign</option>
             <option value="needs_review">Needs you</option>
             <option value="pending_approval">Held</option>
             <option value="replied">Replied</option>
@@ -448,7 +448,7 @@ const STATE = {
   approved:         ['Approved','t-acc'],
   needs_review:     ['Needs you','t-warn'],
   pending_approval: ['Held','t-mute'],
-  enrolled:         ['Emailed','t-ok'],
+  enrolled:         ['In campaign','t-acc'],
   replied:          ['Replied','t-ok'],
   booked:           ['Booked','t-ok'],
   bounced:          ['Bounced','t-stop'],
@@ -659,7 +659,14 @@ async function openLead(id) {
 
   try {
     const { events } = await api(`/api/leads/${id}/timeline`);
-    const kind = (a) => ['enrolled','booked','approved','verified'].includes(a) ? 'ok'
+    const EVENT_LABEL = {
+      send: 'Sent — last contact',
+      enrolled: 'Enrolled in Instantly',
+      approved: 'Released',
+      bounced: 'Bounced',
+      unsubscribed: 'Unsubscribed',
+    };
+    const kind = (a) => ['send','enrolled','booked','approved','verified'].includes(a) ? 'ok'
       : ['suppressed','bounced','unsubscribed','dropped'].includes(a) ? 'stop' : '';
     // No filler element here: the dot is `.tl li::before`, which is itself a grid
     // child. An extra empty <span> would make three children in a two-column
@@ -668,7 +675,7 @@ async function openLead(id) {
       <li class="${e.action === 'verified' && e.outcome !== 'pass' ? 'stop' : kind(e.action)}">
         <div>
           <div class="when">${esc(fmt(e.at))}</div>
-          <div class="what">${esc(e.action)}${e.outcome ? ` — ${esc(e.outcome)}` : ''}
+          <div class="what">${esc(EVENT_LABEL[e.action] || e.action)}${e.outcome ? ` — ${esc(e.outcome)}` : ''}
             ${e.payload && e.payload.backfilled ? '<span class="bf">reconstructed</span>' : ''}</div>
           <div class="by">${esc(e.actor)}${e.workflow ? ` · ${esc(e.workflow)}` : ''}</div>
         </div></li>`).join('')}</ul>`

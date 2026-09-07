@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { schemaViolations } from './sheets-schema-invariant.mjs';
 
-const wf = JSON.parse(readFileSync(new URL('./VIO-inbox-mapper.json', import.meta.url)));
+const wf = JSON.parse(readFileSync(new URL('./retired/VIO-inbox-mapper.json', import.meta.url)));
 const jsOf = (name) => {
   const n = wf.nodes.find(x => x.name === name);
   if (!n) throw new Error(`no node "${name}"`);

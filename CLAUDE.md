@@ -70,8 +70,9 @@ and a positive reply hands off to a human.
 **Supabase is the record. The staff console is the dashboard.** n8n credential `VIO Supabase`
 (`VIOsupabasepg1`). Console: `https://vio-console.104-248-119-152.sslip.io`. Google Sheets is
 retired: the `VIO Google Sheets` credential was **deleted 2026-09-06**. Do not reinstall it.
-Do not reactivate `VIO-inbox-mapper` or `VIO-sheet-*`. `VIO-costs-rollup` stays off until it
-is rewritten against `events`.
+`VIO-inbox-mapper`, `VIO-costs-rollup`, and the three `VIO-sheet-*` tools were **deleted from
+live n8n on 2026-09-06** (backups in `n8n-workflows/retired/` — do not import). A costs rollup
+rewritten against `events` has not been built yet.
 
 **Built:** `reach-engine/` — the config-driven Python engine (source → reveal → verify →
 personalize → push to Instantly → generate Sendr pages), packaged for Gav as
@@ -104,11 +105,10 @@ real. Each config's `sendr` block carries its own campaign + page template:
   polling (every 3 min).** Claims from the Supabase view `leads_ready` (`not_sent` / `approved`)
   → draft → Sendr page → `VIO-enrol-email`. Heartbeats `system_status` every cycle. Idle when
   `leads_ready` is empty — that is healthy, not broken.
-- `VIO-inbox-mapper` — **OFF (2026-09-06).** Was the Sheet Inbox door. Console add is the front
-  door now. Still has Sheets nodes; no Google credential is bound. Do not reactivate.
-  Historical lessons (still-typing vs unknown headers, unclaimed on verify failure) stay in
-  `SHEET_SCHEMA.md` / the mapper test file — they are how that door used to work, not current
-  procedure.
+- `VIO-inbox-mapper` — **DELETED (2026-09-06).** Was the Sheet Inbox door. Console add is the
+  front door. Backup is in `n8n-workflows/retired/` — do not import. Historical lessons
+  (still-typing vs unknown headers, unclaimed on verify failure) stay in `SHEET_SCHEMA.md` /
+  the mapper test file — they are how that door used to work, not current procedure.
 - `VIO-intake-verify-curate` — **LIVE and ACTIVE since 2026-08-29.** It now has a third thing:
   `Intake Result (to caller)`, a single join fed by all four terminal branches, so a caller can
   finally tell "verified and written" from "silently dropped as suppressed". Before it, an Execute
@@ -313,10 +313,11 @@ run actually used:
 This is the third member of the same family as the inert-`parameters.text` trap and
 `webhook_entity` under-reporting: **"successfully imported" has never once been evidence.**
 
-**Live probe 2026-09-06:** instance healthy after the Sheets cutover. Active send/event/reply
-writers have zero Google Sheets nodes. `VIO-inbox-mapper` and `VIO-sheet-*` are off;
-`VIO-costs-rollup` stays off. Outreach heartbeats `system_status` from `leads_ready` (idle when
-empty). Console banner: Supabase is the record. `VIO Google Sheets` credential is gone.
+**Live probe 2026-09-06:** instance healthy after the Sheets cutover. The five Sheets-only
+leftovers (`VIO-inbox-mapper`, `VIO-costs-rollup`, `VIO-sheet-audit`, `VIO-sheet-provision`,
+`VIO-sheet-repair`) were **deleted from live n8n**; remaining VIO workflows have zero Google
+Sheets nodes. Outreach heartbeats `system_status` from `leads_ready` (idle when empty).
+Console banner: Supabase is the record. `VIO Google Sheets` credential is gone.
 
 **Live probe 2026-09-04 (historical):** instance healthy, 19/20 VIO workflows active. Inbox →
 intake imported a lead that afternoon. Sixteen Slack `waiting` executions from 25–30 Aug were
@@ -327,7 +328,7 @@ with the same path). Decisions:** OryonIQ markets standalone (done, live). **Ell
 Gavriel (the boss) is who prospects meet** — the copy must name him; outreach mail is never in his
 name. Four warmed `@getoryoniq.com` accounts now rotate on the campaign (120/day cap; do NOT create
 new domains — warmup is weeks). HubSpot Meetings link is `booking_url` + `cta` (verified embeddable:
-no x-frame-options). Instantly now sends reply + bounce + unsubscribe webhooks. **Target 50–100/day.
+no x-frame-options). Instantly now sends reply + bounce + unsubscribe + `email_sent` (last-contact) webhooks. **Target 50–100/day.
 Supabase is the record (landed 2026-09-06)**: project separate from IndustrialBriefs', append-only
 `events` as the ledger, staff console on the droplet. Instantly bounce/unsub and inbound reply
 write the same tables. Sheet pollers are off; the Google credential is deleted. A DB webhook on
@@ -355,7 +356,7 @@ unrelated edit can't recreate n8n as a side effect. Facts worth keeping:
 - **The console banner now says n8n sends from Supabase.** Releasing a lead marks it `approved`;
   `VIO-run-outreach` claims from `leads_ready`. The Google Sheet is no longer the queue.
   Instantly bounce/unsub and inbound reply write `events` / `leads` / `suppression` / `replies`.
-  `VIO-inbox-mapper` and the `VIO-sheet-*` tools are deactivated — console add is the front door.
+  `VIO-inbox-mapper` and the `VIO-sheet-*` tools were deleted 2026-09-06 — console add is the front door.
 - **⚠️ A lead cannot be deleted.** `events.lead_id` is `on delete set null`, but that null-out is an
   UPDATE and the append-only trigger refuses it, so `on delete set null` is unreachable and every row
   ever created is permanent. `supabase/003_allow_lead_delete_to_orphan_events.sql` fixes it by

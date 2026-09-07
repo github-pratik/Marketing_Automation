@@ -1,8 +1,14 @@
 // One structural tripwire, checked across every VIO workflow.
 //
-// THE FAILURE SHAPE: a Google Sheets node's output is ITS ROWS. Any Code node sitting behind one
-// that reaches for a value produced FURTHER upstream must name that node — `$('Some Node')` — and
-// not read `$input`. This broke three separate things in one day (2026-08-29/30):
+// THE FAILURE SHAPE: a data node's output is ITS OWN RESULT — a Google Sheets node emits the rows
+// it read, a Postgres node emits the rows the query returned. Any Code node sitting behind one that
+// reaches for a value produced FURTHER upstream must name that node — `$('Some Node')` — and not
+// read `$input`.
+//
+// The Sheets nodes are gone (2026-09-06) but the shape survived the migration exactly: `Gate` sits
+// behind a query and needs the LEADS, `Preconditions` sits behind a query and needs the REQUEST,
+// `Restore lead items` sits behind an insert and needs the payload that insert was built from. Each
+// one is a place where reading $input would silently hand the next step the wrong object. This broke three separate things in one day (2026-08-29/30):
 //   * 'Shape for enrolment' read $input after a Sheets WRITE, so the Sendr page URL vanished and
 //     the enrolment gate refused with "no sendr_page_url" while Sendr had really built the page
 //   * 'Claim row (pending_approval)' wrote a page-URL field that was therefore always empty
@@ -24,17 +30,22 @@ const DIR = dirname(fileURLToPath(import.meta.url));
 let pass = 0, fail = 0;
 const ok = (l, c, d = '') => { if (c) pass++; else { console.error(`  FAIL  ${l}${d ? ' — ' + d : ''}`); fail++; } };
 
-// Nodes whose input genuinely IS the sheet rows.
+// Nodes whose input genuinely IS the data node's own result. Each is classified once, with the
+// reason, so a NEW one fails this suite until somebody says which kind it is — and that is exactly
+// the moment to ask "does this node need something the query result replaced?".
 const CONSUMES_ROWS = {
-  'VIO-inbox-mapper.json / Map headers (alias table)': 'the Inbox rows are the subject — it maps their headers',
-  'VIO-run-outreach.json / Pick demo rows': 'the Leads rows are the subject — it selects runnable ones',
-  'VIO-costs-rollup.json / Build Rollup Rows': 'the Events rows are the subject — it aggregates them',
-  'VIO-sheet-repair.json / Report': 'the Inbox rows are the subject — it reports what the tab holds',
-  'VIO-inbox-mapper.json / Heartbeat': 'counts the Inbox rows it was just handed, to report liveness',
-  'VIO-run-outreach.json / Heartbeat': 'counts the Leads rows it was just handed, to report liveness',
+  'VIO-run-outreach.json / Pick demo rows': 'the claim answer is the subject — it shapes the lead that was claimed',
+  'VIO-run-outreach.json / Heartbeat': 'the claim answer is the subject — it reports what the cycle found',
+  'VIO-intake-verify-curate.json / Gate (dedupe + suppression)': 'the per-lead dupe/suppression answers are the subject; it names Normalize Lead for the leads themselves',
+  'VIO-enrol-email.json / Preconditions (fail closed)': 'the cap/suppression/history answer is the subject; it names Called by Workflow for the request',
+  'VIO-apollo-reveal.json / Skip ones we already hold': 'the held apollo_ids are the subject; it names Guard for the requested ids',
+  'VIO-apollo-reveal.json / Shape for intake': 'the people/match responses are the subject; it names Skip for the requested ids',
+  'VIO-apollo-reveal.json / Events rows': 'the shaped attempts are the subject — it turns each into an audit row',
+  'VIO-db-probe.json / Report': 'the query result IS the report — that is the whole workflow',
 };
 
-const SHEETS = 'n8n-nodes-base.googleSheets';
+// Both kinds of data node, so this suite keeps working through the migration and after it.
+const DATA_NODES = new Set(['n8n-nodes-base.googleSheets', 'n8n-nodes-base.postgres']);
 const files = readdirSync(DIR).filter((f) => /^VIO-.*\.json$/.test(f)).sort();
 ok('there are workflows to check', files.length > 0);
 
@@ -52,8 +63,8 @@ for (const file of files) {
   for (const node of wf.nodes) {
     if (node.type !== 'n8n-nodes-base.code') continue;
     const feeders = (parents.get(node.name) || []).map((p) => byName.get(p)).filter(Boolean);
-    const sheetFeeders = feeders.filter((p) => p.type === SHEETS);
-    if (!sheetFeeders.length) continue;
+    const dataFeeders = feeders.filter((p) => DATA_NODES.has(p.type));
+    if (!dataFeeders.length) continue;
 
     const js = node.parameters.jsCode || '';
     if (!/\$input\.(first|item|all)\(\)/.test(js)) { pass++; continue; }
@@ -65,9 +76,9 @@ for (const file of files) {
       ok(`${key} is a declared row-consumer (${CONSUMES_ROWS[key]})`, true);
       continue;
     }
-    ok(`${key}: reads $input behind a Sheets node and is not classified`,
+    ok(`${key}: reads $input behind a data node and is not classified`,
        /\$\('[^']+'\)/.test(js),
-       `fed by ${sheetFeeders.map((f) => f.name).join(', ')}. If it consumes those rows, add it to ` +
+       `fed by ${dataFeeders.map((f) => f.name).join(', ')}. If it consumes that result, add it to ` +
        `CONSUMES_ROWS with a reason. If it needs a value from further upstream, name that node ` +
        `instead of reading $input — that is the bug this suite exists for.`);
   }

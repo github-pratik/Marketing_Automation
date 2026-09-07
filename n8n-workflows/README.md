@@ -56,7 +56,8 @@ Because secrets are by-name (credentials) or by-env (tokens), nothing here is ti
 | `import-workflow.sh <wf.json> [host]` | Import/update a workflow via SSH + `docker exec`. Arrives **deactivated** — reactivate after. |
 | `sync-routes.py [--fix]` | Diff/regenerate `VIO-sendr-generate-page`'s ROUTES map against `reach-engine/config-<product>.json`. **Run after every config edit.** |
 | `setup-google-sheets.py` | One-command Sheets setup: verify access → create tabs → write headers → install the n8n credential → shred the key file. |
-| `register-webhooks.sh` | Register the external (Instantly / Sendr) webhook subscriptions. |
+| `register-webhooks.sh` | Register Sendr campaign webhooks. |
+| `register-instantly-webhooks.py` | Idempotent Instantly subscriptions (`email_sent`, bounce, unsub) on the OryonIQ campaign. |
 | `test-intake-gate.mjs` | 75/75. Reads `jsCode` out of the workflow JSON, so tests cannot drift from deployed logic. |
 | `test-intake-callable.mjs` | 124/124. WF-1's second entry point: batch shape, both triggers converging on one gate, batch-level rejects and failures. Same read-the-JSON discipline. |
 | `test-sendr-events.mjs` | 32/32. Heat classification, incl. `asset_warning` vs `error`. |
@@ -153,8 +154,10 @@ docker exec n8n-stack-postgres-1 psql -U postgres -d railway -tAc \
   "select name, active from workflow_entity where name like 'VIO-%' and active = false"
 ```
 
-Expected inactive: `VIO-costs-rollup`, `VIO-inbox-mapper`, `VIO-sheet-audit`,
-`VIO-sheet-provision`, `VIO-sheet-repair`. Anything else off is an outage.
+Expected inactive: **none.** The five Sheets leftovers (`VIO-inbox-mapper`,
+`VIO-costs-rollup`, `VIO-sheet-audit`, `VIO-sheet-provision`, `VIO-sheet-repair`) were
+**deleted from live n8n on 2026-09-06**; their JSON backups live in `retired/` and must
+not be imported. Anything currently `active = false` is an outage.
 
 ### ⚠️ A Google Sheets node needs `authentication: "serviceAccount"` (found live 2026-09-05)
 
@@ -201,9 +204,9 @@ key at all, 7 had `active: false` for a workflow that is live `true` (`VIO-db-pr
 `VIO-operator-agent-v2`, `VIO-sendr-events`, `VIO-sendr-generate-page`). Only
 `VIO-source-leads.json` already matched. **No live outage was found** — every workflow that
 should be active already was; the mismatches were all in the backup files, waiting to bite on the
-next import. Every file now carries the correct key: `true` for every workflow except
-`VIO-costs-rollup.json` (`false`, the one deliberate exception), verified against the same live
-query. `test-workflow-active-state.mjs` asserts this offline — no SSH needed to catch the next
+next import. Every remaining file now carries `active: true`. The Sheets leftovers
+(`VIO-costs-rollup` and the four other `VIO-sheet-*` / inbox-mapper backups) were deleted live
+on 2026-09-06 and moved to `retired/`. `test-workflow-active-state.mjs` asserts this offline — no SSH needed to catch the next
 drift — and `import-workflow.sh`'s auto re-activation (above) means a future import can no longer
 silently leave one off. **The importer still ignores the key on write** — see "Imports arrive
 deactivated" above — so the JSON being correct is bookkeeping for humans and for the script's
@@ -240,7 +243,7 @@ workflow.
 | `VIO-sendr-generate-page` | `VIOwf6sendrgen01` | webhook + `executeWorkflow` target | **ACTIVE**, route bound (called by `VIO-run-outreach`) | Lead + product → personalized Sendr page URL, fails closed on unknown product |
 | `VIO-sendr-events` | `VIOwf5sendrevt01` | webhook (`vio-sendr-events`) | **ACTIVE**, route bound; no retained traffic | Sendr workspace webhook → heat classification → Slack on hot/booked/error |
 | `VIO-operator-agent-v2` | `VIOwf7agentv201` | webhook (`vio-operator-agent`) | **ACTIVE**, route bound; unused on the daily path | True autonomous LangChain Agent node; tool-gated, no send/dial/reveal tools wired |
-| `VIO-inbox-mapper` | `VIOwfHinboxmap` | schedule (2 min) | **INACTIVE (2026-09-06)** — Sheet Inbox door retired; console add is the front door | Still has Sheets nodes; do not reactivate without a port |
+| `VIO-inbox-mapper` | `VIOwfHinboxmap` | schedule (2 min) | **DELETED (2026-09-06)** — backup in `retired/`; do not import | Was the Sheet Inbox door. Console add is the front door |
 | `VIO-agent-tool-ask-human` | `VIOwf8askhuman1` | `executeWorkflowTrigger` only | **ACTIVE** — 6 Slack waits stranded since 25–30 Aug | Shared Slack approve/adjust/deny gate |
 | `VIO-agent-tool-reveal-contacts` | `VIOwfArevealcon1` | `executeWorkflowTrigger` only | **ACTIVE**; never invoked in retained history | Human-gated Apollo `people/match` reveal, cap 10, email-only |
 | `VIO-apollo-reveal` | `VIOwfApolloRev1` | webhook (`vio-apollo-reveal`) + `executeWorkflowTrigger` | **ACTIVE** (2026-09-05), route bound and exercised | The console's paid pull: ids in → work addresses out → handed to intake. Cap 25, dedupes before spending |
@@ -249,11 +252,11 @@ workflow.
 | `VIO-run-campaign` | `VIOwfCruncamp001` | webhook (`vio-run-campaign`) | **ACTIVE**, route bound; unused | Free run: source → draft, no reveal/enrol |
 | `VIO-run-outreach` | `VIOwfDsheetdemo1` | schedule (3 min; node `Every 3 minutes`) | **ACTIVE** — 1,673 successes, almost all idle heartbeats | Polls `Leads` for Manual + READY rows → draft → page → ungated enrol |
 | `VIO-enrol-email` | `VIOwfLenrolmail` | `executeWorkflowTrigger` only | **ACTIVE** (called by `VIO-run-outreach`). One live enrol 2026-09-01; writeback fix untested | Ungated Instantly enrolment; 5 throw-checks replace the Slack click |
-| `VIO-instantly-events` | `VIOwfGinstevents` | webhook (`vio-instantly-events`) | **ACTIVE**, route bound | Delivery/bounce/unsub → Supabase `events` + `leads` + `suppression` |
-| `VIO-costs-rollup` | `VIOwfKcostsroll` | schedule (daily, 02:00) | **INACTIVE** — only VIO workflow that did not bind. Costs tab is not rolling up. | Full recompute of Events into Costs buckets |
-| `VIO-sheet-audit` | `VIOwfFsheetaudit` | webhook (`vio-sheet-audit`) | **INACTIVE (2026-09-06)** — Sheet audit retired; use `VIO-db-probe` | Read-only audit of the live tabs vs this doc |
-| `VIO-sheet-provision` | `VIOwfIprovision` | webhook (`vio-sheet-provision`) | **INACTIVE (2026-09-06)** | Writes Inbox / System header rows |
-| `VIO-sheet-repair` | `VIOwfJrepairsht` | webhook (`vio-sheet-repair`) | **INACTIVE (2026-09-06)** | Seed an Inbox test row, or vouch-approve one Leads address |
+| `VIO-instantly-events` | `VIOwfGinstevents` | webhook (`vio-instantly-events`) | **ACTIVE**, route bound | Instantly `email_sent` / bounce / unsub → Supabase `events` (+ lead/suppression on bounce/unsub). `email_sent` is last-contact; it does not change stage. |
+| `VIO-costs-rollup` | `VIOwfKcostsroll` | schedule (daily, 02:00) | **DELETED (2026-09-06)** — backup in `retired/`; do not import. Rewrite against `events` before ever recreating | Was a full recompute of the Sheet Costs tab |
+| `VIO-sheet-audit` | `VIOwfFsheetaudit` | webhook (`vio-sheet-audit`) | **DELETED (2026-09-06)** — backup in `retired/`; use `VIO-db-probe` | Was a read-only audit of the live Sheet tabs |
+| `VIO-sheet-provision` | `VIOwfIprovision` | webhook (`vio-sheet-provision`) | **DELETED (2026-09-06)** — backup in `retired/`; do not import | Wrote Inbox / System header rows |
+| `VIO-sheet-repair` | `VIOwfJrepairsht` | webhook (`vio-sheet-repair`) | **DELETED (2026-09-06)** — backup in `retired/`; do not import | Seeded an Inbox test row, or vouch-approved one Leads address |
 | `VIO-error-alert` | `VIOwfEerroralert` | error trigger | **ACTIVE** — posted the 2026-09-01 writeback throw to Slack | One Slack message per VIO failure; refusal vs outage |
 
 
@@ -701,10 +704,10 @@ diagnose it — do not "simplify" it by re-fetching the page, because the REST A
 answer.
 
 
-### `VIO-inbox-mapper.json` — WF-8 (id `VIOwfHinboxmap`) — **OFF (2026-09-06)**
+### `VIO-inbox-mapper.json` — WF-8 (id `VIOwfHinboxmap`) — **DELETED (2026-09-06)**
 
-Sheet Inbox door, retired. Console add is the front door. No Google credential is bound.
-The rest of this section is how it used to work.
+Sheet Inbox door, deleted from live n8n. Backup is in `retired/` — do not import.
+Console add is the front door. The rest of this section is how it used to work.
 
 **The front door for leads that do not come from Apollo.** Staff paste a list into the `Inbox` tab
 in whatever shape their source gave them; this normalises it onto the `Leads` schema. Every two
@@ -1213,6 +1216,8 @@ enrolled > replied > positive > booked`, plus terminal `rejected`/`dropped`/`uns
 `bounced`) — there is no `sent` rung in it, and inventing one would put an off-vocabulary value in a
 column staff filter on. Delivery is a fact with a timestamp, so a plain send/open/click goes to
 `Events` only; the stage stays `enrolled` until the prospect actually does something.
+`email_sent` is subscribed on the OryonIQ campaign (`register-instantly-webhooks.py`); that is
+Instantly's last-contact signal. Bounce and unsub were already subscribed.
 
 **Replies are deliberately NOT handled here** — `VIO-inbound-reply-to-call` already owns reply
 classification (including the OpenAI sentiment pass), and two workflows writing reply state would
@@ -1225,11 +1230,11 @@ race each other.
 Proven offline: **`test-instantly-events.mjs` passes 71/71** (re-run against the current JSON while
 writing this section).
 
-### `VIO-costs-rollup.json` — WF-17 (id `VIOwfKcostsroll`)
+### `VIO-costs-rollup.json` — WF-17 (id `VIOwfKcostsroll`) — **DELETED (2026-09-06)**
 
-**INACTIVE as of the 2026-09-04 live probe** (`workflow_entity.active = false`; it did not appear
-in the container's "Activated workflow" bind list). The Costs tab is not being recomputed. Activate
-it in the n8n **web UI** (or restart after a UI toggle) — the CLI cannot reload a running trigger.
+Deleted from live n8n. Backup is in `retired/` — do not import. A replacement that reads
+Supabase `events` has not been written yet. The rest of this section is how the Sheet rollup
+used to work.
 
 Trigger: daily schedule, 02:00. `Daily Rollup` → `Read Events` → `Build Rollup Rows` (Code) →
 `Cost rows` / `Summary row` (two `Filter` nodes on `_kind`) → `Write Rollup (Costs)`
@@ -1257,7 +1262,9 @@ no `test-*.mjs` references `sheet-audit`, `sheet-provision`, `sheet-repair`, or 
 same for costs-rollup specifically, `test-costs-rollup.mjs` passes 52/52, re-run against the current
 JSON while writing this section, and covers `Build Rollup Rows`' bucket logic directly).
 
-### `VIO-sheet-audit.json` — WF-18 (id `VIOwfFsheetaudit`)
+### `VIO-sheet-audit.json` — WF-18 (id `VIOwfFsheetaudit`) — **DELETED (2026-09-06)**
+
+Deleted from live n8n. Backup is in `retired/` — do not import. Use `VIO-db-probe`. Historical notes follow.
 
 Webhook: `POST /webhook/vio-sheet-audit`, `responseMode: lastNode` (the caller needs the report
 synchronously). Read-only against the live tabs: `Read Leads`, `Read Suppression`,
@@ -1289,7 +1296,9 @@ tab with one column literally named "error."
 
 No dedicated offline test file exists for this workflow.
 
-### `VIO-sheet-provision.json` — WF-19 (id `VIOwfIprovision`)
+### `VIO-sheet-provision.json` — WF-19 (id `VIOwfIprovision`) — **DELETED (2026-09-06)**
+
+Deleted from live n8n. Backup is in `retired/` — do not import. Historical notes follow.
 
 Webhook: `POST /webhook/vio-sheet-provision`, `responseMode: lastNode`. `Create Inbox tab` →
 `Header row` (Code) → `Write header row` (`append`). One job: write the `Inbox` tab's header row —
@@ -1310,7 +1319,9 @@ real person. The node comment recommends a data-validation dropdown on this colu
 
 No dedicated offline test file exists for this workflow.
 
-### `VIO-sheet-repair.json` — WF-20 (id `VIOwfJrepairsht`)
+### `VIO-sheet-repair.json` — WF-20 (id `VIOwfJrepairsht`) — **DELETED (2026-09-06)**
+
+Deleted from live n8n. Backup is in `retired/` — do not import. Historical notes follow.
 
 Webhook: `POST /webhook/vio-sheet-repair`, `responseMode: lastNode`. Two actions behind one
 fail-closed auth gate, routed by `Approve a lead?` (IF on `action == 'approve'`):

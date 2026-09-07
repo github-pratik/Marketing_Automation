@@ -42,7 +42,7 @@ const ok = (label, cond, detail = '') => {
   else { console.error(`  FAIL  ${label}${detail ? ' — ' + detail : ''}`); fail++; }
 };
 
-const mapperWf = loadWf('VIO-inbox-mapper.json');
+const mapperWf = loadWf('retired/VIO-inbox-mapper.json');
 const intakeWf = loadWf('VIO-intake-verify-curate.json');
 const demoWf = loadWf('VIO-run-outreach.json');
 const agentWf = loadWf('VIO-operator-agent.json');
@@ -213,27 +213,66 @@ ok('intake\'s Shape Lead Row writes it to the Leads row as "Product"',
 ok('the sender reads the product from the lead\'s own column, not a default',
    /lead\.product/.test(pickDemoRowsCode) && !/'oryoniq'\s*;/.test(pickDemoRowsCode));
 
-// Every Google Sheets WRITE node in the whole repo whose schema declares a product-ish column
-// must spell it EXACTLY "Product" — derived dynamically from every VIO-*.json on disk, not from a
-// list of files I typed by hand (parallel agents are editing this folder right now).
+// THE PRODUCT SEAM MOVED INTO THE DATABASE (2026-09-06).
+//
+// This block used to walk every Google Sheets write node and assert its schema spelled the column
+// exactly "Product" — capital P, because the live sheet used that and a case mismatch between a
+// writer and a reader does not error, it just silently creates a second column or writes nothing.
+// There are no Sheets schemas left, so the check passed over an empty list; its own
+// not-vacuous guard is what caught that, which is the whole reason that guard was written.
+//
+// In Supabase `product` is an ENUM. A misspelling cannot be stored at all — the INSERT fails. So
+// casing is no longer the hazard. What replaced it is a vocabulary seam: the workflows carry
+// product names as strings, and every one of those strings has to be a member of that enum, or the
+// write fails on a real lead at the last step of the chain.
+//
+// The enum is parsed out of the schema rather than re-declared here, so adding a third product to
+// the database and forgetting a workflow fails HERE rather than in production.
+const schemaSql = readFileSync(path.join(DIR, '..', 'supabase', '001_schema.sql'), 'utf8');
+const enumMatch = /create type vio_product as enum \(([^)]*)\)/.exec(schemaSql);
+ok('setup: the product enum was found in the schema (not vacuous)', Boolean(enumMatch));
+const PRODUCTS = (enumMatch?.[1] || '').split(',')
+  .map((x) => x.trim().replace(/^'|'$/g, '')).filter(Boolean);
+ok('  and it has the two products this build runs', PRODUCTS.length === 2, JSON.stringify(PRODUCTS));
+
 const files = readdirSync(DIR).filter((f) => /^VIO-.*\.json$/.test(f));
 const allWfs = new Map(files.map((f) => [f, loadWf(f)]));
 
-let productSchemaChecks = 0;
+// Every product literal a workflow writes into the database must be a member of the enum. Only the
+// nodes that actually BIND a product are checked — a comment or an unrelated string mentioning a
+// product name is not a write.
+let productBindings = 0;
 for (const [f, wf] of allWfs) {
   for (const wnode of wf.nodes) {
-    const schema = wnode.parameters?.columns?.schema || [];
-    for (const col of schema) {
-      if (String(col.id || '').toLowerCase() === 'product') {
-        productSchemaChecks++;
-        ok(`${f} node "${wnode.name}" spells the product column exactly "Product"`, col.id === 'Product',
-           `got ${JSON.stringify(col.id)}`);
-      }
+    const repl = wnode.parameters?.options?.queryReplacement;
+    const query = wnode.parameters?.query || '';
+    if (!repl || !/vio_product|\bproduct\b/.test(query)) continue;
+    productBindings++;
+    for (const m of repl.matchAll(/'([a-z_]+)'/g)) {
+      const lit = m[1];
+      // Only judge strings that LOOK like a product name; the binding also carries field names.
+      if (!/^(oryoniq|visioneerit|orion|oryon|visioneer)/.test(lit)) continue;
+      ok(`${f} / ${wnode.name}: writes "${lit}", a real member of vio_product`,
+         PRODUCTS.includes(lit), `enum is ${JSON.stringify(PRODUCTS)}`);
     }
   }
 }
-ok('setup: at least one product column schema was actually found and checked (not vacuous)',
-   productSchemaChecks > 0);
+ok('setup: at least one node binding a product was found (not vacuous)', productBindings > 0,
+   String(productBindings));
+
+// And the two gates that REFUSE an unknown product must know the same two names the enum does.
+for (const [f, node] of [['VIO-source-leads.json', 'Resolve ICP'],
+                         ['VIO-apollo-reveal.json', 'Guard (cap + shape)']]) {
+  const js = allWfs.get(f)?.nodes.find((n) => n.name === node)?.parameters?.jsCode || '';
+  // As a word, not as a quoted literal: these gates hold their products as object KEYS
+  // (`oryoniq: {...}`) and as array members, so requiring quotes tests the punctuation rather
+  // than the knowledge.
+  ok(`${f} / ${node} knows every product the database accepts`,
+     PRODUCTS.every((p) => new RegExp(`\\b${p}\\b`).test(js)),
+     `missing: ${JSON.stringify(PRODUCTS.filter((p) => !new RegExp(`\\b${p}\\b`).test(js)))}`);
+  // And refuses anything else — a gate that merely knows the names but accepts a third is not a gate.
+  ok(`  ${node} refuses an unknown product`, /REFUSED[^\n]*unknown product/i.test(js));
+}
 
 // SEAM 3b — the last leg of the stated chain: demo-sheet-run -> VIO-operator-agent. The product
 // travels as lowercase `source_config` on the way in; the agent's own `validate_config` must
