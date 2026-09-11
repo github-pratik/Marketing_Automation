@@ -63,7 +63,7 @@ blocked even though the row still looks active.
 
 ```bash
 set -a; . ./.secrets.env; set +a
-export STAFF_PASSWORD=whatever SESSION_SECRET=$(openssl rand -hex 32)
+export STAFF_PASSWORD='your-local-password' SESSION_SECRET=$(openssl rand -hex 32)
 node console/server.mjs
 ```
 
@@ -72,8 +72,8 @@ Then open `http://localhost:8080`.
 ## Deploying
 
 `deploy.sh` copies the folder to the droplet, builds the image, and restarts the
-service. It never copies `.secrets.env` — the droplet keeps its own
-`/root/vio-console/.env`.
+service. It never copies `.secrets.env` — the droplet keeps its own env file
+outside this repo.
 
 ```bash
 ./console/deploy.sh
