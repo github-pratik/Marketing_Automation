@@ -33,7 +33,7 @@ echo "[1/5] copying source to $HOST:$REMOTE_DIR"
 # never leaves this machine — the droplet keeps its own .env, written once by
 # the step below and never overwritten.
 ssh "$HOST" "mkdir -p $REMOTE_DIR/public"
-scp -q "$HERE/server.mjs" "$HERE/followup.mjs" "$HERE/reveal-request.mjs" "$HERE/Dockerfile" "$HERE/package.json" "$HERE/package-lock.json" "$HOST:$REMOTE_DIR/"
+scp -q "$HERE/server.mjs" "$HERE/followup.mjs" "$HERE/reveal-request.mjs" "$HERE/verify.mjs" "$HERE/autopilot.mjs" "$HERE/Dockerfile" "$HERE/package.json" "$HERE/package-lock.json" "$HOST:$REMOTE_DIR/"
 scp -q "$HERE/public/index.html" "$HOST:$REMOTE_DIR/public/"
 
 echo "[2/5] checking the droplet has its environment file"
@@ -48,6 +48,16 @@ if ! ssh "$HOST" "test -f $REMOTE_DIR/.env"; then
   echo "    SESSION_SECRET=<openssl rand -hex 32>"
   echo
   exit 1
+fi
+
+# Optional: Reoon, so "Verify with Reoon" on a CSV load can run. Missing is a
+# disabled button, not a boot failure. Never overwrite a key that is already there.
+SECRETS_FILE="$(cd "$HERE/.." && pwd)/.secrets.env"
+if [[ -f "$SECRETS_FILE" ]] && grep -q '^REOON_API_KEY=' "$SECRETS_FILE"; then
+  if ! ssh "$HOST" "grep -q '^REOON_API_KEY=' $REMOTE_DIR/.env"; then
+    echo "[2b] adding REOON_API_KEY to the droplet env"
+    grep '^REOON_API_KEY=' "$SECRETS_FILE" | ssh "$HOST" "cat >> $REMOTE_DIR/.env && chmod 600 $REMOTE_DIR/.env"
+  fi
 fi
 
 echo "[3/5] building the image on the droplet"

@@ -33,6 +33,13 @@ import { fileURLToPath } from 'node:url';
 import * as XLSX from 'xlsx';
 import { decideFollowup, playbookFor, bookingUrlFor } from './followup.mjs';
 import { shapeRevealRequest } from './reveal-request.mjs';
+import {
+  classifyReoon, stateForAction, isHeldForPerson, isUnverifiedHeld, isDeletableFromLoad,
+} from './verify.mjs';
+import {
+  DEFAULT_SETTINGS, normalizeMode, canEnableAutopilot, autoVerifiesUploads, autoFindsPeople,
+  revealSpendFromEvents, pickRevealIds,
+} from './autopilot.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(HERE, 'public');
@@ -56,6 +63,7 @@ const N8N_WEBHOOK_BASE = (process.env.N8N_WEBHOOK_BASE || 'https://n8n.industria
 // "Send reply" cannot call Instantly. Missing is a 501, not a crash on boot —
 // the console must stay up if Instantly is the only thing down.
 const INSTANTLY_API_KEY = process.env.INSTANTLY_API_KEY || '';
+const REOON_API_KEY = process.env.REOON_API_KEY || '';
 const ELLEN_FALLBACK = 'ellen@getoryoniq.com';
 const ORYONIQ_BOOKING_URL = bookingUrlFor('oryoniq');
 
@@ -191,6 +199,131 @@ async function deleteFromInstantly(lead) {
     throw err;
   }
   return { skipped: false, deleted, looked_up: ids };
+}
+
+async function runPool(items, n, fn) {
+  const out = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor++;
+      out[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
+  return out;
+}
+
+async function releaseLeadRow(lead, reason) {
+  if (lead.channel_state_email === 'dropped') {
+    const err = new Error('This lead was dropped. That is terminal and cannot be undone here.');
+    err.status = 409;
+    throw err;
+  }
+  const updated = (await sb(`leads?id=eq.${lead.id}`, {
+    method: 'PATCH',
+    prefer: 'return=representation',
+    body: {
+      channel_state_email: 'approved',
+      verify_action: 'pass',
+      verify_reason: reason,
+    },
+  }))[0];
+  await recordEvent({
+    lead_id: lead.id,
+    lead_email: lead.contact_email,
+    actor: 'console',
+    action: 'approved',
+    outcome: 'approved',
+    workflow: 'console',
+    payload: { previous_state: lead.channel_state_email, previous_verdict: lead.verify_action },
+  });
+  return updated;
+}
+
+async function removeLeadRow(lead) {
+  const instantlyResult = await deleteFromInstantly(lead);
+  await recordEvent({
+    lead_id: lead.id,
+    lead_email: lead.contact_email,
+    actor: 'console',
+    action: 'deleted',
+    outcome: instantlyResult.skipped ? 'dashboard_only' : 'removed',
+    workflow: 'console',
+    payload: {
+      instantly_deleted: instantlyResult.deleted || [],
+      instantly_skipped: Boolean(instantlyResult.skipped),
+      previous_state: lead.channel_state_email,
+    },
+  });
+  await sb(`leads?id=eq.${lead.id}`, { method: 'DELETE' });
+  return instantlyResult;
+}
+
+async function verifyEmailWithReoon(email) {
+  if (!REOON_API_KEY) {
+    const err = new Error('Reoon is not configured on this console, so addresses cannot be checked from here.');
+    err.status = 501;
+    throw err;
+  }
+  const url = new URL('https://emailverifier.reoon.com/api/v1/verify');
+  url.searchParams.set('email', email);
+  url.searchParams.set('key', REOON_API_KEY);
+  url.searchParams.set('mode', 'power');
+  let res;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  } catch (err) {
+    return { error: true, reason: `Reoon did not answer (${err.message})` };
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: true, reason: `Reoon HTTP ${res.status}` };
+  return classifyReoon(data.status);
+}
+
+async function applyReoonToLead(lead, classified) {
+  const next = stateForAction(classified.action);
+  const updated = (await sb(`leads?id=eq.${lead.id}`, {
+    method: 'PATCH',
+    prefer: 'return=representation',
+    body: {
+      ...next,
+      verify_reason: classified.reason,
+      reoon_status: classified.reoon_status,
+    },
+  }))[0];
+  await recordEvent({
+    lead_id: lead.id,
+    lead_email: lead.contact_email,
+    actor: 'reoon',
+    action: 'verified',
+    outcome: `${classified.action} (${classified.reoon_status})`,
+    workflow: 'console',
+    units: 1,
+    payload: { reoon_status: classified.reoon_status, via: 'console batch verify' },
+  });
+  return updated;
+}
+
+async function loadBulkLeads(body) {
+  const batchId = String(body.batch_id || '').trim();
+  const ids = Array.isArray(body.ids)
+    ? body.ids.filter((id) => /^[0-9a-f-]{36}$/i.test(String(id)))
+    : [];
+  if (batchId) {
+    return (await sb(`leads?select=*&batch_id=eq.${encodeURIComponent(batchId)}`)) || [];
+  }
+  if (!ids.length) {
+    const err = new Error('Pick a load, or an explicit list of people.');
+    err.status = 400;
+    throw err;
+  }
+  if (ids.length > 300) {
+    const err = new Error('At most 300 people in one bulk action.');
+    err.status = 400;
+    throw err;
+  }
+  return (await sb(`leads?select=*&id=in.(${ids.join(',')})`)) || [];
 }
 
 async function findInstantlyReplyTarget(leadEmail) {
@@ -358,6 +491,218 @@ async function loadPlaybooks() {
   }
 }
 
+const todayUtcStart = () => new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z';
+
+async function loadPipeline() {
+  try {
+    const row = (await sb('pipeline_settings?select=*&id=eq.1'))[0];
+    if (row) return row;
+  } catch (err) {
+    console.warn('[pipeline] could not read settings:', err.message);
+  }
+  return { id: 1, ...DEFAULT_SETTINGS };
+}
+
+async function savePipeline(patch) {
+  return (await sb('pipeline_settings?id=eq.1', {
+    method: 'PATCH',
+    prefer: 'return=representation',
+    body: { ...patch, updated_at: new Date().toISOString() },
+  }))[0];
+}
+
+async function revealedToday() {
+  const events = await sb(
+    `events?select=action,at,payload&action=eq.reveal_requested&at=gte.${todayUtcStart()}&limit=500`,
+  );
+  return revealSpendFromEvents(events || [], todayUtcStart());
+}
+
+async function callFind(body) {
+  if (!VIO_WEBHOOK_TOKEN) {
+    const err = new Error('Apollo search is not configured here. Set VIO_WEBHOOK_TOKEN in the console environment.');
+    err.status = 501;
+    throw err;
+  }
+  const upstream = await fetch(`${N8N_WEBHOOK_BASE}/vio-source-leads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-vio-token': VIO_WEBHOOK_TOKEN },
+    body: JSON.stringify({
+      product: body.product,
+      titles: body.titles,
+      include_similar_titles: body.include_similar_titles,
+      person_name: body.person_name,
+      seniorities: body.seniorities,
+      employee_ranges: body.employee_ranges,
+      locations: body.locations,
+      organization_locations: body.organization_locations,
+      domains: body.domains,
+      keywords: body.keywords,
+      contact_email_status: body.contact_email_status,
+      revenue_min: body.revenue_min,
+      revenue_max: body.revenue_max,
+      tech_any: body.tech_any,
+      tech_all: body.tech_all,
+      tech_none: body.tech_none,
+      hiring_titles: body.hiring_titles,
+      jobs_min: body.jobs_min,
+      jobs_max: body.jobs_max,
+      jobs_posted_min: body.jobs_posted_min,
+      jobs_posted_max: body.jobs_posted_max,
+      per_page: body.per_page,
+      page: body.page,
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  const text = await upstream.text();
+  if (!upstream.ok) {
+    const reason = (text.match(/REFUSED:[^"'\\}]+/) || [])[0];
+    const err = new Error(reason || (
+      'The search was refused. The usual cause is a filter value Apollo does not '
+      + 'recognise, or more than 25 job titles.'
+    ));
+    err.status = 400;
+    throw err;
+  }
+  let data;
+  try { data = JSON.parse(text); } catch {
+    const err = new Error('The search returned something that is not JSON.');
+    err.status = 502;
+    throw err;
+  }
+  if (Array.isArray(data)) data = data[0] || {};
+  return data;
+}
+
+async function callReveal({ product, ids, via }) {
+  const shaped = shapeRevealRequest({ product, ids });
+  if (!shaped.ok) {
+    const err = new Error(shaped.error);
+    err.status = 400;
+    throw err;
+  }
+  if (!VIO_WEBHOOK_TOKEN) {
+    const err = new Error('Apollo reveal is not configured here. Set VIO_WEBHOOK_TOKEN in the console environment.');
+    err.status = 501;
+    throw err;
+  }
+  try {
+    await recordEvent({
+      actor: 'console',
+      action: 'reveal_requested',
+      outcome: `${shaped.ids.length} ids`,
+      workflow: 'console',
+      payload: { product: shaped.product, ids: shaped.ids, via: via || 'find leads tab' },
+    });
+  } catch {
+    const err = new Error('Could not record the reveal request, so it was not sent.');
+    err.status = 500;
+    throw err;
+  }
+  let upstream;
+  try {
+    upstream = await fetch(`${N8N_WEBHOOK_BASE}/vio-apollo-reveal`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-vio-token': VIO_WEBHOOK_TOKEN },
+      body: JSON.stringify({ product: shaped.product, ids: shaped.ids, requested_by: via || 'console' }),
+      signal: AbortSignal.timeout(180_000),
+    });
+  } catch (err) {
+    if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      const late = new Error(
+        'The reveal is taking longer than three minutes. It may still be running — '
+        + 'refresh the Leads tab in a minute rather than clicking again.',
+      );
+      late.status = 504;
+      throw late;
+    }
+    throw err;
+  }
+  const text = await upstream.text();
+  if (!upstream.ok) {
+    const reason = (text.match(/REFUSED:[^"'\\}]+/) || [])[0];
+    const err = new Error(reason || 'The reveal was refused. Check the n8n log for VIO-apollo-reveal.');
+    err.status = 400;
+    throw err;
+  }
+  let data;
+  try { data = JSON.parse(text); } catch {
+    const err = new Error('The reveal returned something that is not JSON.');
+    err.status = 502;
+    throw err;
+  }
+  if (Array.isArray(data)) data = data[0] || {};
+  const batchId = randomBytes(8).toString('hex');
+  const emails = [...new Set(
+    (Array.isArray(data.verdicts) ? data.verdicts : [])
+      .map((v) => String(v.email || '').trim().toLowerCase())
+      .filter(Boolean),
+  )];
+  const label = via === 'autopilot' ? 'Autopilot reveal' : 'Apollo reveal';
+  for (const email of emails) {
+    try {
+      await sb(`leads?contact_email=eq.${encodeURIComponent(email)}`, {
+        method: 'PATCH',
+        body: { batch_id: batchId, batch_label: label },
+      });
+    } catch (err) {
+      console.warn('[batch] could not stamp Apollo reveal on', email, err.message);
+    }
+  }
+  if (emails.length) data.batch_id = batchId;
+  return data;
+}
+
+let autopilotBusy = false;
+async function runAutopilotTick() {
+  if (autopilotBusy) return;
+  const settings = await loadPipeline();
+  if (!autoFindsPeople(settings.mode)) return;
+  autopilotBusy = true;
+  const stamp = async (last_result) => {
+    try { await savePipeline({ last_run_at: new Date().toISOString(), last_result }); }
+    catch (err) { console.warn('[autopilot] could not write result:', err.message); }
+  };
+  try {
+    if (!VIO_WEBHOOK_TOKEN) { await stamp('Apollo is not configured here.'); return; }
+    const gate = canEnableAutopilot(settings);
+    if (!gate.ok) { await stamp(gate.error); return; }
+    const spent = await revealedToday();
+    const cap = Number(settings.daily_reveal_cap) || 0;
+    const remaining = Math.max(0, cap - spent);
+    if (remaining <= 0) {
+      await stamp(`Daily Apollo cap reached (${spent}/${cap}).`);
+      return;
+    }
+    const found = await callFind(settings.find || {});
+    const heldRows = await sb('leads?select=apollo_id&apollo_id=not.is.null&limit=5000');
+    const heldIds = new Set((heldRows || []).map((l) => l.apollo_id).filter(Boolean));
+    const ids = pickRevealIds(found.leads || [], { heldIds, remaining, cap: 25 });
+    if (!ids.length) { await stamp('Search ran. Nobody new to reveal.'); return; }
+    await callReveal({ product: settings.find.product, ids, via: 'autopilot' });
+    await stamp(`Revealed ${ids.length}. Reoon sorts real mailboxes onto the send queue; catch-alls wait on Needs you.`);
+  } catch (err) {
+    console.error('[autopilot]', err.message);
+    await stamp(String(err.message).slice(0, 240));
+  } finally {
+    autopilotBusy = false;
+  }
+}
+
+async function verifyLoadInBackground(batchId) {
+  if (!REOON_API_KEY || !batchId) return;
+  for (let i = 0; i < 16; i++) {
+    const rows = (await sb(`leads?select=*&batch_id=eq.${encodeURIComponent(batchId)}`)) || [];
+    const unverified = rows.filter(isUnverifiedHeld);
+    if (!unverified.length) return;
+    await runPool(unverified.slice(0, 25), 3, async (lead) => {
+      const classified = await verifyEmailWithReoon(lead.contact_email);
+      if (classified.error) return;
+      await applyReoonToLead(lead, classified);
+    });
+  }
+}
+
 async function sendInstantlyReply(reply, text) {
   const target = await findInstantlyReplyTarget(reply.lead_email);
   if (!target) {
@@ -518,7 +863,11 @@ async function addLead(fields, eventContext, campaignCache) {
         phone: String(fields.phone || '').trim(),
         linkedin_url: String(fields.linkedin_url || '').trim(),
         product,
-        source: eventContext && eventContext.via === 'upload' ? 'upload' : 'console',
+        source: eventContext && eventContext.via === 'upload' ? 'upload'
+          : eventContext && eventContext.via === 'apollo' ? 'apollo'
+          : 'console',
+        batch_id: String(eventContext?.batch_id || ''),
+        batch_label: String(eventContext?.filename || eventContext?.batch_label || ''),
         // Not verified yet, so it is not ready to send. Reoon decides that,
         // not this form.
         channel_state_email: 'pending_approval',
@@ -594,7 +943,7 @@ for (const [field, names] of Object.entries(ALIASES)) for (const n of names) ALI
 const clean = (v, cap = 200) => {
   if (typeof v === 'number') return String(v);
   if (typeof v !== 'string') return '';
-  return v.replace(/[ -]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, cap);
+  return v.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, cap);
 };
 
 // Real uploads arrive SHOUTING: ROBERT, TRUSTED SOLUTIONS LLC. Only rewritten
@@ -846,18 +1195,17 @@ async function handleAPI(req, res, url) {
     // every genuinely active lead under however many dropped rows exist,
     // pushing them clean off the end of the `limit`. `dropped` is terminal —
     // nobody needs to see it before the leads still waiting on a decision.
-    const [active, droppedRecent, activeCountRows, replies, campaigns, suppressionRows, todayEvents, runners, playbooks] = await Promise.all([
+    const [active, droppedRecent, activeCountRows, replies, campaigns, suppressionRows, todayEvents, runners, playbooks, pipeline] = await Promise.all([
       sb('leads?select=*&channel_state_email=neq.dropped&order=updated_at.desc&limit=2000'),
       sb('leads?select=*&channel_state_email=eq.dropped&order=updated_at.desc&limit=200'),
       sb('leads?select=id&channel_state_email=neq.dropped&limit=5000'),
       sb('replies?select=*&order=received_at.desc&limit=200'),
       sb('campaigns?select=*'),
       sb('suppression?select=id'),
-      sb(`events?select=action,at&at=gte.${new Date().toISOString().slice(0, 10)}T00:00:00Z&limit=2000`),
-      // One row per poller, overwritten each cycle. This is how the dashboard
-      // tells a quiet pipeline from a dead one — events is silent in both cases.
+      sb(`events?select=action,at,payload&at=gte.${new Date().toISOString().slice(0, 10)}T00:00:00Z&limit=2000`),
       sb('system_status?select=*&order=last_run_at.desc'),
       loadPlaybooks(),
+      loadPipeline(),
     ]);
     const leads = [...active, ...droppedRecent];
 
@@ -889,8 +1237,14 @@ async function handleAPI(req, res, url) {
       },
       serverTime: new Date().toISOString(),
       canReply: Boolean(INSTANTLY_API_KEY),
+      canVerify: Boolean(REOON_API_KEY),
       bookingUrl: ORYONIQ_BOOKING_URL,
       playbooks,
+      pipeline: {
+        ...pipeline,
+        revealed_today: revealSpendFromEvents(todayEvents || [], todayUtcStart()),
+        canAutopilot: Boolean(VIO_WEBHOOK_TOKEN),
+      },
     });
   }
 
@@ -937,6 +1291,76 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 200, { playbook: playbookFor(product, [saved || row]) });
   }
 
+  if (path === '/api/pipeline' && req.method === 'POST') {
+    const body = await readBody(req);
+    const current = await loadPipeline();
+    const patch = { updated_by: 'console' };
+    if (body.find !== undefined) {
+      const product = normProduct(body.find?.product || body.product);
+      if (!PRODUCTS.has(product)) {
+        return sendJSON(res, 400, { error: 'Save Find filters with a product first.' });
+      }
+      const src = body.find && typeof body.find === 'object' ? body.find : body;
+      const pick = (k) => (src[k] === '' || src[k] === undefined || src[k] === null) ? undefined : src[k];
+      patch.find = {
+        product,
+        person_name: pick('person_name'),
+        titles: pick('titles'),
+        include_similar_titles: src.include_similar_titles === false ? false : undefined,
+        seniorities: pick('seniorities'),
+        employee_ranges: pick('employee_ranges'),
+        locations: pick('locations'),
+        organization_locations: pick('organization_locations'),
+        domains: pick('domains'),
+        keywords: pick('keywords'),
+        contact_email_status: pick('contact_email_status'),
+        revenue_min: pick('revenue_min'),
+        revenue_max: pick('revenue_max'),
+        tech_any: pick('tech_any'),
+        tech_all: pick('tech_all'),
+        tech_none: pick('tech_none'),
+        hiring_titles: pick('hiring_titles'),
+        jobs_min: pick('jobs_min'),
+        jobs_max: pick('jobs_max'),
+        jobs_posted_min: pick('jobs_posted_min'),
+        jobs_posted_max: pick('jobs_posted_max'),
+        per_page: Number(src.per_page) || 25,
+        page: Number(src.page) || 1,
+      };
+    }
+    if (body.daily_reveal_cap !== undefined) {
+      const n = Number(body.daily_reveal_cap);
+      if (!Number.isInteger(n) || n < 0 || n > 25) {
+        return sendJSON(res, 400, { error: 'Daily Apollo cap must be 0–25.' });
+      }
+      patch.daily_reveal_cap = n;
+    }
+    if (body.mode !== undefined) {
+      const mode = normalizeMode(body.mode);
+      if (!mode) return sendJSON(res, 400, { error: 'Mode must be manual, hybrid, or autopilot.' });
+      const nextFind = patch.find || current.find;
+      if (mode === 'autopilot') {
+        const gate = canEnableAutopilot({ find: nextFind });
+        if (!gate.ok) return sendJSON(res, 400, { error: gate.error });
+      }
+      patch.mode = mode;
+    }
+    const saved = await savePipeline(patch);
+    await recordEvent({
+      actor: 'console',
+      action: 'pipeline_mode',
+      outcome: saved.mode,
+      workflow: 'console',
+      payload: { mode: saved.mode, daily_reveal_cap: saved.daily_reveal_cap },
+    });
+    if (patch.mode === 'autopilot') {
+      setTimeout(() => {
+        runAutopilotTick().catch((err) => console.error('[autopilot]', err.message));
+      }, 0);
+    }
+    return sendJSON(res, 200, { pipeline: saved });
+  }
+
   // -- find people in Apollo ------------------------------------------------
   //
   // This does NOT call Apollo. It calls VIO-source-leads, which already holds a
@@ -949,124 +1373,20 @@ async function handleAPI(req, res, url) {
   // The token never reaches the browser — that endpoint returns real people's
   // names, so an open copy of it would leak a prospect list.
   if (path === '/api/find' && req.method === 'POST') {
-    if (!VIO_WEBHOOK_TOKEN) {
-      return sendJSON(res, 501, {
-        error: 'Apollo search is not configured here. Set VIO_WEBHOOK_TOKEN in the console environment.',
-      });
-    }
     const body = await readBody(req);
-    const upstream = await fetch(`${N8N_WEBHOOK_BASE}/vio-source-leads`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-vio-token': VIO_WEBHOOK_TOKEN },
-      body: JSON.stringify({
-        product: body.product,
-        titles: body.titles,
-        seniorities: body.seniorities,
-        employee_ranges: body.employee_ranges,
-        locations: body.locations,
-        keywords: body.keywords,
-        per_page: body.per_page,
-        page: body.page,
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const text = await upstream.text();
-    if (!upstream.ok) {
-      // ⚠️ The filter gate's refusal reason does NOT survive the webhook. n8n
-      // replies with a bare {"message":"Error in workflow"} and keeps the
-      // `REFUSED: ...` text in its own execution log (measured 2026-09-05). So
-      // the reason is matched for in case a future n8n version passes it
-      // through, and otherwise the message says what to check rather than
-      // inventing a cause it cannot know.
-      const reason = (text.match(/REFUSED:[^"'\\}]+/) || [])[0];
-      if (reason) return sendJSON(res, 400, { error: reason });
-      return sendJSON(res, 400, {
-        error: 'The search was refused. The usual cause is a filter value Apollo does not '
-             + 'recognise, or more than 25 job titles. The exact reason is in the n8n execution log '
-             + 'for VIO-source-leads — the webhook does not pass it back.',
-      });
-    }
-    let data;
-    try { data = JSON.parse(text); } catch { return sendJSON(res, 502, { error: 'The search returned something that is not JSON.' }); }
-    return sendJSON(res, 200, data);
+    try { return sendJSON(res, 200, await callFind(body)); }
+    catch (err) { return sendJSON(res, err.status || 500, { error: err.message }); }
   }
 
   // -- reveal people from Apollo --------------------------------------------
   //
   // This does NOT call Apollo. It calls VIO-apollo-reveal, which already holds
   // the spending gate (explicit ids, cap 25, skip anyone we already hold
-  // BEFORE paying) and hands survivors to VIO-intake-verify-curate. A second
-  // people/match path here would be two spend paths, and the failure that
-  // causes is the expensive one: a credit spent twice, or a person we already
-  // hold paid for again.
-  //
-  // The cheap shape check below is so a mis-click gets a useful error from
-  // this process instead of waiting on n8n to refuse. The workflow remains
-  // the authority — it will refuse the same shapes even if this check is
-  // edited away.
+  // BEFORE paying) and hands survivors to VIO-intake-verify-curate.
   if (path === '/api/reveal' && req.method === 'POST') {
-    if (!VIO_WEBHOOK_TOKEN) {
-      return sendJSON(res, 501, {
-        error: 'Apollo reveal is not configured here. Set VIO_WEBHOOK_TOKEN in the console environment.',
-      });
-    }
     const body = await readBody(req);
-    const shaped = shapeRevealRequest(body);
-    if (!shaped.ok) return sendJSON(res, 400, { error: shaped.error });
-    const { product, ids } = shaped;
-
-    // Ledger the staff click before the spend. If n8n then fails, we still
-    // know who asked. Per-person spend rows are written by the workflow.
-    // Fail closed: a reveal that cannot be audited must not run.
-    try {
-      await recordEvent({
-        actor: 'console',
-        action: 'reveal_requested',
-        outcome: `${ids.length} ids`,
-        workflow: 'console',
-        payload: { product, ids, via: 'find leads tab' },
-      });
-    } catch {
-      return sendJSON(res, 500, { error: 'Could not record the reveal request, so it was not sent.' });
-    }
-
-    let upstream;
-    try {
-      upstream = await fetch(`${N8N_WEBHOOK_BASE}/vio-apollo-reveal`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-vio-token': VIO_WEBHOOK_TOKEN },
-        body: JSON.stringify({ product, ids, requested_by: 'console' }),
-        // Reveal + Reoon for up to 25 people. The workflow keeps running if
-        // this client gives up; the error below says so rather than implying
-        // the spend was cancelled.
-        signal: AbortSignal.timeout(180_000),
-      });
-    } catch (err) {
-      if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
-        return sendJSON(res, 504, {
-          error: 'The reveal is taking longer than three minutes. It may still be running — '
-               + 'refresh the Leads tab in a minute rather than clicking again.',
-        });
-      }
-      throw err;
-    }
-    const text = await upstream.text();
-    if (!upstream.ok) {
-      const reason = (text.match(/REFUSED:[^"'\\}]+/) || [])[0];
-      if (reason) return sendJSON(res, 400, { error: reason });
-      return sendJSON(res, 400, {
-        error: 'The reveal was refused. The usual cause is a malformed id or more than 25 people. '
-             + 'If this sat for a while, the pull may still be running — refresh Leads in a minute. '
-             + 'The exact reason is in the n8n execution log for VIO-apollo-reveal.',
-      });
-    }
-    let data;
-    try { data = JSON.parse(text); } catch {
-      return sendJSON(res, 502, { error: 'The reveal returned something that is not JSON.' });
-    }
-    // n8n lastNode sometimes wraps a single item as a one-element array.
-    if (Array.isArray(data)) data = data[0] || {};
-    return sendJSON(res, 200, data);
+    try { return sendJSON(res, 200, await callReveal({ product: body.product, ids: body.ids, via: 'find leads tab' })); }
+    catch (err) { return sendJSON(res, err.status || 500, { error: err.message }); }
   }
 
   // -- one lead's ledger ----------------------------------------------------
@@ -1246,8 +1566,16 @@ async function handleAPI(req, res, url) {
     // The concurrent workers finish out of row order; the response should not.
     results.sort((a, b) => a.row - b.row);
 
+    const settings = await loadPipeline();
+    if (tally.added && autoVerifiesUploads(settings.mode)) {
+      setTimeout(() => {
+        verifyLoadInBackground(batchId).catch((err) => console.error('[verify-load]', err.message));
+      }, 0);
+    }
+
     return sendJSON(res, 200, {
       filename, batch_id: batchId, total_rows: rows.length, capped: overCap, cap: CAP,
+      auto_verify: autoVerifiesUploads(settings.mode),
       ...tally, results,
     });
   }
@@ -1259,33 +1587,12 @@ async function handleAPI(req, res, url) {
     const lead = (await sb(`leads?select=*&id=eq.${id}`))[0];
     if (!lead) return sendJSON(res, 404, { error: 'No such lead.' });
 
-    // A dropped lead is terminal. Releasing one would mail an address Reoon
-    // already proved is not real, so the refusal is the point.
-    if (lead.channel_state_email === 'dropped') {
-      return sendJSON(res, 409, { error: 'This lead was dropped. That is terminal and cannot be undone here.' });
+    try {
+      const updated = await releaseLeadRow(lead, 'released by a person in the console');
+      return sendJSON(res, 200, { lead: updated });
+    } catch (err) {
+      return sendJSON(res, err.status || 500, { error: err.message });
     }
-
-    const updated = (await sb(`leads?id=eq.${id}`, {
-      method: 'PATCH',
-      prefer: 'return=representation',
-      body: {
-        channel_state_email: 'approved',
-        verify_action: 'pass',
-        verify_reason: 'released by a person in the console',
-      },
-    }))[0];
-
-    await recordEvent({
-      lead_id: id,
-      lead_email: lead.contact_email,
-      actor: 'console',
-      action: 'approved',
-      outcome: 'approved',
-      workflow: 'console',
-      payload: { previous_state: lead.channel_state_email, previous_verdict: lead.verify_action },
-    });
-
-    return sendJSON(res, 200, { lead: updated });
   }
 
   // -- staff ranking on the Kanban. Does not change whether the runner sends.
@@ -1328,28 +1635,95 @@ async function handleAPI(req, res, url) {
     const lead = (await sb(`leads?select=*&id=eq.${id}`))[0];
     if (!lead) return sendJSON(res, 404, { error: 'No such lead.' });
 
-    const instantlyResult = await deleteFromInstantly(lead);
-
-    await recordEvent({
-      lead_id: id,
-      lead_email: lead.contact_email,
-      actor: 'console',
-      action: 'deleted',
-      outcome: instantlyResult.skipped ? 'dashboard_only' : 'removed',
-      workflow: 'console',
-      payload: {
-        instantly_deleted: instantlyResult.deleted || [],
-        instantly_skipped: Boolean(instantlyResult.skipped),
-        previous_state: lead.channel_state_email,
-      },
-    });
-
-    await sb(`leads?id=eq.${id}`, { method: 'DELETE' });
+    const instantlyResult = await removeLeadRow(lead);
 
     return sendJSON(res, 200, {
       ok: true,
       email: lead.contact_email,
       instantly: instantlyResult,
+    });
+  }
+
+  // -- act on a whole CSV / Apollo load -------------------------------------
+  // Delete / approve / Reoon-verify everyone still sitting from one upload.
+  // Already-sent people are skipped: Instantly sequences are not a group undo.
+  if (path === '/api/leads/bulk' && req.method === 'POST') {
+    const body = await readBody(req);
+    const action = String(body.action || '');
+    if (!['delete', 'release', 'verify'].includes(action)) {
+      return sendJSON(res, 400, { error: 'Action must be delete, release, or verify.' });
+    }
+    let rows;
+    try { rows = await loadBulkLeads(body); }
+    catch (err) { return sendJSON(res, err.status || 500, { error: err.message }); }
+
+    if (action === 'delete') {
+      const targets = rows.filter(isDeletableFromLoad);
+      const skipped = rows.length - targets.length;
+      const results = await runPool(targets, 4, async (lead) => {
+        try {
+          await removeLeadRow(lead);
+          return { id: lead.id, email: lead.contact_email, outcome: 'deleted' };
+        } catch (err) {
+          return { id: lead.id, email: lead.contact_email, outcome: 'error', reason: err.message };
+        }
+      });
+      return sendJSON(res, 200, {
+        action, deleted: results.filter((r) => r.outcome === 'deleted').length,
+        skipped, errors: results.filter((r) => r.outcome === 'error').length, results,
+      });
+    }
+
+    if (action === 'release') {
+      const targets = rows.filter(isHeldForPerson);
+      const results = await runPool(targets, 8, async (lead) => {
+        try {
+          await releaseLeadRow(lead, 'released with the rest of this load in the console');
+          return { id: lead.id, email: lead.contact_email, outcome: 'approved' };
+        } catch (err) {
+          return { id: lead.id, email: lead.contact_email, outcome: 'error', reason: err.message };
+        }
+      });
+      return sendJSON(res, 200, {
+        action, released: results.filter((r) => r.outcome === 'approved').length,
+        skipped: rows.length - targets.length,
+        errors: results.filter((r) => r.outcome === 'error').length, results,
+      });
+    }
+
+    // verify: Reoon on unverified held people only. Catch-alls already judged
+    // stay put — spending again would not change the answer.
+    if (!REOON_API_KEY) {
+      return sendJSON(res, 501, {
+        error: 'Reoon is not configured on this console, so this load cannot be checked automatically.',
+      });
+    }
+    const unverified = rows.filter(isUnverifiedHeld);
+    const limit = Math.min(40, Math.max(1, Number(body.limit) || 25));
+    const chunk = unverified.slice(0, limit);
+    const results = await runPool(chunk, 3, async (lead) => {
+      const classified = await verifyEmailWithReoon(lead.contact_email);
+      if (classified.error) {
+        return { id: lead.id, email: lead.contact_email, outcome: 'error', reason: classified.reason };
+      }
+      try {
+        await applyReoonToLead(lead, classified);
+        return {
+          id: lead.id, email: lead.contact_email, outcome: classified.action,
+          reoon_status: classified.reoon_status, reason: classified.reason,
+        };
+      } catch (err) {
+        return { id: lead.id, email: lead.contact_email, outcome: 'error', reason: err.message };
+      }
+    });
+    const tally = { pass: 0, needs_review: 0, drop: 0, error: 0 };
+    for (const r of results) tally[r.outcome] = (tally[r.outcome] || 0) + 1;
+    return sendJSON(res, 200, {
+      action,
+      checked: results.length,
+      remaining: Math.max(0, unverified.length - chunk.length),
+      ...tally,
+      results,
     });
   }
 
@@ -1553,9 +1927,17 @@ const server = createServer(async (req, res) => {
 
 await loadAuth();
 
+const AUTOPILOT_MS = 15 * 60 * 1000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[ready] console on :${PORT} → ${SUPABASE_URL}`);
   console.log(`[find ] apollo search + reveal ${VIO_WEBHOOK_TOKEN ? 'via ' + N8N_WEBHOOK_BASE : 'DISABLED (no VIO_WEBHOOK_TOKEN)'}`);
   console.log(`[reply] Instantly Unibox ${INSTANTLY_API_KEY ? 'enabled' : 'DISABLED (no INSTANTLY_API_KEY)'}`);
+  console.log(`[verify] Reoon ${REOON_API_KEY ? 'enabled' : 'DISABLED (no REOON_API_KEY)'}`);
   console.log(`[follow] inbound playbook ${VIO_WEBHOOK_TOKEN ? 'via n8n → /api/internal/followup' : 'DISABLED (no VIO_WEBHOOK_TOKEN)'}`);
+  loadPipeline().then((p) => console.log(`[pipeline] mode ${p.mode} — Autopilot will not spend until you turn it on`)).catch(() => {});
+  // Wait one interval after boot so a deploy cannot immediately spend Apollo.
+  setTimeout(() => {
+    runAutopilotTick().catch((err) => console.error('[autopilot]', err.message));
+    setInterval(() => { runAutopilotTick().catch((err) => console.error('[autopilot]', err.message)); }, AUTOPILOT_MS);
+  }, AUTOPILOT_MS);
 });

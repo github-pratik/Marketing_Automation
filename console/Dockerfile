@@ -14,7 +14,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
-COPY server.mjs followup.mjs reveal-request.mjs ./
+COPY server.mjs followup.mjs reveal-request.mjs verify.mjs autopilot.mjs ./
 COPY public ./public
 
 # Where the changed password is stored. Created here, owned by `node`, BEFORE the

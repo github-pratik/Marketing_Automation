@@ -82,7 +82,15 @@
   .pipe-num .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
   .pipe-num .v{font-family:var(--mono);font-size:20px;font-weight:500;margin-top:2px;line-height:1.1}
   .pipe-num .n{font-size:11.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pipe-jobs{padding:4px 0}
+  .pipe-more{border-top:1px solid var(--rule-soft)}
+  .pipe-more summary{
+    cursor:pointer;padding:9px 16px;font-size:13px;font-weight:600;color:var(--ink-soft);
+    list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .pipe-more summary::-webkit-details-marker{display:none}
+  .pipe-more summary::after{content:"Show more";font-family:var(--mono);font-size:10.5px;font-weight:500;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .pipe-more[open] summary::after{content:"Hide"}
+  .pipe-jobs{padding:4px 0 8px}
   .pipe-job{display:grid;grid-template-columns:minmax(160px,1fr) minmax(140px,.7fr) 1.4fr;gap:8px 16px;padding:9px 16px;align-items:center;font-size:13px}
   .pipe-job + .pipe-job{border-top:1px solid var(--rule-soft)}
   .pipe-job .job{font-weight:600}
@@ -108,7 +116,7 @@
   .panel-head h2{font-size:14px;font-weight:600;margin:0}
   .panel-head .sub{font-size:12.5px;color:var(--muted)}
   .tools{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  input[type=text],input[type=email],input[type=password],input[type=url],select,textarea{
+  input[type=text],input[type=email],input[type=password],input[type=url],input[type=number],input[type=date],select,textarea{
     font-family:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--rule);border-radius:4px;
     background:var(--surface);color:var(--ink);min-width:0}
   .btn{padding:7px 13px;border-radius:4px;border:1px solid var(--rule);background:var(--surface);color:var(--ink);font-weight:500;display:inline-flex;align-items:center;gap:6px}
@@ -162,6 +170,10 @@
 
   .draft{background:var(--sunk);border:1px solid var(--rule);border-radius:4px;padding:13px 15px;font-size:13px;white-space:pre-wrap;line-height:1.6;max-height:280px;overflow:auto}
   .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .batch{padding:14px 16px;border-bottom:1px solid var(--rule);background:var(--sunk)}
+  .batch + .batch{border-top:0}
+  .batch .who{font-weight:600}
+  .batch .meta{font-size:12.5px;color:var(--muted);margin-top:2px}
   .compose{margin-top:12px}
   .compose textarea{width:100%;min-height:96px;resize:vertical}
   .compose .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
@@ -176,6 +188,40 @@
   .fld label{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
   .fld .hint{font-size:11.5px;color:var(--muted)}
   .full{grid-column:1/-1}
+  .find-sec{grid-column:1/-1;margin:6px 0 0;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .checks{display:flex;flex-wrap:wrap;gap:7px 14px}
+  .checks label{display:flex;align-items:center;gap:6px;font-family:inherit;font-size:13px;letter-spacing:0;text-transform:none;color:var(--ink);font-weight:400}
+  .checks input{accent-color:var(--accent)}
+
+  .find-form{display:flex;flex-direction:column;gap:14px}
+  .find-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px}
+  .find-grid .span2{grid-column:span 2}
+  .find-grid .wide{grid-column:1/-1}
+  .find-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .find-chips label{
+    display:inline-flex;align-items:center;gap:5px;padding:4px 9px;
+    border:1px solid var(--rule);border-radius:999px;background:var(--sunk);
+    font-size:12.5px;color:var(--ink-soft);cursor:pointer;user-select:none}
+  .find-chips label:has(input:checked){
+    background:var(--accent-bg);border-color:#b7cfe0;color:var(--accent)}
+  .find-chips input{accent-color:var(--accent);margin:0}
+  .find-more{border:1px solid var(--rule-soft);border-radius:5px;background:var(--sunk)}
+  .find-more + .find-more{margin-top:-6px}
+  .find-more summary{
+    cursor:pointer;padding:9px 14px;font-size:13px;font-weight:600;color:var(--ink-soft);
+    list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .find-more summary::-webkit-details-marker{display:none}
+  .find-more summary::after{content:"Show";font-family:var(--mono);font-size:10.5px;font-weight:500;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .find-more[open] summary::after{content:"Hide"}
+  .find-more[open] summary{border-bottom:1px solid var(--rule-soft);color:var(--ink)}
+  .find-more .inner{padding:14px 16px 16px;background:var(--surface)}
+  .find-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:2px}
+  .find-foot .hint{margin-left:2px}
+  @media (max-width:720px){
+    .find-grid{grid-template-columns:1fr}
+    .find-grid .span2{grid-column:1}
+  }
 
   .note{background:var(--accent-bg);border-left:3px solid var(--accent);border-radius:4px;padding:12px 15px;font-size:13px;color:var(--ink-soft);margin-top:16px}
   .note.warn{background:var(--warn-bg);border-left-color:var(--warn)}
@@ -211,6 +257,14 @@
   .seg button{border:0;border-radius:0;background:var(--surface);padding:6px 11px;font-size:12.5px;color:var(--muted)}
   .seg button + button{border-left:1px solid var(--rule)}
   .seg button[aria-pressed="true"]{background:var(--accent-bg);color:var(--accent);font-weight:600}
+  .pipe-mode{padding:10px 16px;border-top:1px solid var(--rule);background:var(--sunk);
+    display:flex;align-items:center;justify-content:space-between;gap:16px 28px}
+  .pipe-mode .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .pipe-mode .why{color:var(--ink-soft);font-size:12.5px;line-height:1.4;margin:0;max-width:46ch;text-align:right}
+  @media (max-width:720px){
+    .pipe-mode{flex-direction:column;align-items:flex-start}
+    .pipe-mode .why{text-align:left;max-width:none}
+  }
 
   .board{display:flex;gap:10px;overflow-x:auto;padding:12px;align-items:flex-start;min-height:280px}
   .col{flex:0 0 248px;background:var(--sunk);border:1px solid var(--rule);border-radius:5px;display:flex;flex-direction:column;max-height:min(72vh,720px)}
@@ -224,10 +278,12 @@
   .kcard.later{opacity:.78}
   .kcard .co{font-size:12.5px;color:var(--muted);margin-top:2px}
   .kcard .why{font-size:11.5px;color:var(--ink-soft);margin-top:6px}
-  .prio{display:flex;gap:4px;margin-top:8px}
+  .prio{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap;align-items:center}
   .prio button{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border:1px solid var(--rule);background:var(--surface);color:var(--muted);border-radius:3px}
   .prio button[aria-pressed="true"]{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
   .prio button.hot[aria-pressed="true"]{background:var(--stop-bg);border-color:var(--stop);color:var(--stop)}
+  .prio button.del{margin-left:auto;color:var(--stop);text-transform:none;letter-spacing:0;font-family:var(--sans)}
+  .prio button.del:hover{background:var(--stop-bg);border-color:var(--stop)}
 </style>
 </head>
 <body>
@@ -319,7 +375,7 @@
   <div class="view" id="v-review" hidden>
     <div class="panel">
       <div class="panel-head"><h2>Waiting on a person</h2>
-        <span class="sub">nobody here gets a cold email until you click Yes</span></div>
+        <span class="sub">a CSV or Apollo load can be verified, approved, or deleted as a group</span></div>
       <div id="revList"><div class="empty">Loading…</div></div>
     </div>
   </div>
@@ -369,52 +425,92 @@
         <h2>Search Apollo</h2>
         <span class="sub">real search, no credits — change the filters and see who matches</span>
       </div>
-      <div style="padding:18px 16px">
-        <form class="form" id="findForm">
-          <div class="fld full"><label for="aTitles">Job titles</label>
-            <input type="text" id="aTitles" placeholder="Leave blank for this product's default list">
-            <span class="hint">Comma separated. Blank uses the product's own ideal-customer titles.</span></div>
+      <div style="padding:16px">
+        <form class="find-form" id="findForm">
+          <div class="find-grid">
+            <div class="fld"><label for="aName">Name</label>
+              <input type="text" id="aName" placeholder="Gavriel Legynd"
+                title="Leave titles blank when looking up one person."></div>
+            <div class="fld span2"><label for="aTitles">Job titles</label>
+              <input type="text" id="aTitles" placeholder="Blank uses this product’s default titles"
+                title="Comma separated. A name search skips the default title list."></div>
+            <div class="fld"><label for="aState">Lives in</label>
+              <select id="aState" title="United States only."></select></div>
+            <div class="fld"><label for="aKw">Keywords</label>
+              <input type="text" id="aKw" placeholder="Usually leave blank"
+                title="Literal full-text match, not an industry filter. Narrows hard."></div>
+            <div class="fld"><label for="aFindProd">Pitch as</label>
+              <select id="aFindProd" title="Whose ideal-customer titles to use when titles are blank."></select></div>
+            <div class="fld wide">
+              <label>Seniority</label>
+              <div class="find-chips" id="aSenBox"></div>
+              <span class="hint">Unchecked uses the product default, except on a name search.</span>
+            </div>
+            <div class="fld wide">
+              <label class="check"><input type="checkbox" id="aSimilar" checked>
+                <span>Include similar job titles</span></label>
+            </div>
+          </div>
 
-          <div class="fld"><label for="aSen">Seniority</label>
-            <select id="aSen">
-              <option value="">This product's default</option>
-              <option value="director">Director</option>
-              <option value="vp">VP</option>
-              <option value="c_suite">C-suite</option>
-              <option value="director,vp,c_suite">Director, VP and C-suite</option>
-            </select></div>
+          <details class="find-more" id="findCoMore">
+            <summary>Company</summary>
+            <div class="inner find-grid">
+              <div class="fld"><label for="aDom">Domains</label>
+                <input type="text" id="aDom" placeholder="visioneerit.com, oryoniq.com"
+                  title="Comma separated. No www or @."></div>
+              <div class="fld"><label for="aHq">Headquarters</label>
+                <select id="aHq" title="HQ state, not the person’s home. United States only."></select></div>
+              <div class="fld"><label for="aRevMin">Revenue at least</label>
+                <input type="number" id="aRevMin" min="0" step="1000" placeholder="500000"></div>
+              <div class="fld"><label for="aRevMax">Revenue at most</label>
+                <input type="number" id="aRevMax" min="0" step="1000" placeholder="15000000"></div>
+              <div class="fld wide"><label>Company size</label>
+                <div class="find-chips" id="aSizeBox"></div></div>
+              <div class="fld"><label for="aTechAny">Uses any of</label>
+                <input type="text" id="aTechAny" placeholder="salesforce, google_analytics"></div>
+              <div class="fld"><label for="aTechAll">Uses all of</label>
+                <input type="text" id="aTechAll" placeholder="salesforce"></div>
+              <div class="fld"><label for="aTechNone">Does not use</label>
+                <input type="text" id="aTechNone" placeholder="hubspot"></div>
+            </div>
+          </details>
 
-          <div class="fld"><label for="aSize">Company size</label>
-            <select id="aSize">
-              <option value="">Any size</option>
-              <option value="11,50">11–50 staff</option>
-              <option value="51,200">51–200 staff</option>
-              <option value="201,1000">201–1,000 staff</option>
-              <option value="1001,10000">1,000+ staff</option>
-            </select></div>
+          <details class="find-more" id="findHireMore">
+            <summary>Hiring signals</summary>
+            <div class="inner find-grid">
+              <div class="fld span2"><label for="aHireTitles">Open job titles</label>
+                <input type="text" id="aHireTitles" placeholder="Capture Manager, Proposal Manager"></div>
+              <div class="fld"><label for="aJobsMin">At least this many jobs</label>
+                <input type="number" id="aJobsMin" min="0" step="1"></div>
+              <div class="fld"><label for="aJobsMax">At most this many jobs</label>
+                <input type="number" id="aJobsMax" min="0" step="1"></div>
+              <div class="fld"><label for="aJobsFrom">Posted from</label>
+                <input type="date" id="aJobsFrom"></div>
+              <div class="fld"><label for="aJobsTo">Posted until</label>
+                <input type="date" id="aJobsTo"></div>
+            </div>
+          </details>
 
-          <div class="fld"><label for="aState">Location</label>
-            <select id="aState"></select>
-            <span class="hint">United States only. Other countries are outside what this pilot is cleared for.</span></div>
+          <details class="find-more" id="findEmailMore">
+            <summary>Email on file</summary>
+            <div class="inner">
+              <div class="fld"><label>Apollo email status</label>
+                <div class="find-chips" id="aEmailBox"></div>
+                <span class="hint">Optional. People with no email are already dropped after the search.</span></div>
+            </div>
+          </details>
 
-          <div class="fld"><label for="aKw">Keywords</label>
-            <input type="text" id="aKw" placeholder="usually leave blank">
-            <span class="hint">A literal full-text match, not an industry. It narrows hard — "government
-            contracting" cut 168,759 people to seven.</span></div>
-
-          <div class="fld"><label for="aProd">Pitch as</label>
-            <select id="aFindProd"></select>
-            <span class="hint">Decides whose ideal-customer list is used.</span></div>
-
-          <div class="fld"><label for="aTake">How many to fetch</label>
-            <select id="aTake">
-              <option value="10" selected>10 people</option>
-              <option value="25">25 people — most per run</option>
-            </select></div>
-
-          <div class="full acts">
+          <div class="find-foot">
             <button class="btn pri" type="submit" id="aRun">Search — free</button>
-            <span class="hint">Nobody is contacted and no credit is spent.</span>
+            <button class="btn sm" type="button" id="aSaveAuto">Use these filters on Autopilot</button>
+            <div class="fld" style="width:120px"><label for="aTake">Show</label>
+              <select id="aTake">
+                <option value="10" selected>10 people</option>
+                <option value="25">25 people</option>
+              </select></div>
+            <div class="fld" style="width:88px"><label for="aPage">Page</label>
+              <input type="number" id="aPage" min="1" max="50" value="1"></div>
+            <span class="hint">No credits and no mail until you reveal, or Autopilot is on.</span>
           </div>
         </form>
       </div>
@@ -447,15 +543,9 @@
       </div>
     </div>
 
-    <div class="note" style="margin-top:20px"><b>Why the surnames are cut off until you reveal.</b>
-    Apollo's free search returns a first name and a masked surname, and no address. That is Apollo's
-    boundary, not a bug here. Tick the people you want, then reveal — one lead credit each — and they
-    land here as proper leads with the full name, work email, and company domain.</div>
-
-    <div class="note warn"><b>Search widely, reveal narrowly.</b> Searching is free and contacts
-    nobody. Revealing spends a credit and writes whoever comes back through the same verification
-    as a typed lead. A pass joins the send queue (daily cap applies). This click does not itself
-    send mail.</div>
+    <div class="note" style="margin-top:20px"><b>Search is free. Reveal spends a credit.</b>
+    Apollo masks the surname and hides the address until you reveal. Tick the people you want —
+    a pass lands as a real lead and can join the send queue. This click does not send mail.</div>
   </div>
 
   <!-- ---------- ADD ---------- -->
@@ -578,9 +668,15 @@ const VERIFY = {
   drop:         ['Not a real address','t-stop'],
   unverified:   ['Not checked','t-mute'],
 };
+const MODE_META = {
+  manual: { label: 'You decide', blurb: 'Nothing spends a credit until you click.' },
+  hybrid: { label: 'Hybrid', blurb: 'CSV verifies itself. You still pick who to reveal.' },
+  autopilot: { label: 'Autopilot', blurb: 'Saved Find filters search and reveal, up to the daily cap.' },
+};
 const tag = (pair) => pair ? `<span class="tag ${pair[1]}">${esc(pair[0])}</span>` : '';
 
 let STATE_DATA = { leads: [], replies: [], campaigns: [], stats: {}, runners: [], playbooks: [] };
+let PIPE_JOBS_OPEN = false;
 
 function toast(msg, bad) {
   $('#toastHost').innerHTML = `<div class="toast${bad ? ' bad' : ''}" role="status">${esc(msg)}</div>`;
@@ -742,11 +838,14 @@ function sortForBoard(a, b) {
   return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
 }
 
-function prioButtons(l) {
+function prioButtons(l, withDelete) {
   const cur = leadPriority(l);
+  const del = withDelete
+    ? `<button type="button" class="del" data-del="${esc(l.id)}" title="Delete from the board and Instantly">Delete</button>`
+    : '';
   return `<div class="prio">${['hot','normal','later'].map(p =>
     `<button type="button" class="${p}" data-prio-lead="${esc(l.id)}" data-prio="${p}" aria-pressed="${cur === p}">${p}</button>`
-  ).join('')}</div>`;
+  ).join('')}${del}</div>`;
 }
 
 function leadCard(l) {
@@ -757,7 +856,7 @@ function leadCard(l) {
     <div class="nm">${esc(name)}</div>
     <div class="co">${esc(l.company || l.contact_email)}</div>
     ${why ? `<div class="why">${esc(why)}</div>` : ''}
-    ${prioButtons(l)}
+    ${prioButtons(l, true)}
   </div>`;
 }
 
@@ -814,25 +913,68 @@ const needsPerson = (l) =>
   (l.verify_action === 'needs_review' || l.channel_state_email === 'pending_approval')
   && l.channel_state_email !== 'dropped';
 
+function groupHeldLeads(leads) {
+  const groups = new Map();
+  for (const l of leads || []) {
+    const batchId = String(l.batch_id || '').trim();
+    const key = batchId || `one:${l.id}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key, batch_id: batchId,
+        label: String(l.batch_label || '').trim() || (batchId ? `Load ${batchId.slice(0, 8)}` : 'Single add'),
+        source: l.source || '',
+        leads: [],
+      });
+    }
+    groups.get(key).leads.push(l);
+  }
+  return [...groups.values()].sort((a, b) => b.leads.length - a.leads.length);
+}
+
 function renderReview() {
   const list = STATE_DATA.leads.filter(needsPerson);
   $('#cRev').textContent = list.length;
-  $('#revList').innerHTML = list.length ? list.map(l => {
-    const domain = (l.contact_email.split('@')[1] || '');
-    const why = l.verify_action === 'needs_review'
-      ? `<b>${esc(domain)}</b> accepts mail for any address, so nobody can tell a real mailbox from a typo. Release it only if you know this person exists.`
-      : 'Adding put this person here — not into the send queue. No cold email goes out until you click Yes.';
-    return `<div style="padding:16px;border-bottom:1px solid var(--rule-soft)">
-      <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
-        <div class="nm">${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</div>
-        <div class="em">${esc(l.contact_email)}</div>
-        ${tag(VERIFY[l.verify_action])}${tag(STATE[l.channel_state_email])}</div>
-      <div style="color:var(--ink-soft);margin-top:7px;max-width:70ch">${why}</div>
+  if (!list.length) {
+    $('#revList').innerHTML = '<div class="empty">Nothing waiting. Everything has been decided.</div>';
+    return;
+  }
+  const groups = groupHeldLeads(list);
+  const canVerify = Boolean(STATE_DATA.canVerify);
+  const parts = [];
+  for (const g of groups) {
+    if (!(g.batch_id || g.leads.length > 1)) continue;
+    const unverified = g.leads.filter(l => l.verify_action === 'unverified' || !l.verify_action).length;
+    const via = g.source === 'apollo' ? 'Apollo reveal' : g.source === 'upload' ? 'CSV upload' : (g.source || 'load');
+    const locked = g.batch_id ? '' : 'disabled';
+    parts.push(`<div class="batch">
+      <div class="who">${esc(g.label)}</div>
+      <div class="meta">${esc(via)} · ${g.leads.length} waiting${unverified ? ` · ${unverified} not yet checked` : ' · already checked'}</div>
       <div class="acts">
-        <button class="btn pri sm" data-ok="${esc(l.id)}">Yes, this person is real</button>
-        <button class="btn sm" data-no="${esc(l.id)}">Never contact</button>
-        <button class="btn sm" data-open="${esc(l.id)}">See history</button></div></div>`;
-  }).join('') : '<div class="empty">Nothing waiting. Everything has been decided.</div>';
+        <button type="button" class="btn pri sm" data-bulk="verify" data-batch="${esc(g.batch_id)}" ${canVerify && unverified && g.batch_id ? '' : 'disabled'}
+          title="${canVerify ? 'Spends one Reoon credit per unchecked address. Pass goes to the send queue. Catch-all stays here. Apollo is not used — we already have the email.' : 'Reoon is not configured on this console.'}">Verify with Reoon</button>
+        <button type="button" class="btn sm" data-bulk="release" data-batch="${esc(g.batch_id)}" ${locked}>Approve all</button>
+        <button type="button" class="btn sm danger" data-bulk="delete" data-batch="${esc(g.batch_id)}" ${locked}>Delete this load</button>
+      </div>
+      ${g.batch_id ? '' : `<div class="meta" style="margin-top:8px">This group has no saved load id, so use the per-person buttons.</div>`}
+    </div>`);
+  }
+  for (const l of list) {
+      const domain = (l.contact_email.split('@')[1] || '');
+      const why = l.verify_action === 'needs_review'
+        ? `<b>${esc(domain)}</b> accepts mail for any address, so nobody can tell a real mailbox from a typo. Release it only if you know this person exists.`
+        : 'Adding put this person here — not into the send queue. No cold email goes out until you click Yes, or until Reoon says the mailbox is real.';
+      parts.push(`<div style="padding:16px;border-bottom:1px solid var(--rule-soft)">
+        <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+          <div class="nm">${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</div>
+          <div class="em">${esc(l.contact_email)}</div>
+          ${tag(VERIFY[l.verify_action])}${tag(STATE[l.channel_state_email])}</div>
+        <div style="color:var(--ink-soft);margin-top:7px;max-width:70ch">${why}</div>
+        <div class="acts">
+          <button class="btn pri sm" data-ok="${esc(l.id)}">Yes, this person is real</button>
+          <button class="btn sm" data-no="${esc(l.id)}">Never contact</button>
+          <button class="btn sm" data-open="${esc(l.id)}">See history</button></div></div>`);
+  }
+  $('#revList').innerHTML = parts.join('');
 }
 
 function stripHtml(s) {
@@ -964,6 +1106,62 @@ const US_STATES = ['Alabama','Alaska','Arizona','Arkansas','California','Colorad
   'Washington','West Virginia','Wisconsin','Wyoming'];
 $('#aState').innerHTML = '<option value="">United States — anywhere</option>'
   + US_STATES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+$('#aHq').innerHTML = '<option value="">Any US headquarters</option>'
+  + US_STATES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+
+const SENIORITY_OPTS = [
+  ['owner', 'Owner'], ['founder', 'Founder'], ['c_suite', 'C-suite'], ['partner', 'Partner'],
+  ['vp', 'VP'], ['head', 'Head'], ['director', 'Director'], ['manager', 'Manager'],
+  ['senior', 'Senior'], ['entry', 'Entry'], ['intern', 'Intern'],
+];
+const SIZE_OPTS = [
+  ['1,10', '1–10'], ['11,50', '11–50'], ['51,200', '51–200'], ['201,500', '201–500'],
+  ['501,1000', '501–1,000'], ['1001,5000', '1,001–5,000'], ['5001,10000', '5,001–10,000'],
+  ['10001,20000', '10,001–20,000'], ['20001,100000', '20,000+'],
+];
+const EMAIL_OPTS = [
+  ['verified', 'Verified'], ['unverified', 'Unverified'],
+  ['likely to engage', 'Likely to engage'], ['unavailable', 'Unavailable'],
+];
+const checkRow = (name, opts) => opts.map(([v, lab]) =>
+  `<label><input type="checkbox" name="${name}" value="${esc(v)}"> ${esc(lab)}</label>`).join('');
+$('#aSenBox').innerHTML = checkRow('aSen', SENIORITY_OPTS);
+$('#aSizeBox').innerHTML = checkRow('aSize', SIZE_OPTS);
+$('#aEmailBox').innerHTML = checkRow('aEmail', EMAIL_OPTS);
+
+const checkedVals = (name) => [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((el) => el.value);
+const setChecked = (name, raw) => {
+  const want = new Set(String(raw || '').split(/[,;]/).map((s) => s.trim()).filter(Boolean));
+  document.querySelectorAll(`input[name="${name}"]`).forEach((el) => { el.checked = want.has(el.value); });
+};
+
+function collectFindBody() {
+  return {
+    product: $('#aFindProd').value,
+    person_name: $('#aName').value.trim() || undefined,
+    titles: $('#aTitles').value.trim() || undefined,
+    include_similar_titles: $('#aSimilar').checked,
+    seniorities: checkedVals('aSen').join(',') || undefined,
+    employee_ranges: checkedVals('aSize').join(';') || undefined,
+    locations: $('#aState').value || undefined,
+    organization_locations: $('#aHq').value || undefined,
+    domains: $('#aDom').value.trim() || undefined,
+    keywords: $('#aKw').value.trim() || undefined,
+    contact_email_status: checkedVals('aEmail').join(',') || undefined,
+    revenue_min: $('#aRevMin').value || undefined,
+    revenue_max: $('#aRevMax').value || undefined,
+    tech_any: $('#aTechAny').value.trim() || undefined,
+    tech_all: $('#aTechAll').value.trim() || undefined,
+    tech_none: $('#aTechNone').value.trim() || undefined,
+    hiring_titles: $('#aHireTitles').value.trim() || undefined,
+    jobs_min: $('#aJobsMin').value || undefined,
+    jobs_max: $('#aJobsMax').value || undefined,
+    jobs_posted_min: $('#aJobsFrom').value || undefined,
+    jobs_posted_max: $('#aJobsTo').value || undefined,
+    per_page: Number($('#aTake').value) || 25,
+    page: Number($('#aPage').value) || 1,
+  };
+}
 
 function renderRunner() {
   const board = $('#runnerBoard');
@@ -1046,6 +1244,20 @@ function renderRunner() {
       how: 'Skipped on purpose. A reply never places a call.',
     },
     {
+      job: 'Autopilot',
+      wf: 'saved Find filters',
+      on: (STATE_DATA.pipeline || {}).mode === 'autopilot',
+      chip: (STATE_DATA.pipeline || {}).mode === 'autopilot' ? ['On · every 15 min', 't-ok']
+        : (STATE_DATA.pipeline || {}).mode === 'hybrid' ? ['Hybrid', 't-acc']
+        : ['You decide', 't-mute'],
+      how: (STATE_DATA.pipeline || {}).mode === 'autopilot'
+        ? `${STATE_DATA.pipeline.revealed_today || 0}/${STATE_DATA.pipeline.daily_reveal_cap || 25} Apollo today`
+          + (STATE_DATA.pipeline.last_result ? ` · ${STATE_DATA.pipeline.last_result}` : '')
+        : (STATE_DATA.pipeline || {}).mode === 'hybrid'
+          ? 'CSV uploads verify themselves. Find and reveal stay yours.'
+          : 'Flip the switch below when you want it to find people on its own.',
+    },
+    {
       job: 'VisioneerIT send',
       wf: 'own Instantly campaign',
       on: vitOn,
@@ -1068,6 +1280,17 @@ function renderRunner() {
         <span>${sendRow ? esc(ago(sendRow.last_run_at, now)) + ' · last cycle' : 'no heartbeat'}</span>
       </div>
     </div>
+    <div class="pipe-mode">
+      <div>
+        <div class="k">How the You-steps run</div>
+        <div class="seg" role="group" aria-label="Pipeline mode">
+          ${['manual','hybrid','autopilot'].map(m =>
+            `<button type="button" data-mode="${m}" aria-pressed="${((STATE_DATA.pipeline || {}).mode || 'manual') === m}">${esc(MODE_META[m].label)}</button>`
+          ).join('')}
+        </div>
+      </div>
+      <div class="why">${esc((MODE_META[((STATE_DATA.pipeline || {}).mode) || 'manual'] || MODE_META.manual).blurb)}</div>
+    </div>
     <div class="pipe-nums">
       <div class="pipe-num"><div class="k">Queued to send</div><div class="v ${ready.length ? 'acc' : ''}">${ready.length}</div>
         <div class="n">${ready.length ? 'will go on the next check' : 'nobody in the send queue'}</div></div>
@@ -1078,13 +1301,18 @@ function renderRunner() {
       <div class="pipe-num"><div class="k">Send loop</div><div class="v">${esc((RUNNER_CHIP[sendKind] || ['—'])[0])}</div>
         <div class="n">${esc(sendRow?.last_result || 'no result yet')}</div></div>
     </div>
-    <div class="pipe-jobs">
-      ${jobs.map(j => `<div class="pipe-job">
-        <div><div class="job">${esc(j.job)}</div><div class="wf">${esc(j.wf)}</div></div>
-        <div>${tag(j.chip)}</div>
-        <div class="how">${esc(j.how)}</div>
-      </div>`).join('')}
-    </div>`;
+    <details class="pipe-more" id="pipeJobs"${PIPE_JOBS_OPEN ? ' open' : ''}>
+      <summary>What is running</summary>
+      <div class="pipe-jobs">
+        ${jobs.map(j => `<div class="pipe-job">
+          <div><div class="job">${esc(j.job)}</div><div class="wf">${esc(j.wf)}</div></div>
+          <div>${tag(j.chip)}</div>
+          <div class="how">${esc(j.how)}</div>
+        </div>`).join('')}
+      </div>
+    </details>`;
+  const more = $('#pipeJobs');
+  if (more) more.addEventListener('toggle', () => { PIPE_JOBS_OPEN = more.open; });
 }
 
 function playbookOf(product) {
@@ -1229,6 +1457,76 @@ async function release(id) {
     await load(); closeDrawer();
   } catch (e) { toast(e.message, true); }
 }
+async function setPipelineMode(mode) {
+  const p = STATE_DATA.pipeline || {};
+  if (mode === (p.mode || 'manual')) return;
+  if (mode === 'autopilot') {
+    const product = String((p.find || {}).product || '').trim().toLowerCase();
+    if (product !== 'oryoniq' && product !== 'visioneerit') {
+      toast('Search Apollo once, then click “Use these filters on Autopilot” before turning Autopilot on.', true);
+      showView('apollo');
+      return;
+    }
+    if (!confirm(
+      `Turn Autopilot on?\n\nEvery 15 minutes it searches with your saved Find filters and reveals up to ${p.daily_reveal_cap || 25} new people today.\n\nReal mailboxes join the send queue. Catch-alls still wait on Needs you.\n\nFollow-up after a reply is still the switch on Replies — this does not send the meeting ask by itself.\n\nYou can switch back to You decide at any time.`,
+    )) return;
+  }
+  try {
+    const d = await api('/api/pipeline', { method: 'POST', body: { mode } });
+    STATE_DATA.pipeline = { ...p, ...d.pipeline };
+    toast(mode === 'manual'
+      ? 'You decide again. Nothing spends a credit unless you click.'
+      : mode === 'hybrid'
+        ? 'Hybrid on. CSV uploads verify themselves. You still pick who to reveal.'
+        : 'Autopilot on. It will search and reveal on its own, up to the daily cap.');
+    renderRunner();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function saveFindFilters() {
+  const find = collectFindBody();
+  try {
+    const d = await api('/api/pipeline', { method: 'POST', body: { find } });
+    STATE_DATA.pipeline = { ...(STATE_DATA.pipeline || {}), ...d.pipeline };
+    toast('Saved. Autopilot will use these filters when you turn it on.');
+  } catch (e) { toast(e.message, true); }
+}
+
+async function bulkAct(action, batchId) {
+  if (!batchId) { toast('This group cannot be actioned as a load.', true); return; }
+  const n = (STATE_DATA.leads || []).filter(l => l.batch_id === batchId && needsPerson(l)).length;
+  if (action === 'delete') {
+    if (!confirm(`Delete all ${n} waiting people from this load?\n\nAlready-sent people stay. This cannot be undone.`)) return;
+  } else if (action === 'release') {
+    if (!confirm(`Approve all ${n} waiting people in this load?\n\nThey go to the send queue without a Reoon check. Only do this if you already know they are real.`)) return;
+  } else if (action === 'verify') {
+    if (!confirm(`Check unchecked addresses in this load with Reoon?\n\nOne credit each. Real mailboxes join the send queue. Catch-all stays here for you. Invalid is dropped.\n\nApollo is not used — we already have the email.`)) return;
+  } else return;
+  try {
+    if (action === 'verify') {
+      let checked = 0, pass = 0, review = 0, drop = 0;
+      for (;;) {
+        const d = await api('/api/leads/bulk', { method: 'POST', body: { action: 'verify', batch_id: batchId, limit: 25 } });
+        checked += d.checked || 0;
+        pass += d.pass || 0;
+        review += d.needs_review || 0;
+        drop += d.drop || 0;
+        await load();
+        if (!d.remaining) {
+          toast(`Reoon checked ${checked}: ${pass} ready to send, ${review} still need you, ${drop} dropped.`);
+          return;
+        }
+        toast(`Checked ${checked}… ${d.remaining} left`);
+      }
+    }
+    const d = await api('/api/leads/bulk', { method: 'POST', body: { action, batch_id: batchId } });
+    if (action === 'delete') {
+      toast(`Deleted ${d.deleted || 0} from this load.` + (d.skipped ? ` ${d.skipped} already sent were left.` : ''));
+    }
+    if (action === 'release') toast(`Approved ${d.released || 0}. The send loop can pick them up.`);
+    await load();
+  } catch (e) { toast(e.message, true); }
+}
 async function deleteLead(id) {
   const l = STATE_DATA.leads.find(x => x.id === id);
   const who = l ? `${[l.first_name, l.last_name].filter(Boolean).join(' ') || l.contact_email} (${l.contact_email})` : 'this lead';
@@ -1314,10 +1612,69 @@ async function sendReply(id) {
 }
 
 // ---------- load ----------
+let FIND_PREFILLED = false;
+function applySavedFind() {
+  if (FIND_PREFILLED) return;
+  const find = (STATE_DATA.pipeline || {}).find || {};
+  if (!find.product) return;
+  FIND_PREFILLED = true;
+  if ($('#aFindProd').querySelector(`option[value="${String(find.product).replace(/"/g, '')}"]`)) {
+    $('#aFindProd').value = find.product;
+  }
+  if (find.person_name) $('#aName').value = find.person_name;
+  if (find.titles) {
+    $('#aTitles').value = Array.isArray(find.titles) ? find.titles.join(', ') : String(find.titles);
+  }
+  if (find.include_similar_titles === false) $('#aSimilar').checked = false;
+  if (find.seniorities) setChecked('aSen', find.seniorities);
+  if (find.employee_ranges) setChecked('aSize', find.employee_ranges);
+  if (find.locations) $('#aState').value = find.locations;
+  if (find.organization_locations) $('#aHq').value = find.organization_locations;
+  if (find.domains) $('#aDom').value = Array.isArray(find.domains) ? find.domains.join(', ') : find.domains;
+  if (find.keywords) $('#aKw').value = find.keywords;
+  if (find.contact_email_status) setChecked('aEmail', find.contact_email_status);
+  if (find.revenue_min) $('#aRevMin').value = find.revenue_min;
+  if (find.revenue_max) $('#aRevMax').value = find.revenue_max;
+  if (find.tech_any) $('#aTechAny').value = find.tech_any;
+  if (find.tech_all) $('#aTechAll').value = find.tech_all;
+  if (find.tech_none) $('#aTechNone').value = find.tech_none;
+  if (find.hiring_titles) $('#aHireTitles').value = find.hiring_titles;
+  if (find.jobs_min) $('#aJobsMin').value = find.jobs_min;
+  if (find.jobs_max) $('#aJobsMax').value = find.jobs_max;
+  if (find.jobs_posted_min) $('#aJobsFrom').value = find.jobs_posted_min;
+  if (find.jobs_posted_max) $('#aJobsTo').value = find.jobs_posted_max;
+  if (find.per_page) $('#aTake').value = Number(find.per_page) === 10 ? '10' : '25';
+  if (find.page) $('#aPage').value = String(find.page);
+  openFindMoreIfUsed();
+}
+
+function findFieldUsed(sel) {
+  return [...document.querySelectorAll(sel)].some((el) => {
+    if (el.type === 'checkbox') return el.checked;
+    return String(el.value || '').trim() !== '';
+  });
+}
+
+function openFindMoreIfUsed() {
+  if (findFieldUsed('#aDom, #aHq, #aSizeBox input, #aRevMin, #aRevMax, #aTechAny, #aTechAll, #aTechNone')) {
+    const box = $('#findCoMore');
+    if (box) box.open = true;
+  }
+  if (findFieldUsed('#aHireTitles, #aJobsMin, #aJobsMax, #aJobsFrom, #aJobsTo')) {
+    const box = $('#findHireMore');
+    if (box) box.open = true;
+  }
+  if (findFieldUsed('#aEmailBox input')) {
+    const box = $('#findEmailMore');
+    if (box) box.open = true;
+  }
+}
+
 async function load() {
   try {
     STATE_DATA = await api('/api/state');
     renderProducts();
+    applySavedFind();
     renderAll();
     paintLive();
   } catch (err) {
@@ -1428,7 +1785,9 @@ $('#uploadForm').addEventListener('submit', async (e) => {
           <td style="color:var(--ink-soft)">${esc(r.reason || '')}</td></tr>`).join('');
 
     toast(d.added
-      ? `${d.added} added. No email goes out until you release them on Needs you.`
+      ? (d.auto_verify
+        ? `${d.added} added. Hybrid/Autopilot is checking them with Reoon now.`
+        : `${d.added} added. They wait on Needs you — Verify with Reoon, Approve all, or Delete this load.`)
       : 'No new leads were added.');
     fileInput.value = '';
     if (d.added) {
@@ -1549,6 +1908,8 @@ function renderRevealReport(d) {
   $('#aOutRows').innerHTML = rows.join('') || `<tr><td colspan="3" class="empty">${esc(d.note || 'No addresses were handed on.')}</td></tr>`;
 }
 
+$('#aSaveAuto')?.addEventListener('click', saveFindFilters);
+
 $('#findForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = $('#aRun');
@@ -1567,16 +1928,9 @@ $('#findForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.textContent = 'Searching…';
   try {
-    FIND_PRODUCT = $('#aFindProd').value;
-    const d = await api('/api/find', { method: 'POST', body: {
-      product: FIND_PRODUCT,
-      titles: $('#aTitles').value.trim() || undefined,
-      seniorities: $('#aSen').value || undefined,
-      employee_ranges: $('#aSize').value || undefined,
-      locations: $('#aState').value || undefined,
-      keywords: $('#aKw').value.trim() || undefined,
-      per_page: Number($('#aTake').value),
-    }});
+    const find = collectFindBody();
+    FIND_PRODUCT = find.product;
+    const d = await api('/api/find', { method: 'POST', body: find });
 
     FIND_PEOPLE = d.leads || [];
     $('#aResPanel').hidden = false;
@@ -1695,6 +2049,8 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (t.dataset.prioLead) return setPriority(t.dataset.prioLead, t.dataset.prio);
+  if (t.dataset.mode) return setPipelineMode(t.dataset.mode);
+  if (t.dataset.bulk) return bulkAct(t.dataset.bulk, t.dataset.batch);
   if (t.dataset.ok) return release(t.dataset.ok);
   if (t.dataset.del) return deleteLead(t.dataset.del);
   if (t.dataset.no) return suppress(t.dataset.no);
