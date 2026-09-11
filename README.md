@@ -32,26 +32,15 @@ Screenshots use sample names. Live prospect data is not published here.
 
 ## How it works
 
-```mermaid
-flowchart LR
-  A[Find or type a lead] --> B[Intake gates]
-  B --> C[Needs you]
-  C -->|Yes, this person is real| D[Ready to send]
-  D --> E[n8n every 3 min]
-  E --> F[OpenAI opener]
-  F --> G[Sendr page]
-  G --> H[Instantly email]
-  H --> I[Reply]
-  I --> J[Staff / meeting]
-  B -->|duplicate or suppressed| K[Dropped — no credits]
-  C -->|Never contact| L[Suppression list]
-```
+You find or upload people. Reoon checks the mailbox. Only a real mailbox — or a person clicking **Yes** — reaches the send queue. n8n then claims one lead every 3 minutes, writes the opener, builds their page, and Instantly sends as Ellen. A reply is classified; interested gets the HubSpot link, unclear sits on Replies, stop goes on the never-contact list.
 
-1. **Source** — Search Apollo for free (titles, seniority, US location, company size). Revealing an address is paid and capped; search never spends a credit.
+![End-to-end pipeline: find leads, verify, send as Ellen, then reply paths](docs/github/pipeline.png)
+
+1. **Source** — Search Apollo for free (titles, seniority, US location, company size). Revealing an address is paid and capped; search never spends a credit. CSV upload and typed leads use the same gates.
 2. **Gate** — Dedupe and suppression run *before* Reoon. A duplicate or a suppressed address costs nothing. A blank or unknown product is refused, not guessed.
-3. **Human gate** — The console's **Needs you** tab. Catch-all domains stay here. Reoon `pass` can move them to the send queue.
-4. **Send** — `VIO-run-outreach` claims from `leads_ready`. It drafts copy, generates a personalized Sendr page, and enrols Instantly. Heartbeats `system_status` every cycle; idle when the queue is empty is healthy.
-5. **Reply** — Instantly posts in. OpenAI classifies sentiment. Slack gets Approve / Decline (*I'm taking this follow-up* / *not a real lead*). Suppression is append-only and matches any identifier.
+3. **Human gate** — Catch-all or unverified stays on **Needs you**. Reoon `pass`, or you clicking Yes / Approve all, moves them to `not_sent` / `approved`.
+4. **Send** — `VIO-run-outreach` claims one from `leads_ready` every 3 minutes. OpenAI writes the opener, Sendr builds the page, Instantly enrols them as Ellen, then the sequence nudges if they stay silent.
+5. **Reply** — Instantly webhook → OpenAI classifies. Interested: Ellen sends the HubSpot meeting link (they book Gavriel). Unclear: a draft waits on Replies. Stop / unsubscribe: never-contact list, sequence ends. Voice never runs.
 
 ## Stack
 
