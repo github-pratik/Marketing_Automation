@@ -103,10 +103,7 @@ The Sendr one announced itself with a 401. **The two OpenAI ones did not** — t
 on the wrong project's key and billing, for a day. `slack marketing` bound correctly only because
 it is the only `slackApi` credential on the box; that is luck, not correctness.
 
-All `VIO-*.json` files now pin explicit ids:
-```json
-"credentials": { "openAiApi": { "id": "7t8KDC4EZpbIkOxP", "name": "Openai Marketing" } }
-```
+
 Current ids: `Openai Marketing` `7t8KDC4EZpbIkOxP` · `slack marketing` `niWxNp4EIL0Dvgfh` ·
 `VIO Sendr` `VIOsendrcred001`. (`OpenAI account` `dpzUGSCyYoUPCAvv` and `Header Auth account`
 `ePhhBsC5X1uQehIJ` are IndustrialBriefs' — never reference these.)
