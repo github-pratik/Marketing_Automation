@@ -132,6 +132,62 @@ function textToHtml(text) {
   return escaped.split('\n').map((line) => `<div>${line || '<br>'}</div>`).join('');
 }
 
+async function findInstantlyLeadIds(lead) {
+  const ids = new Set();
+  const stored = String(lead.instantly_lead_id || '').trim();
+  if (stored) ids.add(stored);
+  const email = String(lead.contact_email || '').trim().toLowerCase();
+  if (!email) return [...ids];
+  const listed = await instantly('/leads/list', {
+    method: 'POST',
+    body: { search: email, contacts: [email], limit: 50 },
+  });
+  const items = listed?.items || listed?.data || [];
+  for (const row of items) {
+    const theirs = String(row.email || row.contact || '').trim().toLowerCase();
+    if (theirs === email && row.id) ids.add(String(row.id));
+  }
+  return [...ids];
+}
+
+async function deleteFromInstantly(lead) {
+  if (!INSTANTLY_API_KEY) {
+    const inFlight = ['enrolled', 'replied', 'booked', 'pending_approval'].includes(lead.channel_state_email)
+      || Boolean(lead.instantly_lead_id);
+    if (inFlight) {
+      const err = new Error('Instantly is not configured here, so this person cannot be removed from the campaign. Nothing was deleted.');
+      err.status = 501;
+      throw err;
+    }
+    return { skipped: true, deleted: [] };
+  }
+  let ids = [];
+  try {
+    ids = await findInstantlyLeadIds(lead);
+  } catch (err) {
+    if (lead.instantly_lead_id) ids = [lead.instantly_lead_id];
+    else throw err;
+  }
+  const deleted = [];
+  for (const id of ids) {
+    try {
+      await instantly(`/leads/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      deleted.push(id);
+    } catch (err) {
+      if (err.status === 404) continue;
+      throw err;
+    }
+  }
+  const inCampaign = ['enrolled', 'replied', 'booked'].includes(lead.channel_state_email)
+    || Boolean(lead.instantly_lead_id);
+  if (inCampaign && ids.length === 0) {
+    const err = new Error('Could not find this person in Instantly, so nothing was deleted. They may still be in the campaign.');
+    err.status = 409;
+    throw err;
+  }
+  return { skipped: false, deleted, looked_up: ids };
+}
+
 async function findInstantlyReplyTarget(leadEmail) {
   const listed = await instantly(
     `/emails?limit=100&sort_order=desc&search=${encodeURIComponent(leadEmail)}`,
@@ -1225,6 +1281,71 @@ async function handleAPI(req, res, url) {
     });
 
     return sendJSON(res, 200, { lead: updated });
+  }
+
+  // -- staff ranking on the Kanban. Does not change whether the runner sends.
+  const PRIORITIES = new Set(['hot', 'normal', 'later']);
+  const priorityMatch = path.match(/^\/api\/leads\/([0-9a-f-]{36})\/priority$/i);
+  if (priorityMatch && req.method === 'POST') {
+    const id = priorityMatch[1];
+    const body = await readBody(req);
+    const priority = String(body.priority || '').trim();
+    if (!PRIORITIES.has(priority)) {
+      return sendJSON(res, 400, { error: 'Priority must be hot, normal, or later.' });
+    }
+    const lead = (await sb(`leads?select=*&id=eq.${id}`))[0];
+    if (!lead) return sendJSON(res, 404, { error: 'No such lead.' });
+    const updated = (await sb(`leads?id=eq.${id}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: { priority },
+    }))[0];
+    await recordEvent({
+      lead_id: id,
+      lead_email: lead.contact_email,
+      actor: 'console',
+      action: 'priority',
+      outcome: priority,
+      workflow: 'console',
+      payload: { previous: lead.priority || 'normal' },
+    });
+    return sendJSON(res, 200, { lead: updated });
+  }
+
+  // -- remove a lead from the dashboard and Instantly ------------------------
+  // Instantly first: skip_if_in_campaign is workspace-wide, so a row deleted
+  // only here would still block re-enrolment and could still receive sequence
+  // mail. Events stay (orphaned) — the ledger is append-only. Suppression stays
+  // too: if they asked us to stop, that request cannot be unwritten.
+  const deleteMatch = path.match(/^\/api\/leads\/([0-9a-f-]{36})$/i);
+  if (deleteMatch && req.method === 'DELETE') {
+    const id = deleteMatch[1];
+    const lead = (await sb(`leads?select=*&id=eq.${id}`))[0];
+    if (!lead) return sendJSON(res, 404, { error: 'No such lead.' });
+
+    const instantlyResult = await deleteFromInstantly(lead);
+
+    await recordEvent({
+      lead_id: id,
+      lead_email: lead.contact_email,
+      actor: 'console',
+      action: 'deleted',
+      outcome: instantlyResult.skipped ? 'dashboard_only' : 'removed',
+      workflow: 'console',
+      payload: {
+        instantly_deleted: instantlyResult.deleted || [],
+        instantly_skipped: Boolean(instantlyResult.skipped),
+        previous_state: lead.channel_state_email,
+      },
+    });
+
+    await sb(`leads?id=eq.${id}`, { method: 'DELETE' });
+
+    return sendJSON(res, 200, {
+      ok: true,
+      email: lead.contact_email,
+      instantly: instantlyResult,
+    });
   }
 
   // -- never contact --------------------------------------------------------

@@ -64,23 +64,35 @@
   .banner b{color:var(--ink);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
   .banner span{flex:1;min-width:280px}
 
-  /* ---- runner (system_status heartbeats) ---- */
+  /* ---- pipeline board (n8n + queue) ---- */
   .runner{margin-top:16px;background:var(--surface);border:1px solid var(--rule);border-radius:5px;overflow:hidden}
   .runner.ok{border-left:3px solid var(--ok)}
   .runner.work{border-left:3px solid var(--accent)}
   .runner.warn{border-left:3px solid var(--warn)}
   .runner.bad{border-left:3px solid var(--stop)}
-  .runner-row{display:grid;grid-template-columns:minmax(220px,1.2fr) minmax(170px,.8fr) 1fr;gap:10px 22px;padding:13px 16px;align-items:start}
-  .runner-row + .runner-row{border-top:1px solid var(--rule-soft)}
-  .runner .wf{font-weight:600}
-  .runner .wf-meta{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px}
-  .runner .when-k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-  .runner .when-v{font-variant-numeric:tabular-nums;font-weight:500;margin-top:2px}
-  .runner .when-n{font-size:12px;color:var(--muted);margin-top:1px}
-  .runner .detail{color:var(--ink-soft);font-size:13px}
-  .runner .detail b{color:var(--ink)}
   .runner .empty{padding:16px;text-align:left}
-  @media (max-width:720px){.runner-row{grid-template-columns:1fr}}
+  .pipe-head{padding:14px 16px 12px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-start}
+  .pipe-head h2{font-size:16px;margin:0;font-weight:600;letter-spacing:-.01em}
+  .pipe-head .why{color:var(--ink-soft);margin-top:4px;max-width:62ch}
+  .pipe-head .when{font-size:12.5px;color:var(--muted);text-align:right}
+  .pipe-head .when b{display:block;color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+  .pipe-head .acts{margin-top:10px}
+  .pipe-nums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--rule);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .pipe-num{background:var(--surface);padding:10px 14px}
+  .pipe-num .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .pipe-num .v{font-family:var(--mono);font-size:20px;font-weight:500;margin-top:2px;line-height:1.1}
+  .pipe-num .n{font-size:11.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pipe-jobs{padding:4px 0}
+  .pipe-job{display:grid;grid-template-columns:minmax(160px,1fr) minmax(140px,.7fr) 1.4fr;gap:8px 16px;padding:9px 16px;align-items:center;font-size:13px}
+  .pipe-job + .pipe-job{border-top:1px solid var(--rule-soft)}
+  .pipe-job .job{font-weight:600}
+  .pipe-job .wf{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .pipe-job .how{color:var(--ink-soft);font-size:12.5px}
+  @media (max-width:800px){
+    .pipe-nums{grid-template-columns:1fr 1fr}
+    .pipe-job{grid-template-columns:1fr;gap:2px}
+    .pipe-head .when{text-align:left}
+  }
 
   /* ---- stats ---- */
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:5px;overflow:hidden;margin-bottom:22px}
@@ -103,7 +115,8 @@
   .btn:hover:not(:disabled){background:var(--sunk)}
   .btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
   .btn.pri:hover:not(:disabled){filter:brightness(1.08)}
-  .btn.sm{padding:4px 9px;font-size:12px}
+  .btn.danger{color:var(--stop);border-color:var(--stop)}
+  .btn.danger:hover:not(:disabled){background:var(--stop-bg)}
   .btn:disabled{opacity:.5;cursor:not-allowed}
 
   .scroll{overflow-x:auto}
@@ -193,6 +206,28 @@
   .toast.bad{background:var(--stop)}
   @media (prefers-reduced-motion:no-preference){.toast{animation:rise .22s ease-out}}
   @keyframes rise{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+
+  .seg{display:inline-flex;border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+  .seg button{border:0;border-radius:0;background:var(--surface);padding:6px 11px;font-size:12.5px;color:var(--muted)}
+  .seg button + button{border-left:1px solid var(--rule)}
+  .seg button[aria-pressed="true"]{background:var(--accent-bg);color:var(--accent);font-weight:600}
+
+  .board{display:flex;gap:10px;overflow-x:auto;padding:12px;align-items:flex-start;min-height:280px}
+  .col{flex:0 0 248px;background:var(--sunk);border:1px solid var(--rule);border-radius:5px;display:flex;flex-direction:column;max-height:min(72vh,720px)}
+  .col-h{padding:10px 12px 8px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .col-h b{font-size:13px}
+  .col-h .n{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .col-b{overflow-y:auto;padding:0 8px 10px;display:flex;flex-direction:column;gap:8px}
+  .kcard{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:10px 11px;cursor:pointer;text-align:left;width:100%}
+  .kcard:hover{border-color:var(--accent)}
+  .kcard.hot{border-left:3px solid var(--stop)}
+  .kcard.later{opacity:.78}
+  .kcard .co{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .kcard .why{font-size:11.5px;color:var(--ink-soft);margin-top:6px}
+  .prio{display:flex;gap:4px;margin-top:8px}
+  .prio button{font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border:1px solid var(--rule);background:var(--surface);color:var(--muted);border-radius:3px}
+  .prio button[aria-pressed="true"]{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+  .prio button.hot[aria-pressed="true"]{background:var(--stop-bg);border-color:var(--stop);color:var(--stop)}
 </style>
 </head>
 <body>
@@ -229,19 +264,10 @@
     <button role="tab" aria-selected="false" data-v="add">Add leads</button>
   </nav>
 
-  <!-- n8n pollers overwrite system_status every cycle. This is how a quiet
-       pipeline is told apart from a dead one — the events ledger is silent in both. -->
+  <!-- Pipeline board: what n8n will do next, and what is waiting on a person.
+       Heartbeats come from system_status. Queue counts come from the leads themselves. -->
   <div class="runner" id="runnerBoard" aria-live="polite">
     <div class="empty">Checking the send loop…</div>
-  </div>
-
-  <!-- ---------- LEADS ---------- -->
-  <!-- n8n claims from leads_ready. Releasing a lead here is what puts it in that view. -->
-  <div class="banner" id="cutoverBanner">
-    <b>Supabase is the record · n8n sends from here</b>
-    <span>This console and the send loop share one database. Releasing a lead marks it
-    <code>approved</code>; <code>VIO-run-outreach</code> picks that up on the next cycle.
-    The Google Sheet is no longer the queue.</span>
   </div>
 
   <div class="view" id="v-leads">
@@ -255,32 +281,36 @@
 
     <div class="panel">
       <div class="panel-head">
-        <h2>All leads</h2><span class="sub">click any row for its full history</span>
+        <h2>All leads</h2><span class="sub" id="leadsSub">board by stage — already-sent people sit in their own column</span>
         <div class="tools">
+          <div class="seg" role="group" aria-label="Leads layout">
+            <button type="button" id="viewBoard" aria-pressed="true">Board</button>
+            <button type="button" id="viewList" aria-pressed="false">List</button>
+          </div>
           <input type="text" id="q" placeholder="Search name, company, email…" style="width:210px">
           <select id="fState">
             <option value="">Any status</option>
             <option value="not_sent">Ready to send</option>
             <option value="approved">Approved</option>
-            <option value="enrolled">In campaign</option>
+            <option value="enrolled">Already sent</option>
             <option value="needs_review">Needs you</option>
-            <option value="pending_approval">Held</option>
+            <option value="pending_approval">Waiting for approval</option>
             <option value="replied">Replied</option>
             <option value="booked">Booked</option>
             <option value="dropped">Not usable</option>
           </select>
         </div>
       </div>
-      <div class="scroll"><table>
-        <thead><tr><th>Person</th><th>Company</th><th>Status</th><th>Verification</th><th>Last updated</th></tr></thead>
+      <div class="board" id="leadBoard"></div>
+      <div class="scroll" id="leadTable" hidden><table>
+        <thead><tr><th>Person</th><th>Company</th><th>Status</th><th>Importance</th><th>Last updated</th></tr></thead>
         <tbody id="rows"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
       </table></div>
     </div>
 
-    <div class="note"><b>Why some leads sit still.</b> A lead only moves when every check passes.
-    "Needs you" means verification could not confirm the mailbox, usually a catch-all domain where the
-    mail server accepts any address so nobody can tell a real one from a typo. One click from you
-    releases it.</div>
+    <div class="note">Cards move by themselves when Instantly or a reply changes the stage —
+    already-sent people land in <b>Already sent</b>, a reply moves them to <b>Replied</b>, a booking
+    to <b>Booked</b>. Open a card to rank it Hot / Later, or to delete it from this board and Instantly.</div>
 
     <div class="note warn" id="notReadyNote" hidden></div>
   </div>
@@ -289,7 +319,7 @@
   <div class="view" id="v-review" hidden>
     <div class="panel">
       <div class="panel-head"><h2>Waiting on a person</h2>
-        <span class="sub">the system refused to guess — it needs a human to say yes or no</span></div>
+        <span class="sub">nobody here gets a cold email until you click Yes</span></div>
       <div id="revList"><div class="empty">Loading…</div></div>
     </div>
   </div>
@@ -444,15 +474,15 @@
             <span class="hint">Required. The system refuses rather than guessing which company is pitching.</span></div>
           <div class="full" style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
             <button class="btn pri" type="submit" id="bAdd">Add lead</button>
-            <span class="hint">It lands held, gets verified, then joins the send queue.</span>
+            <span class="hint">They will not be emailed. They wait on Needs you until you release them.</span>
           </div>
         </form>
       </div>
     </div>
 
-    <div class="note"><b>Adding is not sending.</b> A new lead is written as <code>pending_approval</code>
-    and checked against the never-contact list before it is stored at all. Verification and the daily
-    cap decide when, or whether, it is mailed.</div>
+    <div class="note warn"><b>Adding is not sending.</b> A typed or uploaded lead is held for
+    approval. Cold email only goes out after someone clicks “Yes, this person is real” on
+    <b>Needs you</b>. The send loop then picks them up on its next 3-minute check.</div>
 
     <div class="panel" style="margin-top:20px">
       <div class="panel-head"><h2>Upload a list</h2><span class="sub">CSV or Excel, any column names</span></div>
@@ -534,8 +564,8 @@ const STATE = {
   not_sent:         ['Ready to send','t-acc'],
   approved:         ['Approved','t-acc'],
   needs_review:     ['Needs you','t-warn'],
-  pending_approval: ['Held','t-mute'],
-  enrolled:         ['In campaign','t-acc'],
+  pending_approval: ['Waiting for approval','t-warn'],
+  enrolled:         ['Already sent','t-acc'],
   replied:          ['Replied','t-ok'],
   booked:           ['Booked','t-ok'],
   bounced:          ['Bounced','t-stop'],
@@ -609,13 +639,14 @@ function claimedEmail(row) {
   return m ? m[1] : '';
 }
 
-function runnerKind(row, now, inFlight) {
+function runnerKind(row, now) {
   const last = row.last_run_at ? new Date(row.last_run_at) : null;
   const everyMs = Math.max(1, Number(row.every_minutes) || 3) * 60_000;
   const age = last && !isNaN(last) ? now - last : Infinity;
   if (row.ok === false) return 'down';
   if (age > everyMs * 2 + 60_000) return 'stale';
-  if (inFlight.length) return 'working';
+  // Held / pending_approval is NOT in-flight mail. A CSV upload of 300 people
+  // used to flip this to "working" and dump every name into the heartbeat card.
   if (row.detail && row.detail.claimed && age < 90_000) return 'working';
   if (Number(row.waiting) > 0 && !(row.detail && row.detail.claimed)) return 'stuck';
   if (age > everyMs + 45_000) return 'overdue';
@@ -648,34 +679,131 @@ function renderStats() {
   const ready = STATE_DATA.leads.filter(l => ['not_sent','approved'].includes(l.channel_state_email));
   const note = $('#notReadyNote');
   if (!ready.length && STATE_DATA.leads.length) {
-    note.innerHTML = '<b>Nothing is queued to send.</b> No lead is in a state the runner can act on '
-      + '(<code>not_sent</code> or <code>approved</code>). Releasing a lead under "Needs you", or adding '
-      + 'a new one that verifies clean, is what puts mail back in the queue.';
+    note.innerHTML = '<b>Nothing is queued to send.</b> Adding a lead does not email them. '
+      + 'They sit on Needs you until someone clicks “Yes, this person is real”. '
+      + 'Only then does the 3-minute send loop pick them up.';
     note.hidden = false;
   } else { note.hidden = true; }
 }
 
-function renderLeads() {
-  const q = $('#q').value.trim().toLowerCase();
-  const f = $('#fState').value;
-  const list = STATE_DATA.leads.filter(l => {
-    if (f && l.channel_state_email !== f) return false;
+function filteredLeads() {
+  const q = ($('#q')?.value || '').trim().toLowerCase();
+  const f = $('#fState')?.value || '';
+  const board = leadsView() === 'board';
+  return STATE_DATA.leads.filter(l => {
+    if (!board && f && l.channel_state_email !== f) return false;
     if (!q) return true;
     return `${l.first_name} ${l.last_name} ${l.company} ${l.contact_email}`.toLowerCase().includes(q);
   });
-  // The nav badge is the server's true count of non-dropped leads, not the
-  // length of whatever page of rows happened to come back — a graveyard of
-  // dropped/terminal rows must never inflate the number a person reads as
-  // "how much is there to work through" (found live 2026-09-05, when a bulk
-  // correction on ~900 dropped test rows made this read "500").
+}
+
+function leadPriority(l) {
+  const p = String(l?.priority || 'normal');
+  if (p === 'hot' || p === 'later') return p;
+  return 'normal';
+}
+
+const PRIORITY = {
+  hot:    ['Hot', 't-stop'],
+  normal: ['Normal', 't-mute'],
+  later:  ['Later', 't-mute'],
+};
+
+const BOARD_COLS = [
+  { id: 'needs',  title: 'Needs you',     states: ['needs_review', 'pending_approval'] },
+  { id: 'ready',  title: 'Ready to send', states: ['not_sent', 'approved'] },
+  { id: 'sent',   title: 'Already sent',  states: ['enrolled'] },
+  { id: 'replied',title: 'Replied',       states: ['replied'] },
+  { id: 'booked', title: 'Booked',        states: ['booked'] },
+  { id: 'stopped',title: 'Stopped',       states: ['bounced', 'unsubscribed', 'dropped'] },
+];
+
+function cardWhy(l) {
+  if (l.channel_state_email === 'enrolled') return 'Email already in Instantly';
+  if (l.channel_state_email === 'replied' && l.reply_sentiment) return `They replied · ${l.reply_sentiment}`;
+  if (l.channel_state_email === 'replied') return 'They replied';
+  if (l.channel_state_email === 'booked') return 'Meeting booked';
+  if (l.verify_action === 'needs_review') return 'Mailbox not confirmed';
+  if (l.channel_state_email === 'not_sent' || l.channel_state_email === 'approved') return 'Waiting on the runner';
+  if (l.channel_state_email === 'bounced') return 'Bounced';
+  if (l.channel_state_email === 'unsubscribed' || l.channel_state_email === 'dropped') return 'Do not contact';
+  return '';
+}
+
+function sortForBoard(a, b) {
+  const pr = { hot: 0, normal: 1, later: 2 };
+  const pa = pr[leadPriority(a)] ?? 1;
+  const pb = pr[leadPriority(b)] ?? 1;
+  if (pa !== pb) return pa - pb;
+  const sr = { positive: 0, neutral: 1, negative: 2 };
+  const sa = sr[String(a.reply_sentiment || '').toLowerCase()] ?? 3;
+  const sb = sr[String(b.reply_sentiment || '').toLowerCase()] ?? 3;
+  if (sa !== sb) return sa - sb;
+  return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+}
+
+function prioButtons(l) {
+  const cur = leadPriority(l);
+  return `<div class="prio">${['hot','normal','later'].map(p =>
+    `<button type="button" class="${p}" data-prio-lead="${esc(l.id)}" data-prio="${p}" aria-pressed="${cur === p}">${p}</button>`
+  ).join('')}</div>`;
+}
+
+function leadCard(l) {
+  const name = `${l.first_name || ''} ${l.last_name || ''}`.trim() || '—';
+  const prio = leadPriority(l);
+  const why = cardWhy(l);
+  return `<div class="kcard ${prio}" tabindex="0" data-id="${esc(l.id)}">
+    <div class="nm">${esc(name)}</div>
+    <div class="co">${esc(l.company || l.contact_email)}</div>
+    ${why ? `<div class="why">${esc(why)}</div>` : ''}
+    ${prioButtons(l)}
+  </div>`;
+}
+
+function leadsView() {
+  try { return localStorage.getItem('vio_leads_view') === 'list' ? 'list' : 'board'; }
+  catch { return 'board'; }
+}
+
+function setLeadsView(view) {
+  try { localStorage.setItem('vio_leads_view', view); } catch { /* private mode */ }
+  renderLeads();
+}
+
+function renderLeads() {
+  const list = filteredLeads();
   $('#cLeads').textContent = STATE_DATA.stats?.activeLeadCount ?? STATE_DATA.leads.length;
+  const boardMode = leadsView() === 'board';
+  $('#viewBoard')?.setAttribute('aria-pressed', String(boardMode));
+  $('#viewList')?.setAttribute('aria-pressed', String(!boardMode));
+  if ($('#fState')) $('#fState').hidden = boardMode;
+  if ($('#leadsSub')) {
+    $('#leadsSub').textContent = boardMode
+      ? 'board by stage — already-sent people sit in their own column'
+      : 'click any row for its full history';
+  }
+  if ($('#leadBoard')) $('#leadBoard').hidden = !boardMode;
+  if ($('#leadTable')) $('#leadTable').hidden = boardMode;
+
+  if (boardMode) {
+    $('#leadBoard').innerHTML = BOARD_COLS.map(col => {
+      const cards = list.filter(l => col.states.includes(l.channel_state_email)).sort(sortForBoard);
+      return `<section class="col" aria-label="${esc(col.title)}">
+        <div class="col-h"><b>${esc(col.title)}</b><span class="n">${cards.length}</span></div>
+        <div class="col-b">${cards.length ? cards.map(leadCard).join('') : '<div class="empty" style="padding:18px 8px">None</div>'}</div>
+      </section>`;
+    }).join('');
+    return;
+  }
+
   $('#rows').innerHTML = list.length ? list.map(l => `
     <tr tabindex="0" data-id="${esc(l.id)}">
       <td><div class="nm">${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</div>
           <div class="em">${esc(l.contact_email)}</div></td>
       <td>${esc(l.company || '—')}</td>
       <td>${tag(STATE[l.channel_state_email]) || esc(l.channel_state_email)}</td>
-      <td>${tag(VERIFY[l.verify_action]) || esc(l.verify_action)}</td>
+      <td>${tag(PRIORITY[leadPriority(l)])}</td>
       <td style="color:var(--muted)">${esc(fmt(l.updated_at))}</td>
     </tr>`).join('') : '<tr><td colspan="5" class="empty">Nothing matches that.</td></tr>';
 }
@@ -693,7 +821,7 @@ function renderReview() {
     const domain = (l.contact_email.split('@')[1] || '');
     const why = l.verify_action === 'needs_review'
       ? `<b>${esc(domain)}</b> accepts mail for any address, so nobody can tell a real mailbox from a typo. Release it only if you know this person exists.`
-      : 'This lead is held and has not been verified yet. Releasing it lets the runner pick it up.';
+      : 'Adding put this person here — not into the send queue. No cold email goes out until you click Yes.';
     return `<div style="padding:16px;border-bottom:1px solid var(--rule-soft)">
       <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
         <div class="nm">${esc(`${l.first_name} ${l.last_name}`.trim() || '—')}</div>
@@ -840,66 +968,123 @@ $('#aState').innerHTML = '<option value="">United States — anywhere</option>'
 function renderRunner() {
   const board = $('#runnerBoard');
   const now = STATE_DATA.serverTime ? new Date(STATE_DATA.serverTime) : new Date();
+  const leads = STATE_DATA.leads || [];
+  const ready = leads.filter(l => ['not_sent', 'approved'].includes(l.channel_state_email));
+  const held = leads.filter(needsPerson);
+  const sent = leads.filter(l => l.channel_state_email === 'enrolled');
+  const unread = (STATE_DATA.replies || []).filter(r => !r.handled_at).length;
   const rows = STATE_DATA.runners || [];
-  const inFlight = STATE_DATA.leads.filter(l => l.channel_state_email === 'pending_approval');
+  const sendRow = rows.find(r => /run-outreach|outreach/i.test(r.workflow || '')) || rows[0] || null;
+  const sendKind = sendRow ? runnerKind(sendRow, now) : 'stale';
+  const every = Number(sendRow?.every_minutes) || 3;
+  const next = sendRow?.last_run_at
+    ? new Date(new Date(sendRow.last_run_at).getTime() + every * 60_000)
+    : null;
 
-  if (!rows.length) {
-    board.className = 'runner warn';
-    board.innerHTML = `<div class="empty"><b>No runner heartbeat yet.</b> <code>VIO-run-outreach</code>
-      has not written to <code>system_status</code>. Either it has never finished a cycle, or the
-      heartbeat write failed — a quiet dashboard and a dead scheduler look the same without this row.</div>`;
-    return;
+  let tone = 'ok';
+  let title = 'Cold email is idle';
+  let why = 'Nothing is queued. Adding a lead does not send mail — it waits on Needs you until a person releases it.';
+  if (sendKind === 'down' || sendKind === 'stale') {
+    tone = 'bad';
+    title = 'Send loop looks down';
+    why = 'The scheduler should have checked in by now. Nobody is being emailed from a missed heartbeat — but the loop is not proving it is alive.';
+  } else if (sendKind === 'stuck') {
+    tone = 'warn';
+    title = 'People are queued, but mail did not move';
+    why = 'The send loop saw ready leads and claimed none. Check the last result below.';
+  } else if (sendKind === 'working') {
+    tone = 'work';
+    title = 'Cold email is sending now';
+    why = sendRow?.last_result || 'The runner claimed a lead this cycle.';
+  } else if (ready.length) {
+    tone = 'work';
+    title = `Cold email will try ${ready.length} ${ready.length === 1 ? 'person' : 'people'} next`;
+    why = `Only Ready to send / Approved people go out. Held people stay put until you release them.`;
+  } else if (held.length) {
+    tone = 'warn';
+    title = 'Cold email is not sending';
+    why = `${held.length} ${held.length === 1 ? 'person is' : 'people are'} waiting for approval. They will not get a cold email until someone clicks “Yes, this person is real” on Needs you.`;
   }
 
-  const kinds = rows.map(r => runnerKind(r, now, inFlight));
-  const worst = kinds.includes('down') ? 'down'
-    : kinds.includes('stale') ? 'stale'
-    : kinds.includes('stuck') ? 'stuck'
-    : kinds.includes('working') ? 'working'
-    : kinds.includes('overdue') ? 'overdue'
-    : 'idle';
-  board.className = `runner ${RUNNER_TONE[worst] || 'ok'}`;
+  const pb = playbookOf('oryoniq');
+  const followOn = Boolean(pb?.auto_send_positive);
+  const vit = (STATE_DATA.campaigns || []).find(c => c.product === 'visioneerit');
+  const vitOn = Boolean(vit?.active && vit?.instantly_campaign_id);
+  const sendOn = sendKind !== 'down' && sendKind !== 'stale';
 
-  board.innerHTML = rows.map((row, i) => {
-    const kind = kinds[i];
-    const every = Number(row.every_minutes) || 3;
-    const next = row.last_run_at
-      ? new Date(new Date(row.last_run_at).getTime() + every * 60_000)
-      : null;
-    const email = claimedEmail(row);
-    const who = email
-      ? STATE_DATA.leads.find(l => l.contact_email === email)
-      : null;
-    const whoLine = who
-      ? `${[who.first_name, who.last_name].filter(Boolean).join(' ') || email} · ${who.company || '—'} · ${productLabel(who.product)}`
-      : email;
-    const flightLine = inFlight.length
-      ? inFlight.map(l => `${[l.first_name, l.last_name].filter(Boolean).join(' ') || l.contact_email} (${l.contact_email})`).join('; ')
-      : '';
-    const wait = row.waiting == null ? '' : `${row.waiting} waiting after this cycle`;
-    return `<div class="runner-row">
+  const jobs = [
+    {
+      job: 'Cold email',
+      wf: 'VIO-run-outreach',
+      on: sendOn,
+      chip: RUNNER_CHIP[sendKind] || (sendOn ? ['On', 't-ok'] : ['Off', 't-stop']),
+      how: next
+        ? `Checks every ${every} min · next ${fmtClock(next)}`
+        : `Checks every ${every} min · no heartbeat yet`,
+    },
+    {
+      job: 'Inbound replies',
+      wf: 'VIO-inbound-reply-to-call',
+      on: true,
+      chip: ['On · webhook', 't-ok'],
+      how: unread ? `${unread} unhandled on Replies` : 'Waits for Instantly. Nothing sends until a real reply arrives.',
+    },
+    {
+      job: 'Auto follow-up',
+      wf: 'playbook after a reply',
+      on: followOn,
+      chip: followOn ? ['On · interested', 't-ok'] : ['Draft only', 't-mute'],
+      how: followOn
+        ? 'Ellen sends the meeting ask when they sound interested. Unclear stays a draft.'
+        : 'Off — staff writes back by hand.',
+    },
+    {
+      job: 'Voice',
+      wf: 'no dialer',
+      on: false,
+      chip: ['Disabled', 't-stop'],
+      how: 'Skipped on purpose. A reply never places a call.',
+    },
+    {
+      job: 'VisioneerIT send',
+      wf: 'own Instantly campaign',
+      on: vitOn,
+      chip: vitOn ? ['On', 't-ok'] : ['Disabled', 't-mute'],
+      how: vitOn ? 'Separate campaign from OryonIQ.' : 'No campaign yet — OryonIQ mail will not be borrowed.',
+    },
+  ];
+
+  board.className = `runner ${tone}`;
+  board.innerHTML = `
+    <div class="pipe-head">
       <div>
-        <div class="wf">${esc(row.workflow || 'unnamed workflow')}</div>
-        <div style="margin-top:6px">${tag(RUNNER_CHIP[kind])}</div>
-        <div class="wf-meta">${esc(wait)}${row.checked ? (wait ? ' · ' : '') + esc(row.checked) : ''}</div>
+        <h2>${esc(title)}</h2>
+        <div class="why">${esc(why)}</div>
+        ${held.length ? `<div class="acts"><button type="button" class="btn sm" data-v="review">Open Needs you</button></div>` : ''}
       </div>
-      <div>
-        <div class="when-k">Last run</div>
-        <div class="when-v">${esc(fmtClock(row.last_run_at))}</div>
-        <div class="when-n">${esc(ago(row.last_run_at, now))} · every ${every} min</div>
-        <div class="when-k" style="margin-top:8px">Next check</div>
-        <div class="when-n">${next ? esc(fmtClock(next)) : '—'}</div>
+      <div class="when">
+        <span>Next send check</span>
+        <b>${next ? esc(fmtClock(next)) : '—'}</b>
+        <span>${sendRow ? esc(ago(sendRow.last_run_at, now)) + ' · last cycle' : 'no heartbeat'}</span>
       </div>
-      <div class="detail">
-        <div>${esc(row.last_result || 'no result recorded')}</div>
-        ${whoLine ? `<div style="margin-top:6px"><b>This cycle:</b> ${esc(whoLine)}</div>` : ''}
-        ${flightLine ? `<div style="margin-top:6px"><b>In flight now:</b> ${esc(flightLine)}</div>` : ''}
-        ${kind === 'stale' ? '<div style="margin-top:6px">The scheduler should have fired again by now. A quiet queue is fine; a missed heartbeat is not.</div>' : ''}
-        ${kind === 'stuck' ? '<div style="margin-top:6px">Leads are ready but none were claimed. Mail is not moving.</div>' : ''}
-        ${kind === 'down' ? '<div style="margin-top:6px">The last cycle could not reach the database. No lead is lost; the next cycle retries.</div>' : ''}
-      </div>
+    </div>
+    <div class="pipe-nums">
+      <div class="pipe-num"><div class="k">Queued to send</div><div class="v ${ready.length ? 'acc' : ''}">${ready.length}</div>
+        <div class="n">${ready.length ? 'will go on the next check' : 'nobody in the send queue'}</div></div>
+      <div class="pipe-num"><div class="k">Waiting for you</div><div class="v ${held.length ? 'warn' : ''}">${held.length}</div>
+        <div class="n">${held.length ? 'no cold email until released' : 'none held'}</div></div>
+      <div class="pipe-num"><div class="k">Already sent</div><div class="v">${sent.length}</div>
+        <div class="n">in Instantly</div></div>
+      <div class="pipe-num"><div class="k">Send loop</div><div class="v">${esc((RUNNER_CHIP[sendKind] || ['—'])[0])}</div>
+        <div class="n">${esc(sendRow?.last_result || 'no result yet')}</div></div>
+    </div>
+    <div class="pipe-jobs">
+      ${jobs.map(j => `<div class="pipe-job">
+        <div><div class="job">${esc(j.job)}</div><div class="wf">${esc(j.wf)}</div></div>
+        <div>${tag(j.chip)}</div>
+        <div class="how">${esc(j.how)}</div>
+      </div>`).join('')}
     </div>`;
-  }).join('');
 }
 
 function playbookOf(product) {
@@ -926,17 +1111,21 @@ function renderAll() { renderRunner(); renderStats(); renderLeads(); renderRevie
 
 function paintLive() {
   const now = STATE_DATA.serverTime ? new Date(STATE_DATA.serverTime) : new Date();
-  const inFlight = STATE_DATA.leads.filter(l => l.channel_state_email === 'pending_approval');
-  const kinds = (STATE_DATA.runners || []).map(r => runnerKind(r, now, inFlight));
+  const kinds = (STATE_DATA.runners || []).map(r => runnerKind(r, now));
+  const leads = STATE_DATA.leads || [];
+  const ready = leads.filter(l => ['not_sent', 'approved'].includes(l.channel_state_email)).length;
+  const held = leads.filter(needsPerson).length;
   const worst = kinds.includes('down') || kinds.includes('stale') ? 'bad'
-    : kinds.includes('stuck') || kinds.includes('overdue') ? 'warn'
+    : kinds.includes('stuck') || kinds.includes('overdue') || (held && !ready) ? 'warn'
     : '';
   $('#liveDot').className = 'dot' + (worst ? ' ' + worst : '');
-  const runnerBit = kinds.includes('working') ? 'runner working'
-    : kinds.includes('idle') ? 'runner idle'
-    : kinds.length ? 'runner ' + kinds[0]
-    : 'no heartbeat';
-  $('#liveTxt').textContent = runnerBit + ' · ' + new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const clock = new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  let runnerBit = 'idle · nothing queued';
+  if (kinds.includes('down') || kinds.includes('stale')) runnerBit = 'send loop down';
+  else if (kinds.includes('working')) runnerBit = 'sending now';
+  else if (ready) runnerBit = `${ready} queued to send`;
+  else if (held) runnerBit = 'not sending · waiting on you';
+  $('#liveTxt').textContent = runnerBit + ' · ' + clock;
 }
 
 // ---------- drawer ----------
@@ -959,6 +1148,7 @@ async function openLead(id) {
           <dt>Company</dt><dd>${esc(l.company || '—')}</dd>
           <dt>Title</dt><dd>${esc(l.title || '—')}</dd>
           <dt>Status</dt><dd>${tag(STATE[l.channel_state_email])}</dd>
+          <dt>Importance</dt><dd>${prioButtons(l)}</dd>
           <dt>Verification</dt><dd>${tag(VERIFY[l.verify_action])}
             ${l.reoon_status ? `<span style="color:var(--muted);font-size:12px">${esc(l.reoon_status)}</span>` : ''}
             ${l.verify_reason ? `<div style="color:var(--muted);font-size:12px;margin-top:3px">${esc(l.verify_reason)}</div>` : ''}</dd>
@@ -973,6 +1163,10 @@ async function openLead(id) {
         ${needsPerson(l) ? `<div class="acts">
           <button class="btn pri sm" data-ok="${esc(l.id)}">Yes, this person is real</button>
           <button class="btn sm" data-no="${esc(l.id)}">Never contact</button></div>` : ''}
+        <div class="acts" style="margin-top:22px;padding-top:14px;border-top:1px solid var(--rule-soft)">
+          <button class="btn sm danger" data-del="${esc(l.id)}">Delete this lead</button>
+          <p class="hint" style="margin:8px 0 0">Removes them from this board and from Instantly so the sequence stops. The audit log stays. Never-contact entries are never erased.</p>
+        </div>
       </div></aside>`;
 
   try {
@@ -991,10 +1185,11 @@ async function openLead(id) {
       replied: 'They replied',
       staff_reply: 'You replied',
       booked: 'Booked a meeting',
-      parked: 'Parked',
+      deleted: 'Removed from the board',
+      priority: 'Importance',
     };
     const kind = (a) => ['send','enrolled','booked','approved','verified','classify_reply','replied','staff_reply'].includes(a) ? 'ok'
-      : ['suppressed','bounced','unsubscribed','dropped'].includes(a) ? 'stop' : '';
+      : ['suppressed','bounced','unsubscribed','dropped','deleted'].includes(a) ? 'stop' : '';
     // No filler element here: the dot is `.tl li::before`, which is itself a grid
     // child. An extra empty <span> would make three children in a two-column
     // grid and push the text into the 14px dot column, one character per line.
@@ -1014,10 +1209,35 @@ async function openLead(id) {
 const closeDrawer = () => { $('#drawerHost').innerHTML = ''; };
 
 // ---------- actions ----------
+async function setPriority(id, priority) {
+  const lead = STATE_DATA.leads.find(x => x.id === id);
+  if (lead) lead.priority = priority;
+  renderLeads();
+  document.querySelectorAll(`[data-prio-lead="${id}"]`).forEach((btn) => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.prio === priority));
+  });
+  try {
+    await api(`/api/leads/${id}/priority`, { method: 'POST', body: { priority } });
+  } catch (e) {
+    toast(e.message, true);
+    await load();
+  }
+}
 async function release(id) {
   try { await api(`/api/leads/${id}/release`, { method: 'POST' });
     toast('Released. The runner can pick it up on its next pass.');
     await load(); closeDrawer();
+  } catch (e) { toast(e.message, true); }
+}
+async function deleteLead(id) {
+  const l = STATE_DATA.leads.find(x => x.id === id);
+  const who = l ? `${[l.first_name, l.last_name].filter(Boolean).join(' ') || l.contact_email} (${l.contact_email})` : 'this lead';
+  if (!confirm(`Delete ${who} from the dashboard AND Instantly?\n\nThey will stop receiving sequence mail. This cannot be undone.\n\nIf they asked never to be contacted, that block stays.`)) return;
+  try {
+    await api(`/api/leads/${id}`, { method: 'DELETE' });
+    toast('Removed from the board and Instantly.');
+    await load();
+    closeDrawer();
   } catch (e) { toast(e.message, true); }
 }
 async function suppress(id) {
@@ -1140,9 +1360,9 @@ $('#addForm').addEventListener('submit', async (e) => {
       company: $('#fCo').value, title: $('#fTitle').value, product: $('#fProd').value,
     }});
     ['fFirst','fLast','fEmail','fCo','fTitle'].forEach(i => { $('#' + i).value = ''; });
-    toast('Added. It is held until verification runs.');
+    toast('Added. No email will go out until you release them on Needs you.');
     await load();
-    document.querySelector('nav button[data-v="leads"]').click();
+    showView('review');
   } catch (err) { toast(err.message, true); }
   finally { $('#bAdd').disabled = false; }
 });
@@ -1207,9 +1427,14 @@ $('#uploadForm').addEventListener('submit', async (e) => {
           <td>${OUTCOME_TAG[r.outcome] ? `<span class="tag ${OUTCOME_TAG[r.outcome][1]}">${esc(OUTCOME_TAG[r.outcome][0])}</span>` : esc(r.outcome)}</td>
           <td style="color:var(--ink-soft)">${esc(r.reason || '')}</td></tr>`).join('');
 
-    toast(`${d.added} lead${d.added === 1 ? '' : 's'} added and held pending verification.`);
+    toast(d.added
+      ? `${d.added} added. No email goes out until you release them on Needs you.`
+      : 'No new leads were added.');
     fileInput.value = '';
-    if (d.added) await load();
+    if (d.added) {
+      await load();
+      showView('review');
+    }
   } catch (err) {
     toast(err.message, true);
   } finally {
@@ -1460,7 +1685,7 @@ $('#pwForm').addEventListener('submit', async (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  const t = e.target.closest('button, tr, .scrim');
+  const t = e.target.closest('button, tr, .scrim, .kcard');
   if (!t) return;
   if (t.dataset.pwclose) return closePw();
   if (t.id === 'pwBtn') return openPw();
@@ -1469,20 +1694,27 @@ document.addEventListener('click', (e) => {
     showView(t.dataset.v);
     return;
   }
+  if (t.dataset.prioLead) return setPriority(t.dataset.prioLead, t.dataset.prio);
   if (t.dataset.ok) return release(t.dataset.ok);
+  if (t.dataset.del) return deleteLead(t.dataset.del);
   if (t.dataset.no) return suppress(t.dataset.no);
   if (t.dataset.open) return openLead(t.dataset.open);
   if (t.dataset.reply) return handleReply(t.dataset.reply, t.dataset.as);
   if (t.dataset.sendReply) return sendReply(t.dataset.sendReply);
   if (t.dataset.fillReply) return fillMeetingLink(t.dataset.fillReply);
+  if (t.classList.contains('kcard') && t.dataset.id) return openLead(t.dataset.id);
   if (t.tagName === 'TR' && t.dataset.id) return openLead(t.dataset.id);
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeDrawer(); closePw(); }
-  if (e.key === 'Enter' && e.target.tagName === 'TR' && e.target.dataset.id) openLead(e.target.dataset.id);
+  if (e.key === 'Enter' && e.target.dataset.id && (e.target.tagName === 'TR' || e.target.classList.contains('kcard'))) {
+    openLead(e.target.dataset.id);
+  }
 });
 $('#q').addEventListener('input', renderLeads);
 $('#fState').addEventListener('change', renderLeads);
+$('#viewBoard')?.addEventListener('click', () => setLeadsView('board'));
+$('#viewList')?.addEventListener('click', () => setLeadsView('list'));
 $('#playbookForm')?.addEventListener('submit', savePlaybook);
 $('#pbProd')?.addEventListener('change', fillPlaybookForm);
 
