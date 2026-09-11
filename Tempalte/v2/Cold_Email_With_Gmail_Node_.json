@@ -10,7 +10,7 @@
         20
       ],
       "id": "aae27019-565a-428c-b7c9-693031914b19",
-      "name": "When clicking ‘Test workflow’"
+      "name": "When clicking \u2018Test workflow\u2019"
     },
     {
       "parameters": {
@@ -37,13 +37,7 @@
         20
       ],
       "id": "a0174ecf-af9e-4dad-9870-0e11cafe8923",
-      "name": "Google Sheets",
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "Ym8viET0IFW2A4RT",
-          "name": "Google Sheets account"
-        }
-      }
+      "name": "Google Sheets"
     },
     {
       "parameters": {
@@ -116,13 +110,7 @@
         -180
       ],
       "id": "902cca69-3913-4967-ba71-890fa72c5f9c",
-      "name": "Google Sheets1",
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "Ym8viET0IFW2A4RT",
-          "name": "Google Sheets account"
-        }
-      }
+      "name": "Google Sheets1"
     },
     {
       "parameters": {
@@ -194,13 +182,7 @@
       ],
       "id": "1fab520f-7f26-402b-a5e5-1359455d9882",
       "name": "Gmail",
-      "webhookId": "3fbf6bf1-efca-44a5-8ed0-8e0fb1d4143f",
-      "credentials": {
-        "gmailOAuth2": {
-          "id": "p3UBhAYnlRXflJmU",
-          "name": "Gmail account 2"
-        }
-      }
+      "webhookId": "3fbf6bf1-efca-44a5-8ed0-8e0fb1d4143f"
     },
     {
       "parameters": {
@@ -296,13 +278,7 @@
         -160
       ],
       "id": "781f01db-3c48-447b-bafd-f2bb858b205f",
-      "name": "Google Sheets2",
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "Ym8viET0IFW2A4RT",
-          "name": "Google Sheets account"
-        }
-      }
+      "name": "Google Sheets2"
     },
     {
       "parameters": {},
@@ -364,7 +340,7 @@
   ],
   "pinData": {},
   "connections": {
-    "When clicking ‘Test workflow’": {
+    "When clicking \u2018Test workflow\u2019": {
       "main": [
         [
           {
@@ -508,8 +484,7 @@
   },
   "versionId": "62e00bb4-7ea4-429a-b564-9371065794d2",
   "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "822bf193edbd0989f37aabcee419c2e6eabebe607b846137d4801d0a51625c83"
+    "templateCredsSetupCompleted": true
   },
   "id": "BrmSb0RsmUlz6tIB",
   "tags": []

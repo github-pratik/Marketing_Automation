@@ -84,6 +84,7 @@ desktop.ini
 *~
 .idea/
 .vscode/
+.claude/
 
 # --- Local tool caches / state --------------------------------------------
 .gstack/
