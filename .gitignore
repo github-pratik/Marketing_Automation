@@ -137,3 +137,5 @@ reach-engine/gifs/
 *.tgz
 *.7z
 *.rar
+
+.claude/
