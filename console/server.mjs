@@ -104,13 +104,18 @@ async function instantly(path, { method = 'GET', body } = {}) {
     err.status = 501;
     throw err;
   }
+  // Instantly's Fastify rejects DELETE/GET when Content-Type is application/json
+  // and the body is empty (FST_ERR_CTP_EMPTY_JSON_BODY). Only advertise JSON
+  // when we are actually sending some.
+  const headers = {
+    Authorization: `Bearer ${INSTANTLY_API_KEY}`,
+    Accept: 'application/json',
+    'User-Agent': 'Mozilla/5.0 (compatible; oryoniq-reach-engine/1.0)',
+  };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(`https://api.instantly.ai/api/v2${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${INSTANTLY_API_KEY}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (compatible; oryoniq-reach-engine/1.0)',
-    },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const text = await res.text();
