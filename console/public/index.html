@@ -49,6 +49,7 @@
   .live{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
   .dot.bad{background:var(--stop)}
+  .dot.warn{background:var(--warn)}
 
   nav{display:flex;gap:2px;margin-top:18px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
   nav button{background:none;border:0;padding:10px 14px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}
@@ -62,6 +63,24 @@
     display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
   .banner b{color:var(--ink);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
   .banner span{flex:1;min-width:280px}
+
+  /* ---- runner (system_status heartbeats) ---- */
+  .runner{margin-top:16px;background:var(--surface);border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+  .runner.ok{border-left:3px solid var(--ok)}
+  .runner.work{border-left:3px solid var(--accent)}
+  .runner.warn{border-left:3px solid var(--warn)}
+  .runner.bad{border-left:3px solid var(--stop)}
+  .runner-row{display:grid;grid-template-columns:minmax(220px,1.2fr) minmax(170px,.8fr) 1fr;gap:10px 22px;padding:13px 16px;align-items:start}
+  .runner-row + .runner-row{border-top:1px solid var(--rule-soft)}
+  .runner .wf{font-weight:600}
+  .runner .wf-meta{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px}
+  .runner .when-k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .runner .when-v{font-variant-numeric:tabular-nums;font-weight:500;margin-top:2px}
+  .runner .when-n{font-size:12px;color:var(--muted);margin-top:1px}
+  .runner .detail{color:var(--ink-soft);font-size:13px}
+  .runner .detail b{color:var(--ink)}
+  .runner .empty{padding:16px;text-align:left}
+  @media (max-width:720px){.runner-row{grid-template-columns:1fr}}
 
   /* ---- stats ---- */
   .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:5px;overflow:hidden;margin-bottom:22px}
@@ -130,6 +149,13 @@
 
   .draft{background:var(--sunk);border:1px solid var(--rule);border-radius:4px;padding:13px 15px;font-size:13px;white-space:pre-wrap;line-height:1.6;max-height:280px;overflow:auto}
   .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .compose{margin-top:12px}
+  .compose textarea{width:100%;min-height:96px;resize:vertical}
+  .compose .hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+  .playbook{padding:16px}
+  .playbook textarea{width:100%;min-height:140px;resize:vertical}
+  .check{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--ink-soft)}
+  .check input{margin-top:3px;accent-color:var(--accent)}
 
   /* ---- forms ---- */
   .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px}
@@ -143,6 +169,14 @@
   .note b{color:var(--ink)}
   .empty{padding:40px 20px;text-align:center;color:var(--muted)}
   code{font-family:var(--mono);font-size:.9em;background:var(--sunk);padding:1px 4px;border-radius:3px}
+
+  .find-tbl tbody tr{cursor:default}
+  .find-tbl .pick{width:36px;padding-right:4px}
+  .find-tbl input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent)}
+  .find-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;
+    border-top:1px solid var(--rule);background:var(--sunk)}
+  .find-bar .hint{font-size:12px;color:var(--muted)}
+  .held-row{color:var(--muted)}
 
   /* ---- modal ---- */
   .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:41;
@@ -194,6 +228,12 @@
     <button role="tab" aria-selected="false" data-v="find">Find leads</button>
     <button role="tab" aria-selected="false" data-v="add">Add leads</button>
   </nav>
+
+  <!-- n8n pollers overwrite system_status every cycle. This is how a quiet
+       pipeline is told apart from a dead one — the events ledger is silent in both. -->
+  <div class="runner" id="runnerBoard" aria-live="polite">
+    <div class="empty">Checking the send loop…</div>
+  </div>
 
   <!-- ---------- LEADS ---------- -->
   <!-- n8n claims from leads_ready. Releasing a lead here is what puts it in that view. -->
@@ -257,12 +297,39 @@
   <!-- ---------- REPLIES ---------- -->
   <div class="view" id="v-replies" hidden>
     <div class="panel">
-      <div class="panel-head"><h2>Replies</h2><span class="sub">someone answered — the sequence has already stopped for them</span></div>
+      <div class="panel-head"><h2>How we write back</h2>
+        <span class="sub">templates + whether Ellen sends them when someone replies</span></div>
+      <div class="playbook">
+        <form class="form" id="playbookForm">
+          <div class="fld"><label for="pbProd">Product</label>
+            <select id="pbProd">
+              <option value="oryoniq">OryonIQ</option>
+              <option value="visioneerit">VisioneerIT</option>
+            </select></div>
+          <div class="fld full">
+            <label class="check"><input type="checkbox" id="pbAutoPos">
+              <span>When they sound interested, send the meeting ask automatically as Ellen</span></label>
+          </div>
+          <div class="fld full">
+            <label class="check"><input type="checkbox" id="pbAutoNeu">
+              <span>When the reply is unclear, send the follow-up automatically (off unless you want that)</span></label>
+          </div>
+          <div class="fld full"><label for="pbPos">If they sound interested</label>
+            <textarea id="pbPos" placeholder="Hi {first_name}, …"></textarea>
+            <span class="hint">{first_name} {company} {booking_url} {their_reply} — opt-out and out-of-office never send.</span></div>
+          <div class="fld full"><label for="pbNeu">If the reply is unclear</label>
+            <textarea id="pbNeu"></textarea></div>
+          <div class="full acts">
+            <button class="btn pri" type="submit" id="pbSave">Save playbook</button>
+            <span class="hint" id="pbHint">Negative / unsubscribe never auto-sends. You still mark booked, park, or never contact.</span>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <div class="panel-head"><h2>Replies</h2><span class="sub">someone answered — which campaign and step, then the follow-up</span></div>
       <div id="repList"><div class="empty">Loading…</div></div>
     </div>
-    <div class="note"><b>Replies arrive here from Instantly.</b> The reply webhook writes straight to the
-    ledger, so this list is whatever the database actually holds. An empty list means nobody has
-    answered yet, not that something is broken.</div>
   </div>
 
   <!-- ---------- FIND (real Apollo search, via n8n) ---------- -->
@@ -325,20 +392,40 @@
 
     <div class="panel" style="margin-top:20px" id="aResPanel" hidden>
       <div class="panel-head"><h2 id="aResHead">Matches</h2><span class="sub" id="aResSub"></span></div>
-      <div class="scroll"><table>
-        <thead><tr><th>Person</th><th>Title</th><th>Company</th><th>Has an email</th></tr></thead>
+      <div class="scroll"><table class="find-tbl">
+        <thead><tr>
+          <th class="pick"><input type="checkbox" id="aPickAll" title="Select everyone who is not already a lead"></th>
+          <th>Person</th><th>Title</th><th>Company</th><th>Email</th>
+        </tr></thead>
         <tbody id="aRows"></tbody>
       </table></div>
+      <div class="find-bar">
+        <button class="btn pri" type="button" id="aReveal" disabled>Reveal selected — spends credits</button>
+        <span class="hint" id="aPickHint">Pick the people worth spending a credit on. Searching is free; revealing is not.</span>
+      </div>
     </div>
 
-    <div class="note" style="margin-top:20px"><b>Why the surnames are cut off.</b> Apollo's free
-    search returns a first name and a masked surname, and no address. That is Apollo's boundary, not
-    a bug here. The full name and the email arrive only from a reveal, which spends a lead credit per
-    person — a separate, human-gated step this screen deliberately cannot reach.</div>
+    <div class="panel" style="margin-top:20px" id="aOutPanel" hidden>
+      <div class="panel-head"><h2 id="aOutHead">Reveal result</h2><span class="sub" id="aOutSub"></span></div>
+      <div class="scroll"><table>
+        <thead><tr><th>Person</th><th>Email</th><th>What happened</th></tr></thead>
+        <tbody id="aOutRows"></tbody>
+      </table></div>
+      <div class="find-bar">
+        <button class="btn pri" type="button" id="aToLeads">Open in Leads</button>
+        <span class="hint">Full name and address are on the lead. People who passed verification join the send queue; the daily cap decides when they mail.</span>
+      </div>
+    </div>
 
-    <div class="note warn"><b>So this screen finds people, it does not add them.</b> Until the reveal
-    step is wired in, use it to judge whether a filter set is worth spending credits on. Searching is
-    free and unlimited, so search widely and reveal narrowly.</div>
+    <div class="note" style="margin-top:20px"><b>Why the surnames are cut off until you reveal.</b>
+    Apollo's free search returns a first name and a masked surname, and no address. That is Apollo's
+    boundary, not a bug here. Tick the people you want, then reveal — one lead credit each — and they
+    land here as proper leads with the full name, work email, and company domain.</div>
+
+    <div class="note warn"><b>Search widely, reveal narrowly.</b> Searching is free and contacts
+    nobody. Revealing spends a credit and writes whoever comes back through the same verification
+    as a typed lead. A pass joins the send queue (daily cap applies). This click does not itself
+    send mail.</div>
   </div>
 
   <!-- ---------- ADD ---------- -->
@@ -463,7 +550,7 @@ const VERIFY = {
 };
 const tag = (pair) => pair ? `<span class="tag ${pair[1]}">${esc(pair[0])}</span>` : '';
 
-let STATE_DATA = { leads: [], replies: [], campaigns: [], stats: {} };
+let STATE_DATA = { leads: [], replies: [], campaigns: [], stats: {}, runners: [], playbooks: [] };
 
 function toast(msg, bad) {
   $('#toastHost').innerHTML = `<div class="toast${bad ? ' bad' : ''}" role="status">${esc(msg)}</div>`;
@@ -490,6 +577,60 @@ const fmt = (iso) => {
   if (isNaN(d)) return '—';
   return d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
+
+const fmtClock = (iso) => {
+  if (!iso) return '—';
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (isNaN(d)) return '—';
+  return d.toLocaleString(undefined, {
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+  });
+};
+
+const ago = (iso, now) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  const sec = Math.max(0, Math.round((now - d) / 1000));
+  if (sec < 20) return 'just now';
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 36) return `${hr}h ago`;
+  return fmt(iso);
+};
+
+function claimedEmail(row) {
+  const d = row?.detail;
+  if (d && typeof d === 'object' && d.email) return String(d.email);
+  const m = String(row?.last_result || '').match(/claimed\s+(?:.*?\()?([^\s@]+@[^\s)]+)/i);
+  return m ? m[1] : '';
+}
+
+function runnerKind(row, now, inFlight) {
+  const last = row.last_run_at ? new Date(row.last_run_at) : null;
+  const everyMs = Math.max(1, Number(row.every_minutes) || 3) * 60_000;
+  const age = last && !isNaN(last) ? now - last : Infinity;
+  if (row.ok === false) return 'down';
+  if (age > everyMs * 2 + 60_000) return 'stale';
+  if (inFlight.length) return 'working';
+  if (row.detail && row.detail.claimed && age < 90_000) return 'working';
+  if (Number(row.waiting) > 0 && !(row.detail && row.detail.claimed)) return 'stuck';
+  if (age > everyMs + 45_000) return 'overdue';
+  return 'idle';
+}
+
+const RUNNER_CHIP = {
+  working: ['Working', 't-acc'],
+  idle:    ['Idle', 't-ok'],
+  overdue: ['Overdue', 't-warn'],
+  stuck:   ['Stuck', 't-warn'],
+  stale:   ['Stale', 't-stop'],
+  down:    ['Down', 't-stop'],
+};
+const RUNNER_TONE = { working: 'work', idle: 'ok', overdue: 'warn', stuck: 'warn', stale: 'bad', down: 'bad' };
 
 // ---------- render ----------
 function renderStats() {
@@ -566,23 +707,94 @@ function renderReview() {
   }).join('') : '<div class="empty">Nothing waiting. Everything has been decided.</div>';
 }
 
+function stripHtml(s) {
+  const t = String(s || '');
+  if (!/[<>]/.test(t)) return t;
+  return t
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function handledLabel(as, r) {
+  if (as === 'replied' && r?.handled_by === 'playbook') return 'Auto-sent';
+  if (as === 'replied') return 'You replied';
+  if (as === 'booked') return 'Booked';
+  if (as === 'parked') return 'Parked';
+  if (as === 'suppressed') return 'Never contact';
+  if (as === 'ignored') return 'Ignored';
+  return as ? `Handled: ${as}` : 'Handled';
+}
+
+function replySourceLine(r) {
+  const bits = [];
+  if (r.campaign_name || r.campaign_id) bits.push(esc(r.campaign_name || r.campaign_id));
+  if (r.sequence_step !== undefined && r.sequence_step !== null && String(r.sequence_step).trim() !== '') {
+    bits.push(`step ${esc(String(r.sequence_step))}`);
+  }
+  if (r.mailbox) bits.push(`to ${esc(r.mailbox)}`);
+  const url = String(r.unibox_url || '');
+  if (/^https:\/\//i.test(url)) {
+    bits.push(`<a href="${esc(url)}" target="_blank" rel="noopener">Open in Instantly</a>`);
+  }
+  if (!bits.length) return 'Email reply · Instantly';
+  return bits.join(' · ');
+}
+
 function renderReplies() {
+  const drafts = {};
+  document.querySelectorAll('textarea[id^="replyBody-"]').forEach((el) => { drafts[el.id] = el.value; });
   const list = STATE_DATA.replies;
   $('#cRep').textContent = list.filter(r => !r.handled_at).length;
-  $('#repList').innerHTML = list.length ? list.map(r => `
+  $('#repList').innerHTML = list.length ? list.map(r => {
+    const lead = STATE_DATA.leads.find(l => l.id === r.lead_id || l.contact_email === r.lead_email);
+    const name = lead ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() : '';
+    return `
     <div style="padding:16px;border-bottom:1px solid var(--rule-soft)">
       <div style="display:flex;gap:11px;align-items:baseline;flex-wrap:wrap">
-        <div class="nm">${esc(r.lead_email)}</div>
+        <div class="nm">${esc(name || r.lead_email)}</div>
+        ${name ? `<div class="em">${esc(r.lead_email)}</div>` : ''}
         ${r.sentiment ? `<span class="tag ${r.sentiment === 'positive' ? 't-ok' : r.sentiment === 'negative' ? 't-stop' : 't-mute'}">${esc(r.sentiment)}</span>` : ''}
-        ${r.handled_at ? `<span class="tag t-mute">handled: ${esc(r.handled_as || '')}</span>` : ''}
+        ${r.handled_at ? `<span class="tag ${r.handled_as === 'replied' ? 't-ok' : 't-mute'}">${esc(handledLabel(r.handled_as, r))}</span>` : r.suggested_reply ? `<span class="tag t-acc">Draft ready</span>` : ''}
         <span style="margin-left:auto;color:var(--muted);font-size:12.5px">${esc(fmt(r.received_at))}</span></div>
       ${r.subject ? `<div style="margin-top:6px;font-weight:500">${esc(r.subject)}</div>` : ''}
-      <div class="draft" style="margin-top:10px">${esc(r.body || '(no body recorded)')}</div>
-      ${r.handled_at ? '' : `<div class="acts">
-        <button class="btn pri sm" data-reply="${r.id}" data-as="booked">Booked a meeting</button>
+      <div class="em" style="margin-top:4px">${replySourceLine(r)}</div>
+      <div class="draft" style="margin-top:10px">${esc(stripHtml(r.body) || '(no body recorded)')}</div>
+      ${r.followup_sent_at && r.suggested_reply ? `<div class="em" style="margin-top:8px">Sent ${esc(fmt(r.followup_sent_at))}</div>
+        <div class="draft" style="margin-top:6px">${esc(r.suggested_reply)}</div>` : ''}
+      ${r.handled_at && r.handled_as !== 'replied' ? '' : r.handled_at ? `<div class="acts">
+        <button class="btn sm" data-reply="${r.id}" data-as="booked">Booked a meeting</button>
         <button class="btn sm" data-reply="${r.id}" data-as="parked">Not now — park it</button>
-        <button class="btn sm" data-reply="${r.id}" data-as="suppressed">Never contact</button></div>`}
-    </div>`).join('') : '<div class="empty">No replies yet.</div>';
+        <button class="btn sm" data-reply="${r.id}" data-as="suppressed">Never contact</button>
+        <p class="hint" style="margin:8px 0 0">You already wrote back. These only update the outcome.</p>
+      </div>` : `<div class="compose">
+        <textarea id="replyBody-${r.id}" placeholder="Write back as Ellen, or use the playbook draft.">${esc(r.suggested_reply || '')}</textarea>
+        <div class="acts">
+          <button class="btn pri sm" data-send-reply="${r.id}" ${STATE_DATA.canReply ? '' : 'disabled'}>Send reply</button>
+          <button class="btn sm" data-fill-reply="${r.id}">Fill from playbook</button>
+          <button class="btn sm" data-reply="${r.id}" data-as="booked">Booked a meeting</button>
+          <button class="btn sm" data-reply="${r.id}" data-as="parked">Not now — park it</button>
+          <button class="btn sm" data-reply="${r.id}" data-as="suppressed">Never contact</button>
+        </div>
+        <p class="hint">${STATE_DATA.canReply
+          ? (r.suggested_reply
+            ? 'Draft is from the playbook. Edit it, then send — or wait if auto-send is on for this sentiment.'
+            : 'Sends from Ellen\'s Instantly mailbox, in this thread. After it sends, this box closes.')
+          : 'This console cannot send yet — Instantly is not configured here. Use Instantly Unibox, then mark the outcome with the buttons.'}</p>
+      </div>`}
+    </div>`;
+  }).join('') : '<div class="empty">No replies yet.</div>';
+  for (const [id, val] of Object.entries(drafts)) {
+    const el = document.getElementById(id);
+    if (el && val) el.value = val;
+  }
 }
 
 const productLabel = (p) => (p === 'oryoniq' ? 'OryonIQ' : p === 'visioneerit' ? 'VisioneerIT' : p);
@@ -625,12 +837,117 @@ const US_STATES = ['Alabama','Alaska','Arizona','Arkansas','California','Colorad
 $('#aState').innerHTML = '<option value="">United States — anywhere</option>'
   + US_STATES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
 
-function renderAll() { renderStats(); renderLeads(); renderReview(); renderReplies(); }
+function renderRunner() {
+  const board = $('#runnerBoard');
+  const now = STATE_DATA.serverTime ? new Date(STATE_DATA.serverTime) : new Date();
+  const rows = STATE_DATA.runners || [];
+  const inFlight = STATE_DATA.leads.filter(l => l.channel_state_email === 'pending_approval');
+
+  if (!rows.length) {
+    board.className = 'runner warn';
+    board.innerHTML = `<div class="empty"><b>No runner heartbeat yet.</b> <code>VIO-run-outreach</code>
+      has not written to <code>system_status</code>. Either it has never finished a cycle, or the
+      heartbeat write failed — a quiet dashboard and a dead scheduler look the same without this row.</div>`;
+    return;
+  }
+
+  const kinds = rows.map(r => runnerKind(r, now, inFlight));
+  const worst = kinds.includes('down') ? 'down'
+    : kinds.includes('stale') ? 'stale'
+    : kinds.includes('stuck') ? 'stuck'
+    : kinds.includes('working') ? 'working'
+    : kinds.includes('overdue') ? 'overdue'
+    : 'idle';
+  board.className = `runner ${RUNNER_TONE[worst] || 'ok'}`;
+
+  board.innerHTML = rows.map((row, i) => {
+    const kind = kinds[i];
+    const every = Number(row.every_minutes) || 3;
+    const next = row.last_run_at
+      ? new Date(new Date(row.last_run_at).getTime() + every * 60_000)
+      : null;
+    const email = claimedEmail(row);
+    const who = email
+      ? STATE_DATA.leads.find(l => l.contact_email === email)
+      : null;
+    const whoLine = who
+      ? `${[who.first_name, who.last_name].filter(Boolean).join(' ') || email} · ${who.company || '—'} · ${productLabel(who.product)}`
+      : email;
+    const flightLine = inFlight.length
+      ? inFlight.map(l => `${[l.first_name, l.last_name].filter(Boolean).join(' ') || l.contact_email} (${l.contact_email})`).join('; ')
+      : '';
+    const wait = row.waiting == null ? '' : `${row.waiting} waiting after this cycle`;
+    return `<div class="runner-row">
+      <div>
+        <div class="wf">${esc(row.workflow || 'unnamed workflow')}</div>
+        <div style="margin-top:6px">${tag(RUNNER_CHIP[kind])}</div>
+        <div class="wf-meta">${esc(wait)}${row.checked ? (wait ? ' · ' : '') + esc(row.checked) : ''}</div>
+      </div>
+      <div>
+        <div class="when-k">Last run</div>
+        <div class="when-v">${esc(fmtClock(row.last_run_at))}</div>
+        <div class="when-n">${esc(ago(row.last_run_at, now))} · every ${every} min</div>
+        <div class="when-k" style="margin-top:8px">Next check</div>
+        <div class="when-n">${next ? esc(fmtClock(next)) : '—'}</div>
+      </div>
+      <div class="detail">
+        <div>${esc(row.last_result || 'no result recorded')}</div>
+        ${whoLine ? `<div style="margin-top:6px"><b>This cycle:</b> ${esc(whoLine)}</div>` : ''}
+        ${flightLine ? `<div style="margin-top:6px"><b>In flight now:</b> ${esc(flightLine)}</div>` : ''}
+        ${kind === 'stale' ? '<div style="margin-top:6px">The scheduler should have fired again by now. A quiet queue is fine; a missed heartbeat is not.</div>' : ''}
+        ${kind === 'stuck' ? '<div style="margin-top:6px">Leads are ready but none were claimed. Mail is not moving.</div>' : ''}
+        ${kind === 'down' ? '<div style="margin-top:6px">The last cycle could not reach the database. No lead is lost; the next cycle retries.</div>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function playbookOf(product) {
+  const rows = STATE_DATA.playbooks || [];
+  return rows.find(p => p.product === product) || rows[0] || null;
+}
+
+function fillPlaybookForm() {
+  const product = $('#pbProd')?.value || 'oryoniq';
+  const pb = playbookOf(product);
+  if (!pb || !$('#pbPos')) return;
+  $('#pbAutoPos').checked = Boolean(pb.auto_send_positive);
+  $('#pbAutoNeu').checked = Boolean(pb.auto_send_neutral);
+  $('#pbPos').value = pb.template_positive || '';
+  $('#pbNeu').value = pb.template_neutral || '';
+}
+
+function renderPlaybook() {
+  if (!$('#playbookForm')) return;
+  fillPlaybookForm();
+}
+
+function renderAll() { renderRunner(); renderStats(); renderLeads(); renderReview(); renderPlaybook(); renderReplies(); }
+
+function paintLive() {
+  const now = STATE_DATA.serverTime ? new Date(STATE_DATA.serverTime) : new Date();
+  const inFlight = STATE_DATA.leads.filter(l => l.channel_state_email === 'pending_approval');
+  const kinds = (STATE_DATA.runners || []).map(r => runnerKind(r, now, inFlight));
+  const worst = kinds.includes('down') || kinds.includes('stale') ? 'bad'
+    : kinds.includes('stuck') || kinds.includes('overdue') ? 'warn'
+    : '';
+  $('#liveDot').className = 'dot' + (worst ? ' ' + worst : '');
+  const runnerBit = kinds.includes('working') ? 'runner working'
+    : kinds.includes('idle') ? 'runner idle'
+    : kinds.length ? 'runner ' + kinds[0]
+    : 'no heartbeat';
+  $('#liveTxt').textContent = runnerBit + ' · ' + new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
 
 // ---------- drawer ----------
 async function openLead(id) {
   const l = STATE_DATA.leads.find(x => x.id === id);
   if (!l) return;
+  const theirs = STATE_DATA.replies.filter(r => r.lead_id === l.id || r.lead_email === l.contact_email);
+  const theirsHtml = theirs.length
+    ? `<h4 class="sec">What they wrote</h4>` + theirs.map(r => `
+            <div class="draft" style="margin-bottom:10px">${r.subject ? `<div style="font-weight:500;margin-bottom:6px">${esc(r.subject)}</div>` : ''}${esc(stripHtml(r.body) || '(no body recorded)')}</div>`).join('')
+    : '';
   $('#drawerHost').innerHTML = `
     <div class="scrim" data-close="1"></div>
     <aside class="drawer" role="dialog" aria-modal="true" aria-label="Lead detail">
@@ -650,6 +967,7 @@ async function openLead(id) {
           ${l.sendr_page_url ? `<dt>Their page</dt><dd><a href="${esc(l.sendr_page_url)}" target="_blank" rel="noopener">${esc(l.sendr_page_url)}</a></dd>` : ''}
         </dl>
         ${l.email_draft ? `<h4 class="sec">What we sent</h4><div class="draft">${esc(l.email_draft)}</div>` : ''}
+        ${theirsHtml}
         <h4 class="sec">Everything that happened</h4>
         <div id="tlHost"><div class="empty">Loading the ledger…</div></div>
         ${needsPerson(l) ? `<div class="acts">
@@ -660,13 +978,22 @@ async function openLead(id) {
   try {
     const { events } = await api(`/api/leads/${id}/timeline`);
     const EVENT_LABEL = {
+      created: 'Added',
+      reveal_requested: 'Reveal requested',
+      revealed: 'Apollo address revealed',
+      verified: 'Verified',
       send: 'Sent — last contact',
       enrolled: 'Enrolled in Instantly',
       approved: 'Released',
       bounced: 'Bounced',
       unsubscribed: 'Unsubscribed',
+      classify_reply: 'Reply classified',
+      replied: 'They replied',
+      staff_reply: 'You replied',
+      booked: 'Booked a meeting',
+      parked: 'Parked',
     };
-    const kind = (a) => ['send','enrolled','booked','approved','verified'].includes(a) ? 'ok'
+    const kind = (a) => ['send','enrolled','booked','approved','verified','classify_reply','replied','staff_reply'].includes(a) ? 'ok'
       : ['suppressed','bounced','unsubscribed','dropped'].includes(a) ? 'stop' : '';
     // No filler element here: the dot is `.tl li::before`, which is itself a grid
     // child. An extra empty <span> would make three children in a two-column
@@ -708,6 +1035,63 @@ async function handleReply(id, as) {
     await load();
   } catch (e) { toast(e.message, true); }
 }
+function fillMeetingLink(id) {
+  const box = $(`#replyBody-${id}`);
+  if (!box) return;
+  const r = STATE_DATA.replies.find(x => String(x.id) === String(id));
+  const lead = STATE_DATA.leads.find(l => l.id === r?.lead_id || l.contact_email === r?.lead_email);
+  const first = (lead?.first_name || '').trim() || 'there';
+  const company = (lead?.company || '').trim() || 'your team';
+  const product = lead?.product === 'visioneerit' ? 'visioneerit' : 'oryoniq';
+  const pb = playbookOf(product);
+  const url = STATE_DATA.bookingUrl || '';
+  const sentiment = (r?.sentiment || '').toLowerCase() === 'positive' ? 'positive' : 'neutral';
+  const raw = (sentiment === 'positive' ? pb?.template_positive : pb?.template_neutral) || '';
+  const draft = (raw || `Hi {first_name},\n\nGlad this is useful. Next step is a short call with Gavriel.\n\nPick a time here:\n{booking_url}\n\nEllen`)
+    .replace(/\{first_name\}/gi, first)
+    .replace(/\{company\}/gi, company)
+    .replace(/\{booking_url\}/gi, url)
+    .replace(/\{their_reply\}/gi, stripHtml(r?.body || '').slice(0, 400))
+    .replace(/\{product\}/gi, product === 'oryoniq' ? 'OryonIQ' : 'VisioneerIT');
+  if (!box.value.trim() || box.value === (r?.suggested_reply || '')) box.value = draft;
+  else if (url && !box.value.includes(url)) box.value = `${box.value.trimEnd()}\n\n${url}\n`;
+  box.focus();
+}
+
+async function savePlaybook(ev) {
+  ev.preventDefault();
+  const btn = $('#pbSave');
+  if (btn) btn.disabled = true;
+  try {
+    await api('/api/playbook', {
+      method: 'POST',
+      body: {
+        product: $('#pbProd').value,
+        auto_send_positive: $('#pbAutoPos').checked,
+        auto_send_neutral: $('#pbAutoNeu').checked,
+        template_positive: $('#pbPos').value,
+        template_neutral: $('#pbNeu').value,
+      },
+    });
+    toast('Playbook saved. The next reply uses this copy.');
+    await load();
+  } catch (e) { toast(e.message, true); }
+  finally { if (btn) btn.disabled = false; }
+}
+async function sendReply(id) {
+  const box = $(`#replyBody-${id}`);
+  const text = (box?.value || '').trim();
+  if (!text) { toast('Write a reply first.', true); return; }
+  const btn = document.querySelector(`[data-send-reply="${id}"]`);
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/replies/${id}/reply`, { method: 'POST', body: { text } });
+    toast('Sent as Ellen from Instantly.');
+    if (box) box.value = '';
+    await load();
+  } catch (e) { toast(e.message, true); }
+  finally { if (btn) btn.disabled = false; }
+}
 
 // ---------- load ----------
 async function load() {
@@ -715,8 +1099,7 @@ async function load() {
     STATE_DATA = await api('/api/state');
     renderProducts();
     renderAll();
-    $('#liveDot').classList.remove('bad');
-    $('#liveTxt').textContent = 'live · ' + new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    paintLive();
   } catch (err) {
     $('#liveDot').classList.add('bad');
     $('#liveTxt').textContent = 'no data';
@@ -836,6 +1219,111 @@ $('#uploadForm').addEventListener('submit', async (e) => {
 });
 
 // ---------- find leads ----------
+let FIND_PEOPLE = [];
+let FIND_PRODUCT = '';
+
+const heldApolloIds = () => new Set(
+  (STATE_DATA.leads || []).map(l => l.apollo_id).filter(Boolean),
+);
+
+function selectedFindIds() {
+  return [...document.querySelectorAll('#aRows input[type=checkbox]:checked')]
+    .map(el => el.value)
+    .filter(Boolean);
+}
+
+function paintFindSelection() {
+  const n = selectedFindIds().length;
+  const btn = $('#aReveal');
+  btn.disabled = n === 0;
+  btn.textContent = n
+    ? `Reveal ${n} ${n === 1 ? 'person' : 'people'} — spends credits`
+    : 'Reveal selected — spends credits';
+  $('#aPickHint').textContent = n
+    ? `${n} selected. Each one costs one Apollo lead credit if we do not already hold them.`
+    : 'Pick the people worth spending a credit on. Searching is free; revealing is not.';
+  const boxes = [...document.querySelectorAll('#aRows input[type=checkbox]:not(:disabled)')];
+  const all = $('#aPickAll');
+  all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+  all.indeterminate = boxes.some(b => b.checked) && !all.checked;
+}
+
+function renderFindRows(people) {
+  const held = heldApolloIds();
+  $('#aRows').innerHTML = people.length ? people.map(p => {
+    const id = p.apollo_id || '';
+    const already = id && held.has(id);
+    const name = `${p.first_name || ''} ${p.last_name_obfuscated || p.last_name || ''}`.trim();
+    return `<tr class="${already ? 'held-row' : ''}">
+      <td class="pick">${already || !id ? '' : `<input type="checkbox" value="${esc(id)}">`}</td>
+      <td><div class="nm">${esc(name)}</div>
+          <div class="em">${already ? 'already a lead — skipped if you reveal again' : 'surname masked until revealed'}</div></td>
+      <td>${esc(p.title || '—')}</td>
+      <td>${esc(p.company || '—')}${p.company_domain ? `<div class="em">${esc(p.company_domain)}</div>` : ''}</td>
+      <td>${already ? '<span class="tag t-acc">Already held</span>' : '<span class="tag t-ok">Has one</span>'}</td>
+    </tr>`;
+  }).join('')
+    : '<tr><td colspan="5" class="empty">Nobody matched those filters. Widen the titles or clear a filter.</td></tr>';
+  paintFindSelection();
+}
+
+function showView(name) {
+  document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.v === name)));
+  ['leads','review','replies','find','add'].forEach(v => { $('#v-' + v).hidden = (v !== name); });
+}
+
+function verdictLabel(v) {
+  const out = (v.outcome || '').toLowerCase();
+  if (out === 'pass') return ['Written — ready', 't-ok'];
+  if (out === 'needs_review') return ['Written — needs you', 't-warn'];
+  if (out === 'drop' || out === 'dropped') return ['Dropped', 't-stop'];
+  if (out === 'skipped' && /dup/.test(v.reason || '')) return ['Already in the pipeline', 't-acc'];
+  if (out === 'skipped' && /suppress/.test(v.reason || '')) return ['On the never-contact list', 't-stop'];
+  if (out === 'skipped') return [v.reason || 'Skipped', 't-acc'];
+  if (out === 'verify_failed') return ['Verification failed — retry', 't-warn'];
+  if (out === 'duplicate' || /dup/.test(out)) return ['Already in the pipeline', 't-acc'];
+  if (out === 'suppressed' || /suppress/.test(out)) return ['On the never-contact list', 't-stop'];
+  if (v.reason) return [v.reason, 't-mute'];
+  return [v.outcome || 'No verdict', 't-mute'];
+}
+
+function renderRevealReport(d) {
+  const verdicts = Array.isArray(d.verdicts) ? d.verdicts : [];
+  const held = d.already_held || 0;
+  const revealed = d.revealed || 0;
+  const none = d.no_address || 0;
+  $('#aOutPanel').hidden = false;
+  $('#aOutHead').textContent = revealed
+    ? `${revealed} ${revealed === 1 ? 'person' : 'people'} written as leads`
+    : 'Nothing new was written';
+  $('#aOutSub').textContent = [
+    held ? `${held} already held, not paid for again` : '',
+    none ? `${none} returned no address` : '',
+    typeof d.credits_spent_estimate === 'number' ? `about ${d.credits_spent_estimate} credits` : '',
+  ].filter(Boolean).join(' · ') || (d.note || '');
+
+  const byEmail = new Map((STATE_DATA.leads || []).map(l => [String(l.contact_email || '').toLowerCase(), l]));
+  const rows = [];
+  for (const v of verdicts) {
+    const lead = byEmail.get(String(v.email || '').toLowerCase());
+    const [label, cls] = verdictLabel(v);
+    const name = lead ? `${lead.first_name || ''} ${lead.last_name || ''}`.trim() : '';
+    rows.push(`<tr${lead ? ` data-id="${esc(lead.id)}"` : ''}>
+      <td><div class="nm">${esc(name || '—')}</div></td>
+      <td class="em">${esc(v.email || '—')}</td>
+      <td><span class="tag ${cls}">${esc(label)}</span>
+          ${v.reoon_status ? `<div class="em">${esc(v.reoon_status)}</div>` : ''}</td>
+    </tr>`);
+  }
+  if (!verdicts.length && (d.already_held_ids || []).length) {
+    rows.push(`<tr><td colspan="3" class="empty">Everyone you picked is already a lead. No credit was spent.</td></tr>`);
+  }
+  if (!verdicts.length && (d.no_address_ids || []).length && !held) {
+    rows.push(`<tr><td colspan="3" class="empty">Apollo returned no work address for the people you picked. No lead was created.</td></tr>`);
+  }
+  $('#aOutRows').innerHTML = rows.join('') || `<tr><td colspan="3" class="empty">${esc(d.note || 'No addresses were handed on.')}</td></tr>`;
+}
+
 $('#findForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = $('#aRun');
@@ -854,8 +1342,9 @@ $('#findForm').addEventListener('submit', async (e) => {
   btn.disabled = true;
   btn.textContent = 'Searching…';
   try {
+    FIND_PRODUCT = $('#aFindProd').value;
     const d = await api('/api/find', { method: 'POST', body: {
-      product: $('#aFindProd').value,
+      product: FIND_PRODUCT,
       titles: $('#aTitles').value.trim() || undefined,
       seniorities: $('#aSen').value || undefined,
       employee_ranges: $('#aSize').value || undefined,
@@ -864,9 +1353,10 @@ $('#findForm').addEventListener('submit', async (e) => {
       per_page: Number($('#aTake').value),
     }});
 
-    const people = d.leads || [];
+    FIND_PEOPLE = d.leads || [];
     $('#aResPanel').hidden = false;
-    $('#aResHead').textContent = `${people.length} ${people.length === 1 ? 'match' : 'matches'} shown`;
+    $('#aOutPanel').hidden = true;
+    $('#aResHead').textContent = `${FIND_PEOPLE.length} ${FIND_PEOPLE.length === 1 ? 'match' : 'matches'} shown`;
     // Apollo's own total is the number that decides whether a filter set is any
     // good. Showing only the page size would make every search look identical.
     const total = d.total_entries;
@@ -875,23 +1365,63 @@ $('#findForm').addEventListener('submit', async (e) => {
       + `${d.credits_spent === 0 ? 'no credits spent' : `${d.credits_spent} credits spent`}`
       + (d.dropped_no_email ? ` · ${d.dropped_no_email} dropped for having no email on file` : '');
 
-    $('#aRows').innerHTML = people.length ? people.map(p => `
-      <tr>
-        <td><div class="nm">${esc(`${p.first_name || ''} ${p.last_name_obfuscated || p.last_name || ''}`.trim())}</div>
-            <div class="em">surname masked until revealed</div></td>
-        <td>${esc(p.title || '—')}</td>
-        <td>${esc(p.company || '—')}${p.company_domain ? `<div class="em">${esc(p.company_domain)}</div>` : ''}</td>
-        <td><span class="tag t-ok">Has one</span></td>
-      </tr>`).join('')
-      : '<tr><td colspan="4" class="empty">Nobody matched those filters. Widen the titles or clear a filter.</td></tr>';
-
-    toast(people.length ? `${people.length} shown. No credits spent — searching is free.` : 'No matches.');
+    renderFindRows(FIND_PEOPLE);
+    toast(FIND_PEOPLE.length ? `${FIND_PEOPLE.length} shown. No credits spent — searching is free.` : 'No matches.');
   } catch (err) {
     toast(err.message, true);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Search — free';
   }
+});
+
+$('#aRows').addEventListener('change', paintFindSelection);
+$('#aPickAll').addEventListener('change', () => {
+  const on = $('#aPickAll').checked;
+  document.querySelectorAll('#aRows input[type=checkbox]:not(:disabled)').forEach(b => { b.checked = on; });
+  paintFindSelection();
+});
+
+$('#aReveal').addEventListener('click', async () => {
+  const ids = selectedFindIds();
+  if (!ids.length) return;
+  const product = FIND_PRODUCT || $('#aFindProd').value;
+  const campaign = (STATE_DATA.campaigns || []).find(c => c.product === product);
+  const canSend = campaign && campaign.instantly_campaign_id && campaign.active;
+  const brand = productLabel(product);
+  const lines = [
+    `Reveal ${ids.length} ${ids.length === 1 ? 'person' : 'people'} as ${brand}?`,
+    '',
+    `This spends about ${ids.length} Apollo lead credit${ids.length === 1 ? '' : 's'} and writes whoever comes back as real leads.`,
+    canSend
+      ? 'People who pass verification join the send queue. The daily cap decides when they mail. This click does not itself send.'
+      : `${brand} has no active campaign, so they will be stored but will not be emailed until one exists.`,
+    '',
+    'Anyone we already hold is skipped and not paid for again.',
+  ];
+  if (!confirm(lines.join('\n'))) return;
+
+  const btn = $('#aReveal');
+  btn.disabled = true;
+  btn.textContent = `Revealing ${ids.length}…`;
+  try {
+    const d = await api('/api/reveal', { method: 'POST', body: { product, ids } });
+    await load();
+    renderFindRows(FIND_PEOPLE);
+    renderRevealReport(d);
+    const n = d.revealed || 0;
+    toast(n
+      ? `${n} written as ${n === 1 ? 'a lead' : 'leads'}. Open one to see the full name and email.`
+      : (d.note || 'No new lead was written.'));
+  } catch (err) {
+    toast(err.message, true);
+    paintFindSelection();
+  }
+});
+
+$('#aToLeads').addEventListener('click', () => {
+  showView('leads');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
 // ---------- change password ----------
@@ -936,14 +1466,15 @@ document.addEventListener('click', (e) => {
   if (t.id === 'pwBtn') return openPw();
   if (t.dataset.close) return closeDrawer();
   if (t.dataset.v) {
-    document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-selected', String(b === t)));
-    ['leads','review','replies','find','add'].forEach(v => { $('#v-' + v).hidden = (v !== t.dataset.v); });
+    showView(t.dataset.v);
     return;
   }
   if (t.dataset.ok) return release(t.dataset.ok);
   if (t.dataset.no) return suppress(t.dataset.no);
   if (t.dataset.open) return openLead(t.dataset.open);
   if (t.dataset.reply) return handleReply(t.dataset.reply, t.dataset.as);
+  if (t.dataset.sendReply) return sendReply(t.dataset.sendReply);
+  if (t.dataset.fillReply) return fillMeetingLink(t.dataset.fillReply);
   if (t.tagName === 'TR' && t.dataset.id) return openLead(t.dataset.id);
 });
 document.addEventListener('keydown', (e) => {
@@ -952,6 +1483,8 @@ document.addEventListener('keydown', (e) => {
 });
 $('#q').addEventListener('input', renderLeads);
 $('#fState').addEventListener('change', renderLeads);
+$('#playbookForm')?.addEventListener('submit', savePlaybook);
+$('#pbProd')?.addEventListener('change', fillPlaybookForm);
 
 // Refresh while the tab is visible. The pipeline writes on its own schedule, so
 // a console left open on a desk should not quietly go stale.
@@ -959,8 +1492,7 @@ setInterval(() => { if (!document.hidden && !$('#app').hidden) load(); }, 60_000
 
 // Probe once: a valid cookie means straight into the app, no login screen.
 try {
-  await api('/api/state').then(d => { STATE_DATA = d; showApp(); renderProducts(); renderAll();
-    $('#liveTxt').textContent = 'live · ' + new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); });
+  await api('/api/state').then(d => { STATE_DATA = d; showApp(); renderProducts(); renderAll(); paintLive(); });
 } catch { showGate(); }
 </script>
 </body>

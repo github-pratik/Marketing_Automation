@@ -367,8 +367,10 @@ unrelated edit can't recreate n8n as a side effect. Facts worth keeping:
   sits in the table, dropped and suppressed, from the write-path test.
 - **The reserved test domains are all suppressed** (`example.com/.invalid/.test/.org`), which is why
   a test add against them is refused. Use a unique `.invalid` host to exercise the write paths.
-- The prototype's Apollo "Find leads" tab is deliberately **not** in the live console: sample rows
-  that look real are the exact failure this console exists to end.
+- The console **Find leads** tab searches Apollo through `VIO-source-leads` (free) and reveals
+  chosen people through `VIO-apollo-reveal` (paid, cap 25, human-gated). Sample rows are still
+  refused — every name on that screen is a live Apollo result. Revealed people go through
+  `VIO-intake-verify-curate` and land on Leads with `source = apollo`.
 
 **Apollo sourcing is wired and live (2026-09-05).** Two workflows, split on the thing that
 matters — **searching is free, addresses cost**:

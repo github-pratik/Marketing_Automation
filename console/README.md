@@ -30,6 +30,7 @@ container's environment, and the browser gets a session cookie instead.
 | Leads | `leads`, plus today's Instantly `send` events for the sent count (enrolment is not a send) | "Nothing is queued to send" is stated explicitly |
 | Needs you | leads at `needs_review`, or held | "Everything has been decided" |
 | Replies | `replies` | "No replies yet" — not a fabricated example |
+| Find leads | calls `VIO-source-leads` (free search) then `VIO-apollo-reveal` (paid, chosen ids only) | "Nobody matched" is a real Apollo result, not a sample |
 | Add leads | writes `leads` + `events` | — |
 
 Clicking a lead opens its **ledger**: every `events` row for it, newest first.
@@ -86,6 +87,8 @@ Environment the container needs:
 | `SUPABASE_SERVICE_KEY` | server-side only, never sent to a browser |
 | `STAFF_PASSWORD` | the shared staff login |
 | `SESSION_SECRET` | signs the session cookie; the process refuses to start without it |
+| `VIO_WEBHOOK_TOKEN` | optional; without it Find leads cannot search or reveal. Never sent to the browser |
+| `N8N_WEBHOOK_BASE` | optional; defaults to the live n8n webhook host |
 
 The process **exits on startup** if any of those is missing, rather than falling
 back to a default. A predictable session secret is the same as no login at all,
@@ -112,10 +115,8 @@ because the sheet's timestamp stopped at a failed write rather than at the send.
 
 ## Not built yet
 
-- **Apollo sourcing.** The prototype in `canvas/staff-console.html` has a "Find
-  leads" tab running on a sample set. It is deliberately **not** in this build:
-  sample rows that look real are the exact problem this console exists to end.
 - **Per-person accounts.** One shared password today. `staff_profiles` and
   Supabase Auth are the upgrade, and the ledger already records an actor per event.
-- **Live webhooks into `replies`.** Instantly sends reply webhooks; pointing them
-  at Supabase is what makes the Replies tab fill on its own.
+- **A reveal of a real person from this tab has not been run in production yet.**
+  The workflow is live and the console now calls it; the first click spends a
+  real Apollo credit and writes a real stranger into intake.

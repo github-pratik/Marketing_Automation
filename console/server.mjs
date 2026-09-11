@@ -31,6 +31,8 @@ import { createHmac, timingSafeEqual, randomBytes, scryptSync } from 'node:crypt
 import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as XLSX from 'xlsx';
+import { decideFollowup, playbookFor, bookingUrlFor } from './followup.mjs';
+import { shapeRevealRequest } from './reveal-request.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const PUBLIC = join(HERE, 'public');
@@ -50,6 +52,12 @@ const SESSION_HOURS = 12;
 const VIO_WEBHOOK_TOKEN = process.env.VIO_WEBHOOK_TOKEN || '';
 const N8N_WEBHOOK_BASE = (process.env.N8N_WEBHOOK_BASE || 'https://n8n.industrialbriefs.com/webhook')
   .replace(/\/+$/, '');
+// Optional. Without it the Replies tab can still display inbound mail, but
+// "Send reply" cannot call Instantly. Missing is a 501, not a crash on boot —
+// the console must stay up if Instantly is the only thing down.
+const INSTANTLY_API_KEY = process.env.INSTANTLY_API_KEY || '';
+const ELLEN_FALLBACK = 'ellen@getoryoniq.com';
+const ORYONIQ_BOOKING_URL = bookingUrlFor('oryoniq');
 
 for (const [name, value] of Object.entries({
   SUPABASE_URL, SUPABASE_SERVICE_KEY: SUPABASE_KEY, STAFF_PASSWORD, SESSION_SECRET,
@@ -88,6 +96,61 @@ async function sb(path, { method = 'GET', body, prefer } = {}) {
     throw err;
   }
   return text ? JSON.parse(text) : null;
+}
+
+async function instantly(path, { method = 'GET', body } = {}) {
+  if (!INSTANTLY_API_KEY) {
+    const err = new Error('Instantly is not configured on this console, so a reply cannot be sent from here.');
+    err.status = 501;
+    throw err;
+  }
+  const res = await fetch(`https://api.instantly.ai/api/v2${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${INSTANTLY_API_KEY}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (compatible; oryoniq-reach-engine/1.0)',
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    const err = new Error(`Instantly ${method} ${path} → ${res.status}: ${text.slice(0, 400)}`);
+    err.status = res.status === 401 || res.status === 403 ? 502 : res.status;
+    throw err;
+  }
+  return text ? JSON.parse(text) : null;
+}
+
+function textToHtml(text) {
+  const escaped = String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Instantly drops bare <br> in some templates; a <div> per line is the
+  // shape that actually survives delivery on this workspace.
+  return escaped.split('\n').map((line) => `<div>${line || '<br>'}</div>`).join('');
+}
+
+async function findInstantlyReplyTarget(leadEmail) {
+  const listed = await instantly(
+    `/emails?limit=100&sort_order=desc&search=${encodeURIComponent(leadEmail)}`,
+  );
+  const items = listed?.items || listed?.data || [];
+  const want = String(leadEmail).toLowerCase();
+  const fromOf = (e) => String(e.from_address_email || e.from || '').toLowerCase();
+  const theirs = items.find((e) => fromOf(e) === want)
+    || items.find((e) => e.ue_type === 2);
+  if (!theirs?.id) return null;
+  let subject = theirs.subject || 'Re: OryonIQ';
+  if (!/^re:\s/i.test(subject)) subject = `Re: ${subject}`;
+  // On inbound mail, eaccount is the connected mailbox they wrote to — that
+  // is who must send the reply, or Instantly will refuse the thread.
+  return {
+    replyToId: theirs.id,
+    eaccount: theirs.eaccount || ELLEN_FALLBACK,
+    subject,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +277,122 @@ const normProduct = (p) => String(p || '').trim().toLowerCase();
 
 async function recordEvent(ev) {
   return sb('events', { method: 'POST', body: [ev], prefer: 'return=representation' });
+}
+
+function tokenMatches(got) {
+  const expected = String(VIO_WEBHOOK_TOKEN || '');
+  const a = Buffer.from(String(got || ''));
+  const b = Buffer.from(expected);
+  if (!expected || a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+async function loadPlaybooks() {
+  try {
+    const rows = await sb('followup_playbook?select=*');
+    return ['oryoniq', 'visioneerit'].map((product) => playbookFor(product, rows || []));
+  } catch (err) {
+    console.warn('[playbook] could not read followup_playbook:', err.message);
+    return ['oryoniq', 'visioneerit'].map((product) => playbookFor(product));
+  }
+}
+
+async function sendInstantlyReply(reply, text) {
+  const target = await findInstantlyReplyTarget(reply.lead_email);
+  if (!target) {
+    const err = new Error('Could not find their message in Instantly, so nothing was sent.');
+    err.status = 404;
+    throw err;
+  }
+  const sent = await instantly('/emails/reply', {
+    method: 'POST',
+    body: {
+      eaccount: target.eaccount,
+      reply_to_uuid: target.replyToId,
+      subject: target.subject,
+      body: { text, html: textToHtml(text) },
+    },
+  });
+  return { sent, target };
+}
+
+async function applyFollowup(replyId) {
+  const id = Number(replyId);
+  if (!Number.isInteger(id) || id < 1) {
+    return { skipped: true, reason: 'no_reply' };
+  }
+  const reply = (await sb(`replies?select=*&id=eq.${id}`))[0];
+  if (!reply) return { skipped: true, reason: 'no_reply' };
+
+  let lead = null;
+  if (reply.lead_id) {
+    lead = (await sb(`leads?select=*&id=eq.${reply.lead_id}`))[0] || null;
+  }
+  if (!lead && reply.lead_email) {
+    lead = (await sb(`leads?select=*&contact_email=eq.${encodeURIComponent(reply.lead_email)}`))[0] || null;
+  }
+
+  const product = PRODUCTS.has(normProduct(lead?.product)) ? normProduct(lead.product) : 'oryoniq';
+  const books = await loadPlaybooks();
+  const playbook = playbookFor(product, books);
+  const decision = decideFollowup({ reply, lead, playbook });
+
+  if (decision.action === 'skip') {
+    return { skipped: true, reason: decision.reason, reply_id: id };
+  }
+
+  const drafted = (await sb(`replies?id=eq.${id}`, {
+    method: 'PATCH',
+    prefer: 'return=representation',
+    body: { suggested_reply: decision.text },
+  }))[0];
+
+  await recordEvent({
+    lead_id: reply.lead_id,
+    lead_email: reply.lead_email,
+    actor: 'console',
+    action: 'followup_drafted',
+    outcome: decision.reason,
+    workflow: 'console',
+    payload: { reply_id: id, sentiment: decision.sentiment, product: decision.product, auto: decision.action === 'send' },
+  }).catch((err) => console.error('[playbook] draft event failed:', err.message));
+
+  if (decision.action !== 'send') {
+    return { skipped: false, sent: false, reason: decision.reason, reply: drafted };
+  }
+
+  const { sent, target } = await sendInstantlyReply(reply, decision.text);
+  const now = new Date().toISOString();
+  const updated = (await sb(`replies?id=eq.${id}`, {
+    method: 'PATCH',
+    prefer: 'return=representation',
+    body: {
+      suggested_reply: decision.text,
+      followup_sent_at: now,
+      handled_by: 'playbook',
+      handled_at: now,
+      handled_as: 'replied',
+    },
+  }))[0];
+
+  await recordEvent({
+    lead_id: reply.lead_id,
+    lead_email: reply.lead_email,
+    actor: 'console',
+    action: 'followup_sent',
+    outcome: 'sent',
+    workflow: 'console',
+    payload: {
+      reply_id: id,
+      instantly_email_id: sent?.id || null,
+      eaccount: target.eaccount,
+      auto: true,
+      product: decision.product,
+      sentiment: decision.sentiment,
+    },
+  });
+
+  return { skipped: false, sent: true, reply: updated };
 }
 
 // The one place a lead is created, used by both the single-lead form and the
@@ -510,6 +689,25 @@ async function handleAPI(req, res, url) {
     });
   }
 
+  // n8n calls this after it writes the inbound reply. Same token as the
+  // Instantly webhook — a forged hit here would send real mail as Ellen.
+  if (path === '/api/internal/followup' && req.method === 'POST') {
+    const got = req.headers['x-vio-token'];
+    if (!tokenMatches(got)) {
+      return sendJSON(res, 401, { error: 'bad or missing token' });
+    }
+    const body = await readBody(req);
+    try {
+      const result = await applyFollowup(body.reply_id);
+      return sendJSON(res, 200, { ok: true, ...result });
+    } catch (err) {
+      console.error('[playbook] followup failed:', err.message);
+      return sendJSON(res, err.status && err.status !== 401 ? err.status : 500, {
+        error: String(err.message).slice(0, 300),
+      });
+    }
+  }
+
   // Everything past this point requires a session.
   if (!validSession(readCookie(req, 'vio_session'))) {
     return sendJSON(res, 401, { error: 'Not signed in.' });
@@ -587,7 +785,7 @@ async function handleAPI(req, res, url) {
     // every genuinely active lead under however many dropped rows exist,
     // pushing them clean off the end of the `limit`. `dropped` is terminal —
     // nobody needs to see it before the leads still waiting on a decision.
-    const [active, droppedRecent, activeCountRows, replies, campaigns, suppressionRows, todayEvents] = await Promise.all([
+    const [active, droppedRecent, activeCountRows, replies, campaigns, suppressionRows, todayEvents, runners, playbooks] = await Promise.all([
       sb('leads?select=*&channel_state_email=neq.dropped&order=updated_at.desc&limit=2000'),
       sb('leads?select=*&channel_state_email=eq.dropped&order=updated_at.desc&limit=200'),
       sb('leads?select=id&channel_state_email=neq.dropped&limit=5000'),
@@ -595,6 +793,10 @@ async function handleAPI(req, res, url) {
       sb('campaigns?select=*'),
       sb('suppression?select=id'),
       sb(`events?select=action,at&at=gte.${new Date().toISOString().slice(0, 10)}T00:00:00Z&limit=2000`),
+      // One row per poller, overwritten each cycle. This is how the dashboard
+      // tells a quiet pipeline from a dead one — events is silent in both cases.
+      sb('system_status?select=*&order=last_run_at.desc'),
+      loadPlaybooks(),
     ]);
     const leads = [...active, ...droppedRecent];
 
@@ -608,6 +810,7 @@ async function handleAPI(req, res, url) {
       leads,
       replies,
       campaigns,
+      runners: Array.isArray(runners) ? runners : [],
       stats: {
         sentToday,
         dailyCap: cap,
@@ -624,7 +827,53 @@ async function handleAPI(req, res, url) {
         suppressed: suppressionRows.length,
       },
       serverTime: new Date().toISOString(),
+      canReply: Boolean(INSTANTLY_API_KEY),
+      bookingUrl: ORYONIQ_BOOKING_URL,
+      playbooks,
     });
+  }
+
+  if (path === '/api/playbook' && req.method === 'POST') {
+    const body = await readBody(req);
+    const product = normProduct(body.product);
+    if (!PRODUCTS.has(product)) {
+      return sendJSON(res, 400, { error: 'Pick oryoniq or visioneerit.' });
+    }
+    const row = {
+      product,
+      auto_send_positive: Boolean(body.auto_send_positive),
+      auto_send_neutral: Boolean(body.auto_send_neutral),
+      auto_send_negative: false,
+      template_positive: String(body.template_positive ?? ''),
+      template_neutral: String(body.template_neutral ?? ''),
+      template_negative: String(body.template_negative ?? ''),
+      updated_at: new Date().toISOString(),
+    };
+    if (row.template_positive.length > 8000 || row.template_neutral.length > 8000 || row.template_negative.length > 8000) {
+      return sendJSON(res, 400, { error: 'That template is too long.' });
+    }
+    const updated = (await sb('followup_playbook?product=eq.' + product, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: row,
+    }))[0];
+    const saved = updated || (await sb('followup_playbook', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: [row],
+    }))[0];
+    await recordEvent({
+      actor: 'console',
+      action: 'playbook_saved',
+      outcome: 'ok',
+      workflow: 'console',
+      payload: {
+        product,
+        auto_send_positive: row.auto_send_positive,
+        auto_send_neutral: row.auto_send_neutral,
+      },
+    });
+    return sendJSON(res, 200, { playbook: playbookFor(product, [saved || row]) });
   }
 
   // -- find people in Apollo ------------------------------------------------
@@ -678,6 +927,84 @@ async function handleAPI(req, res, url) {
     }
     let data;
     try { data = JSON.parse(text); } catch { return sendJSON(res, 502, { error: 'The search returned something that is not JSON.' }); }
+    return sendJSON(res, 200, data);
+  }
+
+  // -- reveal people from Apollo --------------------------------------------
+  //
+  // This does NOT call Apollo. It calls VIO-apollo-reveal, which already holds
+  // the spending gate (explicit ids, cap 25, skip anyone we already hold
+  // BEFORE paying) and hands survivors to VIO-intake-verify-curate. A second
+  // people/match path here would be two spend paths, and the failure that
+  // causes is the expensive one: a credit spent twice, or a person we already
+  // hold paid for again.
+  //
+  // The cheap shape check below is so a mis-click gets a useful error from
+  // this process instead of waiting on n8n to refuse. The workflow remains
+  // the authority — it will refuse the same shapes even if this check is
+  // edited away.
+  if (path === '/api/reveal' && req.method === 'POST') {
+    if (!VIO_WEBHOOK_TOKEN) {
+      return sendJSON(res, 501, {
+        error: 'Apollo reveal is not configured here. Set VIO_WEBHOOK_TOKEN in the console environment.',
+      });
+    }
+    const body = await readBody(req);
+    const shaped = shapeRevealRequest(body);
+    if (!shaped.ok) return sendJSON(res, 400, { error: shaped.error });
+    const { product, ids } = shaped;
+
+    // Ledger the staff click before the spend. If n8n then fails, we still
+    // know who asked. Per-person spend rows are written by the workflow.
+    // Fail closed: a reveal that cannot be audited must not run.
+    try {
+      await recordEvent({
+        actor: 'console',
+        action: 'reveal_requested',
+        outcome: `${ids.length} ids`,
+        workflow: 'console',
+        payload: { product, ids, via: 'find leads tab' },
+      });
+    } catch {
+      return sendJSON(res, 500, { error: 'Could not record the reveal request, so it was not sent.' });
+    }
+
+    let upstream;
+    try {
+      upstream = await fetch(`${N8N_WEBHOOK_BASE}/vio-apollo-reveal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-vio-token': VIO_WEBHOOK_TOKEN },
+        body: JSON.stringify({ product, ids, requested_by: 'console' }),
+        // Reveal + Reoon for up to 25 people. The workflow keeps running if
+        // this client gives up; the error below says so rather than implying
+        // the spend was cancelled.
+        signal: AbortSignal.timeout(180_000),
+      });
+    } catch (err) {
+      if (err && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        return sendJSON(res, 504, {
+          error: 'The reveal is taking longer than three minutes. It may still be running — '
+               + 'refresh the Leads tab in a minute rather than clicking again.',
+        });
+      }
+      throw err;
+    }
+    const text = await upstream.text();
+    if (!upstream.ok) {
+      const reason = (text.match(/REFUSED:[^"'\\}]+/) || [])[0];
+      if (reason) return sendJSON(res, 400, { error: reason });
+      return sendJSON(res, 400, {
+        error: 'The reveal was refused. The usual cause is a malformed id or more than 25 people. '
+             + 'If this sat for a while, the pull may still be running — refresh Leads in a minute. '
+             + 'The exact reason is in the n8n execution log for VIO-apollo-reveal.',
+      });
+    }
+    let data;
+    try { data = JSON.parse(text); } catch {
+      return sendJSON(res, 502, { error: 'The reveal returned something that is not JSON.' });
+    }
+    // n8n lastNode sometimes wraps a single item as a one-element array.
+    if (Array.isArray(data)) data = data[0] || {};
     return sendJSON(res, 200, data);
   }
 
@@ -995,6 +1322,58 @@ async function handleAPI(req, res, url) {
     return sendJSON(res, 200, { reply: updated });
   }
 
+  // -- send a reply from Ellen's Instantly mailbox --------------------------
+  // Staff write-back. Auto follow-up uses the same Instantly call via
+  // applyFollowup(); this path is the human override.
+  const replySend = path.match(/^\/api\/replies\/(\d+)\/reply$/);
+  if (replySend && req.method === 'POST') {
+    const id = Number(replySend[1]);
+    const body = await readBody(req);
+    const text = String(body.text || '').trim();
+    if (!text) return sendJSON(res, 400, { error: 'Write a reply first.' });
+    if (text.length > 8000) return sendJSON(res, 400, { error: 'That reply is too long.' });
+    const reply = (await sb(`replies?select=*&id=eq.${id}`))[0];
+    if (!reply) return sendJSON(res, 404, { error: 'No such reply.' });
+    if (!reply.lead_email) {
+      return sendJSON(res, 400, { error: 'This reply has no email address to send back to.' });
+    }
+
+    const { sent, target } = await sendInstantlyReply(reply, text);
+
+    await recordEvent({
+      lead_id: reply.lead_id,
+      lead_email: reply.lead_email,
+      actor: 'console',
+      action: 'staff_reply',
+      outcome: 'sent',
+      workflow: 'console',
+      payload: {
+        reply_id: id,
+        instantly_email_id: sent?.id || null,
+        eaccount: target.eaccount,
+      },
+    });
+
+    // Sending IS handling the inbound. Leaving handled_at blank kept the
+    // compose box up and the Replies badge at 1 after a successful send
+    // (seen live 2026-09-11). Booked / park / never-contact can still be
+    // applied afterwards — they overwrite handled_as.
+    const now = new Date().toISOString();
+    const updated = (await sb(`replies?id=eq.${id}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: {
+        suggested_reply: text,
+        followup_sent_at: now,
+        handled_by: 'console',
+        handled_at: now,
+        handled_as: 'replied',
+      },
+    }))[0];
+
+    return sendJSON(res, 200, { ok: true, instantly_id: sent?.id || null, reply: updated });
+  }
+
   return sendJSON(res, 404, { error: 'No such endpoint.' });
 }
 
@@ -1036,7 +1415,12 @@ const server = createServer(async (req, res) => {
     console.error('[error]', req.method, url.pathname, err.message);
     // The client gets a short reason; the full Supabase body stays in the log,
     // because it can contain column and constraint detail.
-    if (!res.headersSent) sendJSON(res, 500, { error: String(err.message).slice(0, 300) });
+    // Instantly 401 is remapped to 502 in instantly() — a 401 here would throw
+    // staff out of the console because the client treats every 401 as a dead session.
+    const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 && err.status !== 401
+      ? err.status
+      : 500;
+    if (!res.headersSent) sendJSON(res, status, { error: String(err.message).slice(0, 300) });
     else res.end();
   }
 });
@@ -1045,5 +1429,7 @@ await loadAuth();
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[ready] console on :${PORT} → ${SUPABASE_URL}`);
-  console.log(`[find ] apollo search ${VIO_WEBHOOK_TOKEN ? 'via ' + N8N_WEBHOOK_BASE : 'DISABLED (no VIO_WEBHOOK_TOKEN)'}`);
+  console.log(`[find ] apollo search + reveal ${VIO_WEBHOOK_TOKEN ? 'via ' + N8N_WEBHOOK_BASE : 'DISABLED (no VIO_WEBHOOK_TOKEN)'}`);
+  console.log(`[reply] Instantly Unibox ${INSTANTLY_API_KEY ? 'enabled' : 'DISABLED (no INSTANTLY_API_KEY)'}`);
+  console.log(`[follow] inbound playbook ${VIO_WEBHOOK_TOKEN ? 'via n8n → /api/internal/followup' : 'DISABLED (no VIO_WEBHOOK_TOKEN)'}`);
 });
