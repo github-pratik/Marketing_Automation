@@ -22,10 +22,6 @@ cat "$WF" | ssh root@104.248.119.152 '
   docker exec n8n-stack-n8n-1 rm -f /tmp/w.json'
 ```
 
-## Running a manual-trigger workflow from the CLI (no web login)
-```bash
-ssh root@104.248.119.152 "docker exec -e N8N_RUNNERS_BROKER_PORT=5688 n8n-stack-n8n-1 \
-  n8n execute --id=VIOwf1intake0001"
 ```
 **The `-e N8N_RUNNERS_BROKER_PORT` is not optional.** A bare `n8n execute` dies with
 `n8n Task Broker's port 5679 is already in use` — the CLI spins up its own task broker and collides
