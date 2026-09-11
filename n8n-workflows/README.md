@@ -5,7 +5,7 @@ load/update them. These files contain **no secrets** — credentials are referen
 live in n8n's own credential store. See `../INTEGRATIONS.md` for the fuller instance +
 credential-auth reference and every other tool's status.
 
-**Instance:** `n8n-industrialbriefs` · `root@104.248.119.152` · n8n 2.22.6 · container `n8n-stack-n8n-1`
+**Instance:** `n8n-industrialbriefs` · n8n 2.22.6 · container `n8n-stack-n8n-1`. SSH target is `$VIO_HOST` (set locally; never commit the droplet address).
 
 ## Import / update a workflow
 Use the helper (wraps the SSH + `docker exec` dance; takes a host arg so it also works for a new droplet):
@@ -16,7 +16,7 @@ Use the helper (wraps the SSH + `docker exec` dance; takes a host arg so it also
 Raw equivalent (what the helper runs):
 ```bash
 WF=VIO-intake-verify-curate.json
-cat "$WF" | ssh root@104.248.119.152 '
+cat "$WF" | ssh "$VIO_HOST" '
   docker exec -i n8n-stack-n8n-1 sh -c "cat > /tmp/w.json"
   docker exec n8n-stack-n8n-1 n8n import:workflow --input=/tmp/w.json
   docker exec n8n-stack-n8n-1 rm -f /tmp/w.json'
@@ -106,7 +106,7 @@ Current ids: `Openai Marketing` `7t8KDC4EZpbIkOxP` · `slack marketing` `niWxNp4
 
 **Audit command — run after any import:**
 ```bash
-ssh root@104.248.119.152 "docker exec n8n-stack-postgres-1 psql -U postgres -d railway -tAc \"select name, jsonb_path_query_array(nodes::jsonb, '\\\$[*].credentials') from workflow_entity where id like 'VIO%' order by name;\""
+ssh "$VIO_HOST" "docker exec n8n-stack-postgres-1 psql -U postgres -d railway -tAc \"select name, jsonb_path_query_array(nodes::jsonb, '\\\$[*].credentials') from workflow_entity where id like 'VIO%' order by name;\""
 ```
 
 ### ⚠️ `import:workflow` DEACTIVATES the workflow it imports (found live 2026-09-05)

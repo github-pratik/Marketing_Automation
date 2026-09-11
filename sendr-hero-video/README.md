@@ -19,7 +19,8 @@ page templates — the API is read-only on templates (`GET /page-template/list`,
 `GET /page-template/{id}/variables`). Upload in the Sendr UI, then confirm it actually saved:
 
 ```bash
-cd .. && K=$(grep '^SENDR_API_KEY=' .secrets.env | cut -d= -f2-) && curl -s -H "X-API-Key: $K" https://api.sendr.io/api/v1/page-template/list | python3 -c "import sys,json,datetime;n=datetime.datetime.now(datetime.timezone.utc);[print(f\"{t['id']} edited {int((n-datetime.datetime.fromisoformat(t['updatedAt'].replace('Z','+00:00'))).total_seconds()/60)} min ago, mediaType={t['mediaType']}\") for t in json.load(sys.stdin) if t['id'] in (8462,8464)]"
+# SENDR_API_KEY must already be in your shell (from local .secrets.env). Do not paste the key here.
+cd .. && curl -s -H "X-API-Key: $SENDR_API_KEY" https://api.sendr.io/api/v1/page-template/list | python3 -c "import sys,json,datetime;n=datetime.datetime.now(datetime.timezone.utc);[print(f\"{t['id']} edited {int((n-datetime.datetime.fromisoformat(t['updatedAt'].replace('Z','+00:00'))).total_seconds()/60)} min ago, mediaType={t['mediaType']}\") for t in json.load(sys.stdin) if t['id'] in (8462,8464)]"
 ```
 
 `edited 0-2 min ago` and a non-null `mediaType` means it saved. If it still reads hundreds of
